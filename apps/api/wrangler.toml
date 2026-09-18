@@ -1,0 +1,43 @@
+name = "cfb-api"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+# ─── Public configuration ────────────────────────────────────────────────────
+# Non-secret values live here so they are reviewable in git.
+[vars]
+# "espn" | "mock". Phase 1 ships neither provider yet; "mock" is the safe default
+# so nothing accidentally hammers ESPN before the adapter exists (Phase 2).
+SPORTS_PROVIDER = "mock"
+
+# Comma-separated CORS allowlist. "*" is accepted for local development only.
+# Phase 5 narrows this to the deployed Pages origin.
+ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
+
+LOG_LEVEL = "info"
+
+# Optional season pin, e.g. "2025:regular:5". Leave unset in normal operation —
+# the season resolves from the provider calendar, then the date heuristic (§21).
+# SEASON_OVERRIDE = ""
+
+# ─── Secrets ─────────────────────────────────────────────────────────────────
+# NOT set here. Locally they come from apps/api/.dev.vars (gitignored);
+# in production from `wrangler secret put`:
+#
+#   wrangler secret put SUPABASE_URL
+#   wrangler secret put SUPABASE_ANON_KEY
+#
+# There is deliberately no SUPABASE_SERVICE_ROLE_KEY. See src/db/client.ts.
+
+# ─── Workers KV (cache tier L3) ──────────────────────────────────────────────
+# Create with:  wrangler kv namespace create SPORTS_KV
+#               wrangler kv namespace create SPORTS_KV --preview
+# then paste the ids below. Phase 2 starts writing to it; Phase 1 only uses it
+# to cache the Supabase JWKS.
+[[kv_namespaces]]
+binding = "SPORTS_KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_KV_PREVIEW_ID"
+
+[observability]
+enabled = true

@@ -1,0 +1,4 @@
+# Store and check out text files with LF endings on every OS.
+# Prettier enforces `endOfLine: "lf"`, and core.autocrlf=true on Windows would
+# otherwise hand a fresh clone CRLF files that fail `npm run format:check`.
+* text=auto eol=lf

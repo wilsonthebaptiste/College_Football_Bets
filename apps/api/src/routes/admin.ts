@@ -1,0 +1,50 @@
+import type { CreateUserRequest, CreateUserResponse } from '@cfb/shared';
+import { Hono } from 'hono';
+import { supabaseAsAdmin } from '../db/client';
+import { createUser } from '../db/queries';
+import type { AppBindings } from '../env';
+import { invalidRequest } from '../http/errors';
+import { requireAdmin } from '../middleware/require-admin';
+
+/**
+ * `/api/admin/*` — the only authenticated branch of the API.
+ *
+ * Phase 1 implements user creation only. The rest of §8's admin surface (rename,
+ * add/remove selection, reorder, team search) arrives with the admin console in
+ * Phase 5; what matters now is that the *authorization* is real and testable,
+ * because everything added later inherits it by being mounted here.
+ */
+export const adminRoutes = new Hono<AppBindings>();
+
+adminRoutes.use('*', requireAdmin);
+
+const DISPLAY_NAME_MIN = 1;
+const DISPLAY_NAME_MAX = 60;
+
+/** Mirrors the CHECK constraint in 0001_schema.sql. The database is the enforcer. */
+function parseDisplayName(value: unknown): string {
+  if (typeof value !== 'string') {
+    throw invalidRequest('displayName must be a string.');
+  }
+  const trimmed = value.trim();
+  if (trimmed.length < DISPLAY_NAME_MIN || trimmed.length > DISPLAY_NAME_MAX) {
+    throw invalidRequest(
+      `displayName must be between ${String(DISPLAY_NAME_MIN)} and ${String(DISPLAY_NAME_MAX)} characters.`,
+    );
+  }
+  return trimmed;
+}
+
+adminRoutes.post('/users', async (c) => {
+  const payload = (await c.req.json().catch(() => null)) as CreateUserRequest | null;
+  const displayName = parseDisplayName(payload?.displayName);
+
+  // Note the client: the administrator's own token, not an elevated key. If they
+  // are somehow not in `admins`, Postgres refuses this insert on its own (§31).
+  const db = supabaseAsAdmin(c.env, c.get('admin').accessToken);
+  const user = await createUser(db, displayName);
+
+  const body: CreateUserResponse = { user };
+  c.header('Cache-Control', 'no-store');
+  return c.json(body, 201);
+});

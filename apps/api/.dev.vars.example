@@ -1,0 +1,16 @@
+# Copy to apps/api/.dev.vars for `wrangler dev`. That file is gitignored.
+#
+# Both values come from your Supabase project:
+#   Dashboard → Project Settings → Data API  (URL)
+#   Dashboard → Project Settings → API Keys  (anon / publishable key)
+
+SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co
+SUPABASE_ANON_KEY=YOUR-ANON-KEY
+
+# Optional: pin the season while testing offseason behaviour (§22).
+# SEASON_OVERRIDE=2025:regular:5
+
+# Deliberately absent: SUPABASE_SERVICE_ROLE_KEY.
+# It bypasses every RLS policy. Nothing in this Worker needs it, and if
+# something ever appears to, that is a sign the RLS model is being worked
+# around rather than used. See src/db/client.ts.

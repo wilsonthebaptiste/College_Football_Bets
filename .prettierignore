@@ -1,0 +1,9 @@
+node_modules
+dist
+coverage
+.wrangler
+apps/api/test/fixtures
+package-lock.json
+
+# The owner's source documents — never reformat them.
+context

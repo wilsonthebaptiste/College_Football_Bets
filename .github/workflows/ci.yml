@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel a superseded run on the same branch rather than queueing behind it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: typecheck · lint · test · season check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format
+        run: npm run format:check
+
+      # Every test runs offline: the Worker tests stub Supabase and sign their
+      # own JWTs with real WebCrypto keys. CI needs no secrets, and deliberately
+      # has none — in particular no SUPABASE_SERVICE_ROLE_KEY (plan §12).
+      - name: Test
+        run: npm run test
+
+      # §21 — no hard-coded season year outside packages/shared/src/season.ts.
+      - name: Season literal check
+        run: npm run check:season
+
+      # Proves the Worker still bundles for the real runtime, not just for Node.
+      - name: Worker bundle (dry run)
+        working-directory: apps/api
+        run: npx wrangler deploy --dry-run --outdir dist

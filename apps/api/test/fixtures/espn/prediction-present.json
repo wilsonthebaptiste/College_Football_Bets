@@ -1,0 +1,146 @@
+{
+  "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/college-football/events/401858225/competitions/401858225/predictor?lang=en&region=us",
+  "name": "Syracuse Orange at Pittsburgh Panthers",
+  "shortName": "SYR @ PITT",
+  "lastModified": "2026-09-17T11:00Z",
+  "homeTeam": {
+    "team": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/2026/teams/221?lang=en&region=us"
+    },
+    "statistics": [
+      {
+        "name": "gameProjection",
+        "displayName": "WIN PROB",
+        "shortDisplayName": "GP",
+        "description": "Team's predicted win percentage in this game at time of given BPI run",
+        "abbreviation": "GP",
+        "value": 82.45,
+        "displayValue": "82.5"
+      },
+      {
+        "name": "matchupQuality",
+        "displayName": "Matchup Quality",
+        "shortDisplayName": "MQ",
+        "description": "A measure of projected competitiveness and excitement in the game, using a 0 to 100 scale, with 100 as the most exciting",
+        "abbreviation": "MQ",
+        "value": 66.881,
+        "displayValue": "66.9"
+      },
+      {
+        "name": "oppSeasonStrengthFbsRank",
+        "displayName": "Opponent Seasson Strength FBS Rank",
+        "shortDisplayName": "OSS FBS RK",
+        "description": "",
+        "abbreviation": "OSS FBS RK",
+        "value": 60,
+        "displayValue": "60"
+      },
+      {
+        "name": "oppSeasonStrengthRating",
+        "displayName": "Opponent Seasson Strength Rating",
+        "shortDisplayName": "OSS RT",
+        "description": "",
+        "abbreviation": "OSS RT",
+        "value": 1.193,
+        "displayValue": "1.2"
+      },
+      {
+        "name": "teamChanceLoss",
+        "displayName": "Team Chance Loss",
+        "shortDisplayName": "TCL",
+        "description": "",
+        "abbreviation": "TCL",
+        "value": 17.549999999999997,
+        "displayValue": "17.5"
+      },
+      {
+        "name": "teamPctHfa",
+        "displayName": "Team Percentage HFA",
+        "shortDisplayName": "TPHFA",
+        "description": "",
+        "abbreviation": "TPHFA",
+        "value": 1,
+        "displayValue": "1"
+      },
+      {
+        "name": "teamPredPtDiff",
+        "displayName": "Team Pred. Point Difference",
+        "shortDisplayName": "TPPD",
+        "description": "",
+        "abbreviation": "TPPD",
+        "value": 13.184,
+        "displayValue": "13.2"
+      }
+    ]
+  },
+  "awayTeam": {
+    "team": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/2026/teams/183?lang=en&region=us"
+    },
+    "statistics": [
+      {
+        "name": "gameProjection",
+        "displayName": "WIN PROB",
+        "shortDisplayName": "GP",
+        "description": "Team's predicted win percentage in this game at time of given BPI run",
+        "abbreviation": "GP",
+        "value": 17.549999999999997,
+        "displayValue": "17.5"
+      },
+      {
+        "name": "matchupQuality",
+        "displayName": "Matchup Quality",
+        "shortDisplayName": "MQ",
+        "description": "A measure of projected competitiveness and excitement in the game, using a 0 to 100 scale, with 100 as the most exciting",
+        "abbreviation": "MQ",
+        "value": 66.881,
+        "displayValue": "66.9"
+      },
+      {
+        "name": "oppSeasonStrengthFbsRank",
+        "displayName": "Opponent Seasson Strength FBS Rank",
+        "shortDisplayName": "OSS FBS RK",
+        "description": "",
+        "abbreviation": "OSS FBS RK",
+        "value": 29,
+        "displayValue": "29"
+      },
+      {
+        "name": "oppSeasonStrengthRating",
+        "displayName": "Opponent Seasson Strength Rating",
+        "shortDisplayName": "OSS RT",
+        "description": "",
+        "abbreviation": "OSS RT",
+        "value": 11.617,
+        "displayValue": "11.6"
+      },
+      {
+        "name": "teamChanceLoss",
+        "displayName": "Team Chance Loss",
+        "shortDisplayName": "TCL",
+        "description": "",
+        "abbreviation": "TCL",
+        "value": 82.45,
+        "displayValue": "82.5"
+      },
+      {
+        "name": "teamPctHfa",
+        "displayName": "Team Percentage HFA",
+        "shortDisplayName": "TPHFA",
+        "description": "",
+        "abbreviation": "TPHFA",
+        "value": -1,
+        "displayValue": "-1"
+      },
+      {
+        "name": "teamPredPtDiff",
+        "displayName": "Team Pred. Point Difference",
+        "shortDisplayName": "TPPD",
+        "description": "",
+        "abbreviation": "TPPD",
+        "value": -13.184,
+        "displayValue": "-13.2"
+      }
+    ]
+  }
+}

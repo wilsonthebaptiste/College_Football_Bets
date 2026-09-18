@@ -1,0 +1,158 @@
+{
+  "capturedAt": "2026-09-18T04:33:10.967Z",
+  "entries": [
+    {
+      "name": "team-list",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams?limit=900",
+      "purpose": "Full team list — source for admin team search, cached 24h (§43).",
+      "status": 200,
+      "ok": true,
+      "bytes": 1856910,
+      "note": null
+    },
+    {
+      "name": "rankings",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/rankings",
+      "purpose": "Rankings feed. Confirms poll names and whether CFP is published (§7).",
+      "status": 200,
+      "ok": true,
+      "bytes": 619991,
+      "note": null
+    },
+    {
+      "name": "scoreboard-20260917",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?dates=20260917&groups=80",
+      "purpose": "One day's slate. Source of live/final/odd-status game ids (§11, §18).",
+      "status": 200,
+      "ok": true,
+      "bytes": 41427,
+      "note": null
+    },
+    {
+      "name": "calendar",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard",
+      "purpose": "Bare scoreboard — carries the season/week calendar used by §21.",
+      "status": 200,
+      "ok": true,
+      "bytes": 406061,
+      "note": null
+    },
+    {
+      "name": "team-ranked",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams/251",
+      "purpose": "A ranked team: rank + record field paths (§7, §8).",
+      "status": 200,
+      "ok": true,
+      "bytes": 38654,
+      "note": null
+    },
+    {
+      "name": "schedule-ranked",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams/251/schedule",
+      "purpose": "Full-season schedule for a ranked team (§17).",
+      "status": 200,
+      "ok": true,
+      "bytes": 513551,
+      "note": null
+    },
+    {
+      "name": "team-unranked",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams/221",
+      "purpose": "An unranked team — must normalize to `unranked`, not `unavailable` (§7).",
+      "status": 200,
+      "ok": true,
+      "bytes": 130907,
+      "note": null
+    },
+    {
+      "name": "schedule-unranked",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams/221/schedule",
+      "purpose": "Schedule with gaps in the week sequence — the bye-week source (§10, §22).",
+      "status": 200,
+      "ok": true,
+      "bytes": 586085,
+      "note": null
+    },
+    {
+      "name": "game-final",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/summary?event=401858225",
+      "purpose": "Completed game: result and final score (§9).",
+      "status": 200,
+      "ok": true,
+      "bytes": 496452,
+      "note": null
+    },
+    {
+      "name": "conferences-index",
+      "url": "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/2026/types/2/groups/80/children?limit=100",
+      "purpose": "FBS conference group ids ($ref list). Hop 1 of conference-name resolution.",
+      "status": 200,
+      "ok": true,
+      "bytes": 1779,
+      "note": null
+    },
+    {
+      "name": "conference-single",
+      "url": "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/2026/types/2/groups/8",
+      "purpose": "One resolved conference (name, shortName, logo). Hop 2.",
+      "status": 200,
+      "ok": true,
+      "bytes": 2674,
+      "note": null
+    },
+    {
+      "name": "prediction-present",
+      "url": "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/events/401858225/competitions/401858225/predictor",
+      "purpose": "Matchup predictor when ESPN publishes one (§12).",
+      "status": 200,
+      "ok": true,
+      "bytes": 4607,
+      "note": null
+    },
+    {
+      "name": "prediction-absent",
+      "url": "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/events/1/competitions/1/predictor",
+      "purpose": "The 404 body for a game with no predictor — must normalize to `null`, never 0% (§12, §46).",
+      "status": 404,
+      "ok": true,
+      "bytes": 84,
+      "note": "HTTP 404"
+    },
+    {
+      "name": "game-upcoming",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/summary?event=401858226",
+      "purpose": "Scheduled game: kickoff, broadcast, null scores (§10).",
+      "status": 200,
+      "ok": true,
+      "bytes": 185589,
+      "note": null
+    },
+    {
+      "name": "scoreboard-postponed-slate",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?dates=20201121&groups=80",
+      "purpose": "Real STATUS_POSTPONED games (20201121) — §18, §50.",
+      "status": 200,
+      "ok": true,
+      "bytes": 393766,
+      "note": null
+    },
+    {
+      "name": "game-postponed",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/summary?event=401234644",
+      "purpose": "A genuinely postponed game. Note state=\"post\" with completed=false (§18).",
+      "status": 200,
+      "ok": true,
+      "bytes": 128110,
+      "note": null
+    },
+    {
+      "name": "game-live",
+      "url": "(synthesized from game-final)",
+      "purpose": "Live game: period, clock, no winner (§11). SYNTHETIC.",
+      "status": 0,
+      "ok": true,
+      "bytes": 496774,
+      "note": "synthetic"
+    }
+  ]
+}

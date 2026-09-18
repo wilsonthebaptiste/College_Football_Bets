@@ -1,0 +1,36 @@
+{
+  "name": "college-football-bets",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json && npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check:season": "node scripts/check-season-literals.mjs",
+    "verify:rls": "node scripts/verify-rls.mjs",
+    "capture:fixtures": "node --experimental-strip-types scripts/capture-espn-fixtures.ts",
+    "dev": "npm run dev --workspace @cfb/api",
+    "verify": "npm run typecheck && npm run lint && npm run test && npm run check:season"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "@types/node": "^22.13.0",
+    "eslint": "^9.36.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.44.0",
+    "vitest": "^3.2.4"
+  }
+}
