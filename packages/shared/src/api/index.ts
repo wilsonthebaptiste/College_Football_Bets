@@ -4,6 +4,7 @@ export type {
   BoardTeam,
   GameResponse,
   HealthResponse,
+  KvWriteReport,
   PredictionResponse,
   SeasonMetaResponse,
   TeamDetailResponse,

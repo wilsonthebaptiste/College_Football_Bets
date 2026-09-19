@@ -1,10 +1,12 @@
-import type { UserSummary, UserTeamSelection } from '@cfb/shared';
+import type { Team, UserSummary, UserTeamSelection } from '@cfb/shared';
 import { notFound } from '../http/errors';
 import type { PostgrestClient } from './postgrest';
 import {
   countOf,
   toSelections,
+  toTeam,
   type AppUserRow,
+  type TeamRow,
   type UserSummaryRow,
   type UserWithSelectionsRow,
 } from './rows';
@@ -63,6 +65,24 @@ export async function getUserWithSelections(
     user: { id: row.id, displayName: row.display_name },
     selections: toSelections(row.user_team_selections ?? []),
   };
+}
+
+/**
+ * One team's identity (§16). A team is global, not board-owned, so its page is
+ * keyed by our own uuid and needs no board context (plan §3).
+ */
+export async function getTeamById(db: PostgrestClient, teamId: string): Promise<Team> {
+  if (!isUuid(teamId)) throw notFound('No such team.');
+
+  const rows = await db.select<TeamRow>('teams', {
+    select: TEAM_COLUMNS,
+    id: `eq.${teamId}`,
+    limit: '1',
+  });
+
+  const row = rows[0];
+  if (row === undefined) throw notFound('No such team.');
+  return toTeam(row);
 }
 
 /** Admin write. Refused by RLS unless the caller's token belongs to an admin. */

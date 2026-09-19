@@ -6,9 +6,21 @@ workers_dev = true
 # ─── Public configuration ────────────────────────────────────────────────────
 # Non-secret values live here so they are reviewable in git.
 [vars]
-# "espn" | "mock". Phase 1 ships neither provider yet; "mock" is the safe default
-# so nothing accidentally hammers ESPN before the adapter exists (Phase 2).
+# "espn" | "mock". "mock" is a generated, deterministic season that needs no
+# network: it keeps local development and CI off ESPN. Switch to "espn" for
+# real data (override locally with `--var SPORTS_PROVIDER:espn`).
 SPORTS_PROVIDER = "mock"
+
+# Optional User-Agent for ESPN requests. Unset uses the descriptive default in
+# src/providers/espn/client.ts. ESPN's CDN answers 403 to that default from local
+# workerd (see docs/espn-notes.md §1), so ESPN mode under `wrangler dev` needs
+# an override. Decide what production sends before the first deploy.
+# ESPN_USER_AGENT = ""
+
+# Development and test only: make chosen provider calls fail, to see stale and
+# unavailable states. Comma-separated: all, schedule, rankings, slate, game,
+# prediction, calendar, teams, team:<providerTeamId>. Never set in production.
+# SPORTS_PROVIDER_FAULT = ""
 
 # Comma-separated CORS allowlist. "*" is accepted for local development only.
 # Phase 5 narrows this to the deployed Pages origin.
@@ -32,8 +44,8 @@ LOG_LEVEL = "info"
 # ─── Workers KV (cache tier L3) ──────────────────────────────────────────────
 # Create with:  wrangler kv namespace create SPORTS_KV
 #               wrangler kv namespace create SPORTS_KV --preview
-# then paste the ids below. Phase 2 starts writing to it; Phase 1 only uses it
-# to cache the Supabase JWKS.
+# then paste the ids below. It holds the Supabase JWKS and the durable copy of
+# sports data. Writes are budgeted in src/cache/tiers.ts, and /api/health reports them.
 [[kv_namespaces]]
 binding = "SPORTS_KV"
 id = "REPLACE_WITH_KV_NAMESPACE_ID"

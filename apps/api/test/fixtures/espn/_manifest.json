@@ -147,12 +147,21 @@
     },
     {
       "name": "game-live",
-      "url": "(synthesized from game-final)",
-      "purpose": "Live game: period, clock, no winner (§11). SYNTHETIC.",
-      "status": 0,
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/summary?event=401858226",
+      "purpose": "Live game: period, clock, no winner (§11). REAL capture: Miami at Wake Forest, 12:33 1st quarter, 0-0. Replaces the Phase 1 synthetic fixture.",
+      "status": 200,
       "ok": true,
-      "bytes": 496774,
-      "note": "synthetic"
+      "bytes": 200867,
+      "note": "captured 2026-09-18T23:40Z during the game (Phase 2)"
+    },
+    {
+      "name": "scoreboard-live",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?dates=20260918&groups=80&limit=300",
+      "purpose": "A live slate: one game in progress (12:22 1st, score \"0\"-\"0\") beside two scheduled. The live-overlay source (§11, §24).",
+      "status": 200,
+      "ok": true,
+      "bytes": 110223,
+      "note": "captured 2026-09-18T23:40Z during the game (Phase 2)"
     }
   ]
 }

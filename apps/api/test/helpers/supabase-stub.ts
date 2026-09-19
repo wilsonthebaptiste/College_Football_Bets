@@ -45,6 +45,8 @@ export interface SupabaseStub {
   requests: RecordedRequest[];
   /** Requests to PostgREST only, in order. */
   restRequests: RecordedRequest[];
+  /** Requests to ESPN only, in order. */
+  espnRequests: RecordedRequest[];
   jwksFetches: number;
   restore: () => void;
 }
@@ -53,18 +55,31 @@ export interface StubOptions {
   jwks?: { keys: JsonWebKey[] };
   /** Answer for `POST /rest/v1/rpc/is_admin`. A function sees the bearer token. */
   isAdmin?: boolean | ((request: RecordedRequest) => boolean);
-  /** Rows returned for `GET /rest/v1/app_users`. */
+  /** Rows returned for `GET /rest/v1/app_users`. Filtered by `id=eq.` when the query has one. */
   appUsers?: unknown[];
+  /** Rows returned for `GET /rest/v1/teams`, filtered by `id=eq.`. */
+  teams?: unknown[];
   /** Extra routes, checked before the built-ins. */
   routes?: StubRoute[];
   /** Force every PostgREST call to fail with this status. */
   restFailure?: number;
+  /** Anything that is not Supabase (the ESPN fixture stub). `null` falls through to a 404. */
+  external?: (url: URL) => Response | null;
+}
+
+/** PostgREST's `id=eq.<uuid>` filter, applied to stubbed rows. */
+function filterById(rows: unknown[], url: URL): unknown[] {
+  const filter = url.searchParams.get('id');
+  if (filter === null || !filter.startsWith('eq.')) return rows;
+  const id = filter.slice('eq.'.length);
+  return rows.filter((row) => (row as { id?: unknown }).id === id);
 }
 
 export function installSupabaseStub(options: StubOptions = {}): SupabaseStub {
   const stub: SupabaseStub = {
     requests: [],
     restRequests: [],
+    espnRequests: [],
     jwksFetches: 0,
     restore: () => {
       vi.unstubAllGlobals();
@@ -105,6 +120,7 @@ export function installSupabaseStub(options: StubOptions = {}): SupabaseStub {
       };
       stub.requests.push(recorded);
       if (url.pathname.startsWith('/rest/v1')) stub.restRequests.push(recorded);
+      if (url.hostname.endsWith('espn.com')) stub.espnRequests.push(recorded);
 
       for (const route of options.routes ?? []) {
         if (route.match(url, method)) {
@@ -137,8 +153,15 @@ export function installSupabaseStub(options: StubOptions = {}): SupabaseStub {
             { id: '11111111-2222-3333-4444-555555555555', display_name: row?.display_name ?? '' },
           ]);
         }
-        return json(200, options.appUsers ?? []);
+        return json(200, filterById(options.appUsers ?? [], url));
       }
+
+      if (url.pathname === '/rest/v1/teams' && method === 'GET') {
+        return json(200, filterById(options.teams ?? [], url));
+      }
+
+      const external = options.external?.(url);
+      if (external !== undefined && external !== null) return external;
 
       return json(404, { message: `unstubbed: ${method} ${url.pathname}` });
     },

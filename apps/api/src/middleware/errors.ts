@@ -6,6 +6,14 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { DbError } from '../db/postgrest';
 import type { AppBindings } from '../env';
 import { HttpError, statusForKind } from '../http/errors';
+import { ProviderError, appErrorKindFor } from '../providers/types';
+
+/** What a user may be told about each provider failure. Never ESPN's own words (§26). */
+const PROVIDER_MESSAGES: Record<ProviderError['kind'], string> = {
+  unavailable: 'Sports data temporarily unavailable.',
+  invalid_response: 'Sports data could not be read.',
+  not_found: 'Not found.',
+};
 
 /**
  * One exit point for every failure, so no route can invent its own error shape.
@@ -24,6 +32,15 @@ function classify(error: unknown): Classified {
   }
   if (error instanceof DbError) {
     return { kind: error.kind, message: error.message, detail: error.detail };
+  }
+  if (error instanceof ProviderError) {
+    // Reaches here only when a provider failure IS the response (a game that
+    // does not exist). Everywhere else it becomes an envelope, not an error.
+    return {
+      kind: appErrorKindFor(error),
+      message: PROVIDER_MESSAGES[error.kind],
+      detail: `${error.name}: ${error.message}`,
+    };
   }
   if (error instanceof HTTPException) {
     // Raised by Hono itself, e.g. a malformed JSON body.

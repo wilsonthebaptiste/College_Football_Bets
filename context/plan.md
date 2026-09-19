@@ -4,7 +4,8 @@
 
 - [x] **Phase 1 — Foundation & Contracts** — ✅ **Complete, 2026-09-18.** Monorepo, strict TS, normalized domain types, season logic, Supabase schema + RLS + seed, admin-only auth, Worker skeleton, ESPN fixture spike. Details, departures from this plan, and ESPN findings are in [Phase 1 — Completion Notes](#phase-1--completion-notes).
   - *Owner follow-ups (not blocking Phase 2):* run `npm run verify:rls` with the two test accounts in `.env`, and the live 403/201 token test (README, Level 3c). Both behaviours are already proven by the automated tests and the Postgres run. These two checks repeat them against the live project.
-- [ ] **Phase 2 — Sports Data Layer**: provider interface, ESPN adapter + validators, three-tier cache with centralized TTL policy, board/team/schedule/game/prediction endpoints, error isolation
+- [x] **Phase 2 — Sports Data Layer** — ✅ **Complete, 2026-09-18.** Provider interface, ESPN adapter and validators, a generated mock season, a three-tier cache with a centralized TTL policy, board/team/schedule/game/prediction and admin team-search endpoints, error isolation, and fault injection. Details, departures, and findings are in [Phase 2 — Completion Notes](#phase-2--completion-notes).
+  - *Owner decision before the first deploy:* what `ESPN_USER_AGENT` production sends. ESPN's CDN refused the default from local workerd (see the notes).
 - [ ] **Phase 3 — Frontend Core**: app shell (no login required), design tokens, home user picker, board page, team cards, loading/error/freshness states, responsive
 - [ ] **Phase 4 — Detail & Live**: team detail page, full-season schedule, prediction panel, polling strategy, live game treatment, bye/offseason states
 - [ ] **Phase 5 — Admin & Ship**: admin UI (users, team search, add/remove/reorder), server-side authorization tests, a11y + perf pass, deploy, cron warmers, docs
@@ -750,6 +751,104 @@ Route tests with `@cloudflare/vitest-pool-workers`: every read route returns 200
 - Workers' 10 ms CPU limit on the free tier is CPU time, not wall-clock — six parallel `fetch`es are fine, but don't do heavy synchronous work over full schedules on the board path.
 - ESPN may return HTTP 200 with an error body; check payload shape, not just status.
 - Timezones: do all comparisons in UTC. "Today's games" for the scoreboard endpoint needs a deliberate date choice — document it.
+
+### Phase 2 — Completion Notes
+
+**Completed 2026-09-18.** As with Phase 1: where these notes and the plan above disagree, the code and these notes win.
+
+#### Exit criteria
+
+| Exit criterion | Result | How it was verified |
+|---|---|---|
+| The board returns six teams with rank, record, previous, next, and live where applicable | ✅ | Route tests over mock and over the Phase 1 ESPN captures, then **live ESPN** in workerd (Friday of week 3): all 12 cards on two boards filled, Texas Tech live against Houston with score and clock |
+| Provider killed → 200 board from cache, `stale`, timestamps unchanged | ✅ | Route test with `SPORTS_PROVIDER_FAULT=all` after a warm read. Repeated live in workerd with `SPORTS_PROVIDER_FAULT=slate`: the live card went `stale` with its original `fetchedAt`, `X-Cache: stale`, `max-age=10` |
+| One team forced to fail leaves the other five intact | ✅ | Route test with `team:251`. Also seen unplanned: with ESPN answering 403 to everything, both boards were still 200s with six error cards each |
+| Every fixture survives random field deletion in `validate.ts` without throwing | ✅ | A property-style test: for every fixture, seeded random deletion, nulling, and type-swapping at random depths. 40–200 rounds per fixture, depending on size, with every failure reproducible from its seed |
+| KV write counter shows zero writes for `live_game` or `board_composite` | ✅ | Route test reads `/api/health` `cache.kvWrites.byCategory` after live boards. Structurally, both categories are L1-only in `policy.ts`, and `tiers.ts` refuses any KV write under 300 s |
+| `SPORTS_PROVIDER=mock` serves a full board offline | ✅ | Route tests, and a workerd run. The mock provider makes no network calls. Only Supabase, for users and selections, is remote |
+
+#### What was built
+
+| Area | Where | Notes |
+|---|---|---|
+| Provider interface | `providers/types.ts` | §6 plus `slateKeyFor`/`getSlate` for the live overlay. `ProviderError` has kind `unavailable`, `invalid_response`, or `not_found`, plus `retryable`, `status`, and `cause` |
+| ESPN adapter | `providers/espn/` | `client.ts`: 6 s timeout, one jittered retry on network error, 403, 429, or 5xx, error-body detection, and a configurable User-Agent. `validate.ts`: total readers into `raw.ts` shapes, with ids restricted to `[A-Za-z0-9_-]{1,40}`. `normalize.ts`: raw → domain. `status-map.ts`: §18, where final requires `completed === true` |
+| Mock provider | `providers/mock/` | A generated, deterministic season for the 50 seeded teams, with round-robin pairings (the circle method) and one bye per team. It has live games at any hour, postponed and canceled games, predictions labeled `mock_predictor`, polls labeled "Mock Top 25", and a postseason mode where the season is complete. Game ids are 13 digits and self-describing |
+| Fault injection | `providers/faults.ts` | `SPORTS_PROVIDER_FAULT`: `all`, `team:<id>`, `schedule`, `rankings`, `slate`, `game`, `prediction`, `calendar`, `teams`. Wraps either provider |
+| Cache | `cache/` | `policy.ts` is the TTL table and key builder (`v2\|provider\|resource\|…`). `tiers.ts`: L1 isolate `Map` (1,000 entries), L2 Cache API behind a write-then-read probe, L3 KV with a 300 s floor, a per-key write interval, and a daily per-isolate ledger (soft cap 700, hard cap 900). `swr.ts`: the §7 state machine plus in-flight coalescing |
+| Services | `services/` | `board.ts` uses `Promise.allSettled` and one shared rankings read per board. `derive.ts` works out previous, next, live, and bye. `live.ts` does the schedule + slate overlay and freshness composition. `team.ts`, `games.ts`, `search.ts` |
+| Routes | `routes/` | `GET /api/users/:id/board`, `/api/teams/:id`, `/api/teams/:id/schedule`, `/api/games/:id?team=`, `/api/games/:id/prediction`, and `GET /api/admin/teams/search?q=` (admin only, `private, no-store`). `Cache-Control` follows each response's own expiry. `X-Cache` is `hit`, `miss`, or `stale` |
+| Season | `season/resolve.ts` | Resolution order: override, then the provider calendar (cached 6 h), then the date heuristic. `/api/health` uses a peek mode that never calls the provider |
+| Fixtures | `test/fixtures/espn/` | `game-live.json` is now a **real** capture, taken during Miami at Wake Forest. `scoreboard-live.json` is new. All 19 fixtures are real |
+
+#### Departures from the plan, and why
+
+1. **Live data is a schedule plus scoreboard overlay, not a per-game fetch.**
+   - ESPN's schedule endpoint has no score for a game in progress, and it is cached for 15 min.
+   - So a game that is live, or that kicked off less than 6 h ago and isn't final, is looked up in that day's scoreboard. One call covers every game that day, cached 25 s in L1.
+   - A scoreboard older than the schedule is never applied.
+   - When the scoreboard can't be fetched, the card is marked `stale` rather than shown as current.
+2. **The mock is generated, not fixture-backed.** The fixtures cover two teams. The generated season covers all 50 seeded teams, and it produces live games at any hour of the day, so Phase 3 can build live UI on a Tuesday. CI stays deterministic.
+3. **KV writes have their own budget.** There is a `kvWriteIntervalSeconds` column in `policy.ts`: the schedule's KV copy is refreshed at most hourly, though L1 refreshes every 15 min. A daily ledger refuses writes past its hard cap. The free tier's roughly 1,000 writes a day would not survive a Saturday otherwise.
+4. **The board's own TTL drops to 15 s when any card is failing or stale**, the same as while a team is live. The response also gets `max-age=10`. This was found in the live run: a board of six error cards had been cached for 60 s, and was publicly cacheable for 60 s too.
+5. **"Next game" keeps a grace period.**
+   - A scheduled game stays "next" for 6 h past kickoff, and a delayed or suspended one for 3 days, so a game whose status lags doesn't vanish at kickoff.
+   - A postponed game counts only if its date is still ahead.
+   - Byes come from the calendar week, or from a week gap with the next game more than 7 days out. They are regular season only, and are decided only when the schedule parsed completely.
+6. **Rankings pick CFP, falling back to AP**, and show the poll's own name. A poll with any bad entry is dropped whole: a partial poll would turn a ranked team into "NR". A poll from another season is refused.
+7. **The route tests run in Node Vitest, not `@cloudflare/vitest-pool-workers`.** Phase 1's setup was kept. The Worker is driven through `app.request()` with a fake KV and a stubbed `fetch`. Runtime parity was checked by hand in workerd: mock mode, ESPN mode, and a fault drill. Moving to pool-workers is a Phase 5 candidate.
+8. **Conferences are deferred to Phase 5.** Card conference names come from the `teams` table. The two-hop ESPN lookup (espn-notes §7) arrives with the admin UI.
+9. **`ESPN_USER_AGENT` exists** because of the 403 finding below.
+10. **Health.** `/api/health` `cache` is now `{ l2Available, kvWrites }`. `l2Available` comes from a real write-then-read probe, and `kvWrites` is the ledger. This closes Phase 1's first known limitation.
+
+#### Contract changes Phase 3 must know (`packages/shared`)
+
+- `Game.kickoffTbd: boolean`: the time is not set yet, and `kickoffUtc` holds a midnight-Eastern placeholder. Show "TBD", never "12:00 AM".
+- `NextGameSlot` bye: `{ kind: 'bye'; week: number | null; following: Game | null }`, so the card can say "Bye week, then @ Colorado".
+- `PredictionSource` adds `'mock_predictor'`. Always show `sourceLabel` (§46).
+- `HealthResponse.cache` is `{ l2Available; kvWrites: KvWriteReport }`.
+- An error card still has `team`: only `snapshot` is `{ data: null, error }`. `anyLive` drives the polling interval. Each card's `freshness.fetchedAt` is the "updated at" to display.
+
+#### ESPN findings from Phase 2
+
+Full detail is in [docs/espn-notes.md](../docs/espn-notes.md) §1 and §11.
+
+- **ESPN's CDN refused every request from local workerd with our User-Agent.** Node's `fetch` passes with any User-Agent. From workerd and curl, only User-Agents that *begin* with a known HTTP-library name pass (`curl/…`, `python-requests/…`, `okhttp/…`). This fits Akamai checking the User-Agent against the TLS fingerprint. **What deployed Workers get is unmeasured.** It needs measuring on the first deploy, together with the owner's decision on `ESPN_USER_AGENT`.
+- The inline predictor disappears once a game is live, but the core predictor endpoint still answers. The schedule's root `season` is ESPN's current season, and `requestedSeason` is the one to check. `timeValid: false` means the kickoff is TBD. `scoreboard?dates=` is a US Eastern day.
+
+#### Verification performed
+
+- **Automated.** 287 tests across 13 files, all passing. Phase 2 added 186 of them:
+  - ESPN normalize, validate, client, and provider: 84.
+  - Cache: 22.
+  - Derivation and live overlay: 33.
+  - Routes: 33.
+  - Mock: 14.
+  - Plus `npm run verify` (typecheck, lint, tests, season check) and `format:check`.
+- **Bundle.** 185.4 KiB, 47.3 KiB gzipped (`wrangler deploy --dry-run`).
+- **Mock in workerd.**
+  - `/api/health` answered with `l2Available: true` (true locally; on `workers.dev` the probe will report false).
+  - Wilson's board returned 200 with `anyLive: true` and a 15 s TTL.
+  - `X-Cache` went from `miss` to `hit`.
+- **Real ESPN in workerd (2026-09-18, Friday night of week 3).**
+  - With the default User-Agent, every call got 403, and both boards degraded to six error cards with a 200 status, as designed.
+  - With `ESPN_USER_AGENT` set, all 12 cards filled: AP ranks, records, previous and next games, and Texas Tech live at 7–10.
+  - Texas Tech's schedule had 13 rows, including the week-6 bye and TBD kickoffs.
+  - The prediction endpoint answered for an upcoming game, and for a live one, which by then can only come from the core endpoint.
+  - 14 KV writes (1 calendar, 12 schedules, 1 rankings) for two cold boards.
+  - The fault drill is under Exit criteria.
+- **Bugs the live run caught, now fixed and tested.**
+  - The degraded-board caching described in departure 4.
+  - `composeFreshness` let a rankings read served from cache label a just-fetched card `cached`. Reference parts now only make a card `stale`.
+
+#### Known limitations carried forward
+
+- **CPU.** Measured in Node, a Saturday scoreboard parses in about 7 ms and the team list in about 6.6 ms, against the free tier's 10 ms CPU limit. Both are parsed once per refresh, not per request, but a cold refresh on the request path is the risk (§10 risk register). Check Workers CPU time in observability after deploy. A Phase 5 cron warmer would move these refreshes off the request path.
+- **The KV ledger is per isolate.** It is an early-warning brake, not a global count. The authoritative number is in the Cloudflare dashboard.
+- **L2 is inert on `workers.dev`.** The probe reports it honestly, and L1 plus L3 carry the load.
+- **Coalescing is per isolate.** Two isolates can each fetch the same key once.
+- **A live card with no scoreboard.** If the scoreboard fails for a game the schedule shows as in progress, the card shows the live status with a null score, flagged `stale`. Phase 4's live treatment should render that as "score unavailable".
+- `wrangler.toml` KV ids are still placeholders, as in Phase 1. Phase 5 creates them.
 
 ---
 

@@ -57,6 +57,40 @@ Consequences for `providers/espn/client.ts`:
 An explicit `User-Agent` was sent throughout. Whether it helps is unproven, but
 sending one costs nothing and anonymous clients are the first thing a CDN sheds.
 
+### Phase 2: the 403 is also a client check, not only throttling
+
+When the Worker first ran against ESPN under `wrangler dev` (2026-09-18,
+local workerd), **every request got 403**, starting with the very first one.
+Probing from the same machine, one request per combination:
+
+| Client             | User-Agent                                                                            | Result |
+| ------------------ | ------------------------------------------------------------------------------------- | ------ |
+| Node 22 `fetch`    | any value tried, including none and our own                                           | 200    |
+| curl               | curl's default (`curl/8.x`)                                                           | 200    |
+| curl               | our default, none, `node`, `Mozilla/5.0`, `Wget/…`                                    | 403    |
+| curl               | `python-requests/…`, `okhttp/…`                                                       | 200    |
+| workerd (a Worker) | our default, none, `node`, `Mozilla/5.0`                                              | 403    |
+| workerd (a Worker) | `curl/8.9.1`, `curl/8.9.1 college-football-bets/0.2`, `python-requests/…`, `okhttp/…` | 200    |
+| workerd (a Worker) | `college-football-bets/0.2 curl/8.9.1` (the curl token second)                        | 403    |
+
+The pattern is consistent with Akamai judging the User-Agent **together with
+the TLS fingerprint**. Node's fingerprint passes whatever it claims to be. For
+curl-like fingerprints, which include workerd's, only User-Agents that
+_begin_ with a known HTTP-library name pass. The Phase 1 spike never saw this
+because it ran in Node.
+
+Consequences:
+
+- `ESPN_USER_AGENT` (a Worker var) overrides the User-Agent. Unset, the
+  descriptive default in `client.ts` is sent, and local workerd gets a 403.
+- **Production is unmeasured.** Deployed Workers make subrequests from
+  Cloudflare's network with Cloudflare's TLS stack. That may behave like local
+  workerd, better, or worse. Measure it on the first deploy, before relying on
+  ESPN mode.
+- Choosing a User-Agent that begins with another client's name is a decision
+  for the owner, not something the code makes silently. ESPN's site API is
+  undocumented and unofficial either way.
+
 ---
 
 ## 2. Field paths — team snapshot
@@ -386,57 +420,97 @@ different questions. Use `season.year` directly; do not derive a year from
 `apps/api/test/fixtures/espn/` — regenerate with the capture script; `_manifest.json`
 records the URL, purpose, HTTP status, and byte count of every entry.
 
-| File                              | Covers                                                  | Real?           |
-| --------------------------------- | ------------------------------------------------------- | --------------- |
-| `team-list.json`                  | 762 teams, admin search source (§43)                    | ✅              |
-| `team-ranked.json`                | Texas — `rank` present, record parts (§7, §8)           | ✅              |
-| `team-unranked.json`              | Pittsburgh — `rank` key absent (§7)                     | ✅              |
-| `schedule-ranked.json`            | Full season, **bye at week 5** (§10, §17)               | ✅              |
-| `schedule-unranked.json`          | Full season, **bye at week 10**                         | ✅              |
-| `scoreboard-20260917.json`        | A day's slate, all final                                | ✅              |
-| `scoreboard-20260918.json`        | A day's slate of scheduled (`pre`) games                | ✅              |
-| `scoreboard-postponed-slate.json` | 2020-11-21 — 7 postponed alongside 34 final             | ✅              |
-| `calendar.json`                   | Season/week calendar (§21)                              | ✅              |
-| `rankings.json`                   | 5 polls, no CFP in week 3 (§7)                          | ✅              |
-| `game-final.json`                 | Completed game, `winner` present (§9)                   | ✅              |
-| `game-upcoming.json`              | Scheduled, **no `score` key**, inline `predictor` (§10) | ✅              |
-| `game-postponed.json`             | `state:"post"` + `completed:false` + `0–0` (§18, §50)   | ✅              |
-| `game-live.json`                  | `STATUS_IN_PROGRESS`, period 3, clock 4:32 (§11)        | ⚠ **synthetic** |
-| `prediction-present.json`         | `gameProjection` 82.45 / 17.55 (§12)                    | ✅              |
-| `prediction-absent.json`          | The 404 body (§12, §46)                                 | ✅              |
-| `conferences-index.json`          | 11 FBS conference `$ref`s                               | ✅              |
-| `conference-single.json`          | Group 8 → "Southeastern Conference"                     | ✅              |
+| File                              | Covers                                                  | Real?        |
+| --------------------------------- | ------------------------------------------------------- | ------------ |
+| `team-list.json`                  | 762 teams, admin search source (§43)                    | ✅           |
+| `team-ranked.json`                | Texas — `rank` present, record parts (§7, §8)           | ✅           |
+| `team-unranked.json`              | Pittsburgh — `rank` key absent (§7)                     | ✅           |
+| `schedule-ranked.json`            | Full season, **bye at week 5** (§10, §17)               | ✅           |
+| `schedule-unranked.json`          | Full season, **bye at week 10**                         | ✅           |
+| `scoreboard-20260917.json`        | A day's slate, all final                                | ✅           |
+| `scoreboard-20260918.json`        | A day's slate of scheduled (`pre`) games                | ✅           |
+| `scoreboard-postponed-slate.json` | 2020-11-21 — 7 postponed alongside 34 final             | ✅           |
+| `calendar.json`                   | Season/week calendar (§21)                              | ✅           |
+| `rankings.json`                   | 5 polls, no CFP in week 3 (§7)                          | ✅           |
+| `game-final.json`                 | Completed game, `winner` present (§9)                   | ✅           |
+| `game-upcoming.json`              | Scheduled, **no `score` key**, inline `predictor` (§10) | ✅           |
+| `game-postponed.json`             | `state:"post"` + `completed:false` + `0–0` (§18, §50)   | ✅           |
+| `game-live.json`                  | Miami at Wake Forest, 1st quarter 12:33, 0–0 (§11)      | ✅ (Phase 2) |
+| `scoreboard-live.json`            | Friday slate: one game live beside two scheduled (§24)  | ✅ (Phase 2) |
+| `prediction-present.json`         | `gameProjection` 82.45 / 17.55 (§12)                    | ✅           |
+| `prediction-absent.json`          | The 404 body (§12, §46)                                 | ✅           |
+| `conferences-index.json`          | 11 FBS conference `$ref`s                               | ✅           |
+| `conference-single.json`          | Group 8 → "Southeastern Conference"                     | ✅           |
 
-### About `game-live.json`
+### About the live fixtures
 
-Seventeen of the eighteen fixtures are genuine captures. The live one is not:
-a live college football game exists for about four hours a week, and this capture
-did not land in one.
-
-It is **derived from `game-final.json`** by rewinding the status block to the
-`STATUS_IN_PROGRESS` vocabulary observed in ESPN's own status objects and
-deleting `winner` from both competitors. The status shape is real; the scores are
-a completed game's. It carries `"_synthetic": true` and a `_syntheticNote`
-explaining itself.
-
-**Replace it with a real capture at the first opportunity.** Re-running the
-script during a live Saturday game overwrites it automatically — the synthetic
-path only runs when no live game is found. Until then, the Phase 4 live-behaviour
-exit criteria are being tested against a shape that is plausible rather than
-observed, and that is worth knowing.
+All nineteen fixtures are genuine captures. Phase 1's `game-live.json` was
+synthetic: no game was live during that capture, so it was derived from a final
+game. It was replaced during Phase 2 by a real capture, taken at
+2026-09-18T23:40Z during event 401858226. `scoreboard-live.json` came from the
+same minute, with the `groups=80&limit=300` query the live overlay uses.
+`_manifest.json` records both.
 
 ---
 
-## 10. Open questions for Phase 2
+## 10. Open questions from Phase 1, and what Phase 2 found
 
-1. **Does the throttle apply per-IP or per-ASN?** A Cloudflare Worker's egress IP
-   is not this machine's. The 403 behaviour may differ from a Worker, better or
-   worse. Measure before tuning retry policy.
-2. **Is the inline `summary.predictor` always present for upcoming games,** or
-   only for games ESPN considers notable? Only one upcoming game was sampled.
-3. **Does `curatedRank` ever disagree with the `rankings` feed?** Both are rank
-   sources; the plan uses the rankings feed so the poll can be named. Worth one
-   assertion in the normalizer tests.
-4. **Conference realignment mid-capture.** Group ids are season-scoped
-   (`/seasons/{year}/…`). Make sure the cached conference map is keyed by season,
-   or a September rollover will serve last year's conferences.
+1. **Does the throttle apply per-IP or per-ASN?** _Partly answered._ The 403 is
+   not only rate-based. There is also a client check that local workerd fails
+   with the default User-Agent (§1, "Phase 2"). What a deployed Worker gets is
+   still unmeasured. The retry policy is unchanged: one retry after 250–750 ms,
+   then `provider_unavailable`.
+2. **Is the inline `summary.predictor` always present for upcoming games?**
+   _Answered for the cases that matter._ It is present in the upcoming-game
+   capture and **absent once a game is live** (`game-live.json` has none) and
+   when final. The standalone core predictor still answered for a live game
+   (Texas Tech–Houston, 2026-09-18). The adapter therefore reads the inline
+   predictor first and falls back to the core endpoint, where a 404 means
+   "no prediction", not an error.
+3. **Does `curatedRank` ever disagree with the `rankings` feed?** _Made moot._
+   Ranks come only from the rankings feed, so a card can never show two
+   different ranks. `curatedRank` is validated but unused.
+4. **Conference realignment.** _Deferred with conferences._ Conference names
+   stay application-owned (the `teams` table) in Phase 2. The two-hop lookup
+   (§7) arrives with the admin UI in Phase 5, and its cache key must include
+   the season.
+
+---
+
+## 11. Phase 2 findings
+
+Found while building and running the adapter against live ESPN:
+
+- **`timeValid: false` means the kickoff time is TBD.** `date` then holds a
+  placeholder, usually midnight Eastern. Six of Texas's twelve games had it at
+  capture time. It is exposed as `Game.kickoffTbd`, so the UI can say "TBD"
+  instead of showing a made-up 12:00 AM.
+- **The schedule's root `season` is ESPN's current season, whatever was
+  asked.** `requestedSeason` says which season the events belong to. The
+  adapter checks it and refuses a mismatched schedule as `invalid_response`,
+  rather than caching last year's games under this year's key.
+- **The schedule endpoint carries no score for a game in progress.** In the
+  live run it listed Texas Tech–Houston as in progress, with a clock but no
+  `score`, while the scoreboard had 7–10. The schedule is also cached for 15
+  minutes. Live state therefore comes from the day's scoreboard, which is
+  cached for 25 s and laid over the schedule for games near kickoff. When the scoreboard can't be
+  fetched, the card is marked `stale` rather than showing the schedule's
+  out-of-date status as current.
+- **`scoreboard?dates=` is a US Eastern calendar day.** The 2026-09-18
+  scoreboard includes a game at `2026-09-19T02:30Z`, which is 10:30 PM ET on
+  Friday. Slate keys are computed in `America/New_York`. `limit=300` keeps a
+  full Saturday on one page.
+- **Parse cost is small but not zero.** Measured in Node on real payloads:
+  - a full Saturday scoreboard, about 7 ms;
+  - the 1.9 MB team list, about 6.6 ms;
+  - a summary, about 2 ms;
+  - a schedule, about 1 ms.
+
+  Only normalized results are cached, so each payload is parsed once per
+  refresh, not on every request. The scoreboard is the one to watch against the
+  free tier's 10 ms CPU limit.
+
+- **Record entries come in three shapes**, one per payload family: `record[]`
+  with `displayValue`, `record[]` with `summary`, and `records[]` with
+  `summary`. **Summary payloads carry `location` but no `shortDisplayName`.**
+  `validate.ts` reads whichever of these is present.

@@ -28,9 +28,28 @@ export interface HealthResponse {
   season: Season;
   seasonSource: SeasonSource;
   cache: {
-    /** False on `workers.dev`, where the Cache API is a no-op. Informational. */
+    /**
+     * Result of a real write-then-read probe of the Cache API, run once per
+     * isolate. False on `workers.dev`, where `caches.default` exists but stores
+     * nothing. Informational: no code path depends on L2.
+     */
     l2Available: boolean;
+    kvWrites: KvWriteReport;
   };
+}
+
+/**
+ * KV writes made by THIS isolate today (plan §7: the free tier allows roughly
+ * 1,000 writes a day). Each isolate counts only its own, so this is a floor on
+ * the account-wide figure, not the total. The dashboard has the real number.
+ */
+export interface KvWriteReport {
+  /** UTC day the counts belong to, `YYYY-MM-DD`. */
+  day: string;
+  total: number;
+  byCategory: Record<string, number>;
+  /** Writes skipped because the daily hard cap was reached. */
+  refused: number;
 }
 
 // ─── GET /api/meta/season ────────────────────────────────────────────────────

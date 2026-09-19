@@ -4,8 +4,10 @@ import { corsMiddleware } from './middleware/cors';
 import { notFoundHandler, onError } from './middleware/errors';
 import { requestId } from './middleware/request-id';
 import { adminRoutes } from './routes/admin';
+import { gameRoutes } from './routes/games';
 import { healthRoutes } from './routes/health';
 import { metaRoutes } from './routes/meta';
+import { teamRoutes } from './routes/teams';
 import { userRoutes } from './routes/users';
 
 /**
@@ -31,6 +33,8 @@ export function createApp(): Hono<AppBindings> {
   app.route('/api/health', healthRoutes);
   app.route('/api/meta', metaRoutes);
   app.route('/api/users', userRoutes);
+  app.route('/api/teams', teamRoutes);
+  app.route('/api/games', gameRoutes);
 
   // Admin only — JWT verification + is_admin() live inside this branch.
   app.route('/api/admin', adminRoutes);

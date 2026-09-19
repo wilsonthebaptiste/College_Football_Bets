@@ -10,6 +10,18 @@ SUPABASE_ANON_KEY=YOUR-ANON-KEY
 # Optional: pin the season while testing offseason behaviour (§22).
 # SEASON_OVERRIDE=2025:regular:5
 
+# Optional: real ESPN data instead of the generated mock season (the default
+# in wrangler.toml). Under local workerd ESPN's CDN refuses the default
+# User-Agent with a 403, so ESPN mode needs ESPN_USER_AGENT as well. See
+# docs/espn-notes.md §1 before choosing a value.
+# SPORTS_PROVIDER=espn
+# ESPN_USER_AGENT=
+
+# Optional, development only: make chosen provider calls fail, to see the
+# stale and unavailable states. Comma-separated: all, schedule, rankings,
+# slate, game, prediction, calendar, teams, team:<providerTeamId>.
+# SPORTS_PROVIDER_FAULT=team:251
+
 # Deliberately absent: SUPABASE_SERVICE_ROLE_KEY.
 # It bypasses every RLS policy. Nothing in this Worker needs it, and if
 # something ever appears to, that is a sign the RLS model is being worked

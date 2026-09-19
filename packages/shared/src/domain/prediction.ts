@@ -5,8 +5,11 @@
  * ship a computed number wearing a provider's name. There is no code path in
  * this application that produces a `Prediction` from anything but a provider
  * payload; "unavailable" is a designed state, and the correct one.
+ *
+ * `mock_predictor` exists so the offline mock provider can label its synthetic
+ * numbers as exactly that. Mock output must never wear ESPN's name either (§46).
  */
-export type PredictionSource = 'espn_matchup_predictor';
+export type PredictionSource = 'espn_matchup_predictor' | 'mock_predictor';
 
 export interface Prediction {
   source: PredictionSource;

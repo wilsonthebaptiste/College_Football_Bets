@@ -1,32 +1,38 @@
-import type { SeasonMetaResponse } from '@cfb/shared';
+import type { Envelope, Season, SeasonMetaResponse } from '@cfb/shared';
 import { fresh } from '@cfb/shared';
 import { Hono } from 'hono';
-import { providerName, type AppBindings } from '../env';
-import { resolveSeasonForRequest } from '../season/resolve';
+import { policyFor } from '../cache/policy';
+import type { AppBindings } from '../env';
+import { cacheControlFor } from '../http/cache-headers';
+import { resolveSeason } from '../season/resolve';
+import { servicesFor } from '../services/context';
 
 export const metaRoutes = new Hono<AppBindings>();
 
 /**
- * The resolved season is provider-influenced data, so it travels in an envelope
- * like everything else provider-influenced does (§23). In Phase 1 it is always
- * computed on the spot and therefore always `fresh`; once Phase 2 caches the
- * provider calendar for six hours, the same route will start returning `cached`
- * and `stale` states without the client needing to change.
+ * The resolved season is provider-influenced data, so it travels in an
+ * envelope like everything else provider-influenced does (§23).
+ *
+ * When the provider's calendar decided it, the envelope is that calendar read's
+ * own: `cached`, `fresh`, or `stale` with the calendar's real `fetchedAt`.
+ * When an override or the date heuristic decided it, nothing was fetched, so
+ * it is computed now and `source` says how.
  */
-const SEASON_TTL_SECONDS = 6 * 60 * 60;
-
 metaRoutes.get('/season', async (c) => {
-  const { season, source } = await resolveSeasonForRequest(c.env);
+  const services = servicesFor(c);
+  const { season, source, calendar } = await resolveSeason(services);
+  const ttlSeconds = policyFor('season_calendar').ttlSeconds;
 
-  const body: SeasonMetaResponse = {
-    season: fresh(season, {
-      provider: providerName(c.env),
-      ttlSeconds: SEASON_TTL_SECONDS,
-      fetchedAt: new Date(),
-    }),
-    source,
-  };
+  const envelope: Envelope<Season> =
+    source === 'provider' && calendar !== null
+      ? { data: season, freshness: calendar.freshness, error: null }
+      : fresh(season, {
+          provider: services.provider.name,
+          ttlSeconds,
+          fetchedAt: new Date(services.now()),
+        });
 
-  c.header('Cache-Control', `public, max-age=${String(SEASON_TTL_SECONDS)}`);
+  const body: SeasonMetaResponse = { season: envelope, source };
+  c.header('Cache-Control', cacheControlFor(envelope.freshness, services.now()));
   return c.json(body);
 });

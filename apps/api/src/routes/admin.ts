@@ -1,18 +1,20 @@
-import type { CreateUserRequest, CreateUserResponse } from '@cfb/shared';
+import type { CreateUserRequest, CreateUserResponse, TeamSearchResponse } from '@cfb/shared';
 import { Hono } from 'hono';
 import { supabaseAsAdmin } from '../db/client';
 import { createUser } from '../db/queries';
 import type { AppBindings } from '../env';
 import { invalidRequest } from '../http/errors';
 import { requireAdmin } from '../middleware/require-admin';
+import { servicesFor } from '../services/context';
+import { parseQuery, searchTeams } from '../services/search';
 
 /**
  * `/api/admin/*` — the only authenticated branch of the API.
  *
- * Phase 1 implements user creation only. The rest of §8's admin surface (rename,
- * add/remove selection, reorder, team search) arrives with the admin console in
- * Phase 5; what matters now is that the *authorization* is real and testable,
- * because everything added later inherits it by being mounted here.
+ * Implemented so far: user creation (Phase 1) and team search (Phase 2). The
+ * rest of §8's admin surface (rename, add/remove selection, reorder) arrives
+ * with the admin console in Phase 5. Everything added later inherits the
+ * authorization by being mounted here.
  */
 export const adminRoutes = new Hono<AppBindings>();
 
@@ -47,4 +49,18 @@ adminRoutes.post('/users', async (c) => {
   const body: CreateUserResponse = { user };
   c.header('Cache-Control', 'no-store');
   return c.json(body, 201);
+});
+
+/**
+ * §43 — candidate team identities for a board. Admin-only because only the
+ * administrator picks teams, and so that an open search box is not one more
+ * public endpoint to crawl.
+ */
+adminRoutes.get('/teams/search', async (c) => {
+  const query = parseQuery(c.req.query('q'));
+  const teams = await searchTeams(servicesFor(c), query);
+
+  const body: TeamSearchResponse = { teams };
+  c.header('Cache-Control', 'private, no-store');
+  return c.json(body);
 });

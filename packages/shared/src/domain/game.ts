@@ -32,6 +32,13 @@ export interface Game {
 
   /** §20 — ISO 8601 UTC. A formatted string like "4:30 PM" never enters the model. */
   kickoffUtc: string;
+  /**
+   * True when the provider has a date but no confirmed kickoff time ("TBD").
+   * The time part of `kickoffUtc` is then a placeholder (ESPN uses midnight
+   * Eastern), so the UI must render the date alone. Showing "9:00 PM" for a
+   * game with no announced time would be fabricated sports data (§4).
+   */
+  kickoffTbd: boolean;
 
   status: GameStatus;
   /** The provider's own wording: "3rd Quarter", "Final/OT", "Postponed". */
@@ -54,10 +61,13 @@ export interface Game {
 /**
  * §10 — "no next game" has three distinct meanings and the UI says something
  * different for each. A bare `Game | null` cannot tell them apart.
+ *
+ * `bye.following` is the first game after the bye, so a card can say "Bye
+ * week" without hiding the next opponent (§10 asks for both).
  */
 export type NextGameSlot =
   | { kind: 'game'; game: Game }
-  | { kind: 'bye'; week: number | null }
+  | { kind: 'bye'; week: number | null; following: Game | null }
   | { kind: 'none'; reason: 'season_complete' | 'no_upcoming' };
 
 /** A row of the full-season schedule (§17). Bye weeks are rows, not gaps. */

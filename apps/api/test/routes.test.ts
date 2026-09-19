@@ -8,6 +8,8 @@ import type {
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { resetJwksCache } from '../src/auth/jwks';
 import { createApp } from '../src/app';
+import { resetInflight } from '../src/cache/swr';
+import { resetCacheTiers } from '../src/cache/tiers';
 import type { Env } from '../src/env';
 import {
   installSupabaseStub,
@@ -32,8 +34,11 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
-  // The JWKS memo is module scope and would otherwise leak between tests.
+  // The JWKS memo and the cache tiers are module scope and would otherwise
+  // leak between tests.
   resetJwksCache();
+  resetCacheTiers();
+  resetInflight();
 });
 
 afterEach(() => {
