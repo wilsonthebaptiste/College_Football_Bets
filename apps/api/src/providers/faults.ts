@@ -1,5 +1,5 @@
 import type { Prediction, RankingsSnapshot, Season, TeamIdentity } from '@cfb/shared';
-import type { ProviderGame, ProviderSchedule, SportsDataProvider } from './types';
+import type { ConferenceMap, ProviderGame, ProviderSchedule, SportsDataProvider } from './types';
 import { ProviderError } from './types';
 
 /**
@@ -12,12 +12,13 @@ import { ProviderError } from './types';
  *   all          every call fails ("the provider is down")
  *   team:<id>    that team's schedule fails, and nothing else (§42 isolation)
  *   schedule     every schedule fails
- *   rankings | slate | game | prediction | calendar | teams
+ *   rankings | slate | game | prediction | calendar | teams | conferences
  *
  * The failure is a retryable `unavailable`, the same as a real ESPN outage.
  */
 
-type Operation = 'schedule' | 'rankings' | 'slate' | 'game' | 'prediction' | 'calendar' | 'teams';
+type Operation =
+  'schedule' | 'rankings' | 'slate' | 'game' | 'prediction' | 'calendar' | 'teams' | 'conferences';
 
 const OPERATIONS: readonly Operation[] = [
   'schedule',
@@ -27,6 +28,7 @@ const OPERATIONS: readonly Operation[] = [
   'prediction',
   'calendar',
   'teams',
+  'conferences',
 ];
 
 export interface FaultPlan {
@@ -60,6 +62,7 @@ function injected(operation: string): ProviderError {
 
 export class FaultyProvider implements SportsDataProvider {
   readonly name: SportsDataProvider['name'];
+  readonly teamNamespace: SportsDataProvider['teamNamespace'];
   private readonly inner: SportsDataProvider;
   private readonly plan: FaultPlan;
 
@@ -67,6 +70,7 @@ export class FaultyProvider implements SportsDataProvider {
     this.inner = inner;
     this.plan = plan;
     this.name = inner.name;
+    this.teamNamespace = inner.teamNamespace;
   }
 
   private check(operation: Operation, teamId?: string): void {
@@ -83,6 +87,11 @@ export class FaultyProvider implements SportsDataProvider {
   async listTeams(): Promise<TeamIdentity[]> {
     this.check('teams');
     return this.inner.listTeams();
+  }
+
+  async getConferences(season: Season): Promise<ConferenceMap> {
+    this.check('conferences');
+    return this.inner.getConferences(season);
   }
 
   async getTeamSchedule(providerTeamId: string, season: Season): Promise<ProviderSchedule> {

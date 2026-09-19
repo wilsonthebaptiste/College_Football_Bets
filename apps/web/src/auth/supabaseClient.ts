@@ -1,10 +1,11 @@
-import { createClient, type AuthError, type Session } from '@supabase/supabase-js';
+import { createClient, type Session } from '@supabase/supabase-js';
 import type { SupabaseConfig } from '../lib/config';
 import {
   ADMIN_SESSION_STORAGE_KEY,
   type AdminAuthClient,
   type AdminSessionInfo,
 } from './adminAuth';
+import { describeSignInError } from './signInError';
 
 /**
  * The only module that imports `supabase-js`. It is reached through a dynamic
@@ -16,21 +17,6 @@ import {
 
 function toInfo(session: Session | null): AdminSessionInfo | null {
   return session === null ? null : { email: session.user.email ?? null };
-}
-
-function describeSignInError(error: AuthError): string {
-  if (error.code === 'invalid_credentials' || error.status === 400) {
-    return 'Email or password is incorrect.';
-  }
-  if (error.status === 429) return 'Too many attempts. Wait a minute, then try again.';
-  if (
-    error.status === undefined ||
-    error.status === 0 ||
-    error.name === 'AuthRetryableFetchError'
-  ) {
-    return 'Could not reach the sign-in service. Check your connection and try again.';
-  }
-  return error.message;
 }
 
 export function createAdminAuthClient(config: SupabaseConfig): AdminAuthClient {

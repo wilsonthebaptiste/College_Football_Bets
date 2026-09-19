@@ -28,6 +28,10 @@ export function statusForKind(kind: AppErrorKind): number {
       return 403;
     case 'not_found':
       return 404;
+    case 'conflict':
+      return 409;
+    case 'rate_limited':
+      return 429;
     case 'provider_invalid_response':
       return 502;
     case 'provider_unavailable':
@@ -48,6 +52,9 @@ export const forbidden = (message: string, detail?: string): HttpError =>
 
 export const notFound = (message: string, detail?: string): HttpError =>
   new HttpError('not_found', message, detail ?? null);
+
+export const conflict = (message: string, detail?: string): HttpError =>
+  new HttpError('conflict', message, detail ?? null);
 
 export const badGateway = (message: string, detail?: string): HttpError =>
   new HttpError('provider_invalid_response', message, detail ?? null);

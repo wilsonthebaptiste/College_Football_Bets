@@ -49,27 +49,43 @@ function deferrerOf(c: Context<AppBindings>): ((work: Promise<unknown>) => void)
   }
 }
 
+export interface ServiceOptions {
+  requestId: string | null;
+  /** Keeps background work (an L2 write) alive past the response, when the runtime allows it. */
+  defer: ((work: Promise<unknown>) => void) | null;
+}
+
+/**
+ * Services outside a request: the cron warmer (`cron/warm.ts`) has an `Env`
+ * and an execution context but no Hono `Context`.
+ */
+export function createServices(env: Env, options: ServiceOptions): Services {
+  const now = (): number => Date.now();
+  const provider = createProvider(env, now);
+  const tiers = new TieredCache({
+    kv: kvStoreOf(env),
+    edge: edgeCacheOf(),
+    now,
+    defer: options.defer,
+  });
+  return {
+    env,
+    provider,
+    cache: new SwrCache({ tiers, provider: provider.name, now, requestId: options.requestId }),
+    now,
+    requestId: options.requestId,
+  };
+}
+
 export function servicesFor(c: Context<AppBindings>): Services {
   // Typed as always present; it is not until the first call sets it.
   const existing = c.get('services') as Services | undefined;
   if (existing !== undefined) return existing;
 
-  const now = (): number => Date.now();
-  const provider = createProvider(c.env, now);
-  const tiers = new TieredCache({
-    kv: kvStoreOf(c.env),
-    edge: edgeCacheOf(),
-    now,
+  const services = createServices(c.env, {
+    requestId: c.get('requestId') ?? null,
     defer: deferrerOf(c),
   });
-  const requestId = c.get('requestId') ?? null;
-  const services: Services = {
-    env: c.env,
-    provider,
-    cache: new SwrCache({ tiers, provider: provider.name, now, requestId }),
-    now,
-    requestId,
-  };
   c.set('services', services);
   return services;
 }

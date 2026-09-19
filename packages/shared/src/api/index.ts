@@ -14,12 +14,18 @@ export type {
 } from './responses';
 
 export type {
-  AdminSessionResponse,
   AddSelectionRequest,
   AddSelectionResponse,
+  AdminBoardResponse,
+  AdminSessionResponse,
+  AdminUsersResponse,
   CreateUserRequest,
   CreateUserResponse,
   RenameUserRequest,
+  RenameUserResponse,
   ReorderSelectionsRequest,
+  SelectionsResponse,
   TeamSearchResponse,
 } from './requests';
+
+export { BOARD_TEAM_COUNT, DISPLAY_NAME_MAX_LENGTH, MAX_SELECTIONS } from './requests';

@@ -168,3 +168,25 @@ export interface RawPoll {
 export interface RawRankings {
   polls: RawPoll[];
 }
+
+// ─── Conferences (espn-notes §7) ─────────────────────────────────────────────
+
+/**
+ * A core-API collection page: `{ count, pageCount, items: [{ $ref }] }`. Each
+ * `$ref` is a URL whose last path id is what we want (a group or a team).
+ */
+export interface RawRefPage {
+  /** The ids read out of `items[].$ref`, in order. Unreadable refs are skipped. */
+  ids: string[];
+  /** `count`: how many the collection holds, to notice a truncated page. */
+  count: number | null;
+}
+
+/** `…/seasons/{year}/types/2/groups/{id}`: one conference. */
+export interface RawGroup {
+  id: string;
+  /** `shortName`: "SEC", "Big Ten", "Sun Belt". What a card shows. */
+  shortName: string | null;
+  /** `name`: "Southeastern Conference". */
+  name: string | null;
+}

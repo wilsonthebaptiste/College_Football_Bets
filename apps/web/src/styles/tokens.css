@@ -30,6 +30,8 @@
   --color-on-live: #ffffff;
   --color-win: #1a6639;
   --color-loss: #b3261e;
+  /* Text on a loss-coloured (destructive) button. 6.0:1. */
+  --color-on-danger: #ffffff;
   --color-stale: #7d4b00;
   --color-stale-soft: #fcefd8;
   --color-stale-rule: #e3b25f;
@@ -95,6 +97,7 @@
     --color-on-live: #1c0509;
     --color-win: #74d198;
     --color-loss: #ff8f85;
+    --color-on-danger: #0e1511;
     --color-stale: #f2b65c;
     --color-stale-soft: #2c2313;
     --color-stale-rule: #6b5020;

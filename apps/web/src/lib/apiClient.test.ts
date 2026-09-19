@@ -211,6 +211,8 @@ describe('error classification and retries', () => {
     expect(kindForStatus(401)).toBe('unauthorized');
     expect(kindForStatus(403)).toBe('forbidden');
     expect(kindForStatus(404)).toBe('not_found');
+    expect(kindForStatus(409)).toBe('conflict');
+    expect(kindForStatus(429)).toBe('rate_limited');
     expect(kindForStatus(502)).toBe('provider_invalid_response');
     expect(kindForStatus(503)).toBe('provider_unavailable');
     expect(kindForStatus(500)).toBe('internal');

@@ -1,4 +1,5 @@
 import type { Game, GameResult, TeamRecord } from '@cfb/shared';
+import { OPPONENT_LOGO_PX, sizedLogoUrl } from '../providers/logos';
 import type { ProviderCompetitor, ProviderGame } from '../providers/types';
 
 /**
@@ -58,7 +59,8 @@ export function toTeamGame(game: ProviderGame, providerTeamId: string): Game | n
     clock: game.clock,
     // §19: the provider's own designation. A neutral site overrides it.
     homeAway: game.neutralSite ? 'neutral' : side,
-    opponent: them.team,
+    // Drawn at 24 px in a schedule row; no need to ship the 500 px original.
+    opponent: { ...them.team, logoUrl: sizedLogoUrl(them.team.logoUrl, OPPONENT_LOGO_PX) },
     teamScore: us.score,
     opponentScore: them.score,
     result,

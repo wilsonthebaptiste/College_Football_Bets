@@ -114,3 +114,61 @@ describe('EspnProvider', () => {
     expect(urls).toHaveLength(0);
   });
 });
+
+describe('EspnProvider.getConferences (espn-notes §7, plan §5.1)', () => {
+  it('maps every team in each FBS conference to the conference short name', async () => {
+    const { espn, urls } = provider();
+    const map = await espn.getConferences(REGULAR);
+
+    // The SEC capture lists 16 teams; the other ten groups are served empty.
+    expect(Object.values(map).filter((name) => name === 'SEC')).toHaveLength(16);
+    expect(map['333']).toBe('SEC'); // Alabama
+    expect(map['61']).toBe('SEC'); // Georgia
+    expect(map['194']).toBeUndefined(); // Ohio State is Big Ten, served empty here
+
+    // One index read, then a name and a member list per conference.
+    expect(urls[0]).toContain('/seasons/2026/types/2/groups/80/children');
+    expect(urls).toHaveLength(1 + 2 * 11);
+  });
+
+  it('is all or nothing: one conference failing fails the map', async () => {
+    const { espn } = provider({
+      override: (url) =>
+        url.pathname.endsWith('/groups/5/teams') ? new Response('nope', { status: 500 }) : null,
+    });
+    expect(await failure(espn.getConferences(REGULAR))).toMatchObject({ kind: 'unavailable' });
+  });
+
+  it('refuses a truncated member page rather than map part of a conference', async () => {
+    const { espn } = provider({
+      override: (url) =>
+        url.pathname.endsWith('/groups/8/teams')
+          ? Response.json({
+              count: 40,
+              items: [{ $ref: 'http://x/v2/seasons/2026/teams/333?lang=en' }],
+            })
+          : null,
+    });
+    expect(await failure(espn.getConferences(REGULAR))).toMatchObject({
+      kind: 'invalid_response',
+    });
+  });
+
+  it('reads ids only from well-formed refs, so a hostile ref cannot reach a URL', async () => {
+    const { espn, urls } = provider({
+      override: (url) =>
+        url.pathname.endsWith('/groups/80/children')
+          ? Response.json({
+              count: 2,
+              items: [
+                { $ref: 'http://x/v2/seasons/2026/types/2/groups/8?lang=en' },
+                { $ref: 'http://x/v2/seasons/2026/types/2/groups/..%2F..%2Fevil' },
+              ],
+            })
+          : null,
+    });
+    const map = await espn.getConferences(REGULAR);
+    expect(map['333']).toBe('SEC');
+    expect(urls.some((url) => url.includes('evil'))).toBe(false);
+  });
+});

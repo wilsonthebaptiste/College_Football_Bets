@@ -17,13 +17,36 @@ export class DbError extends Error {
   readonly kind: AppErrorKind;
   readonly status: number;
   readonly detail: string | null;
+  /**
+   * The Postgres SQLSTATE PostgREST reported, such as `23505` (unique
+   * violation), `23503` (foreign key), or `42501` (insufficient privilege).
+   * Lets a route turn "that team is already on this board" into its own
+   * message without parsing prose. `null` when there was no database answer.
+   */
+  readonly code: string | null;
+  /** Postgres's own message. Names the constraint for 23505/23503. Logs and branching only. */
+  readonly dbMessage: string | null;
 
-  constructor(kind: AppErrorKind, message: string, status: number, detail: string | null = null) {
+  constructor(
+    kind: AppErrorKind,
+    message: string,
+    status: number,
+    detail: string | null = null,
+    code: string | null = null,
+    dbMessage: string | null = null,
+  ) {
     super(message);
     this.name = 'DbError';
     this.kind = kind;
     this.status = status;
     this.detail = detail;
+    this.code = code;
+    this.dbMessage = dbMessage;
+  }
+
+  /** True for a unique or foreign-key violation naming this constraint. */
+  violates(constraint: string): boolean {
+    return this.dbMessage?.includes(`"${constraint}"`) ?? false;
   }
 }
 
@@ -38,13 +61,26 @@ interface PostgrestErrorBody {
 const REQUEST_TIMEOUT_MS = 8_000;
 
 function kindForStatus(status: number): AppErrorKind {
+  // PostgREST answers 400 for a bad value: a CHECK violation (23514), or the
+  // 22023 that `reorder_selections` raises for ids from another board.
+  if (status === 400) return 'invalid_request';
   if (status === 401) return 'unauthorized';
   // 403 covers RLS `WITH CHECK` refusals and the 42501 raised by
   // `reorder_selections`. Both mean the same thing to a caller: not allowed.
   if (status === 403) return 'forbidden';
   if (status === 404) return 'not_found';
+  // 409 is a unique violation (23505) or a foreign-key violation (23503): the
+  // write collides with what is stored. The caller's problem, not a 500.
+  if (status === 409) return 'conflict';
   return 'internal';
 }
+
+const MESSAGES: Partial<Record<AppErrorKind, string>> = {
+  unauthorized: 'Not permitted.',
+  forbidden: 'Not permitted.',
+  conflict: 'That change conflicts with what is already saved.',
+  invalid_request: 'The application database refused a value in the request.',
+};
 
 export interface PostgrestClientOptions {
   baseUrl: string;
@@ -112,13 +148,14 @@ export class PostgrestClient {
       const detail = [body.code, body.message, body.details]
         .filter((part): part is string => typeof part === 'string')
         .join(' | ');
+      const kind = kindForStatus(response.status);
       throw new DbError(
-        kindForStatus(response.status),
-        response.status === 403 || response.status === 401
-          ? 'Not permitted.'
-          : 'The application database rejected the request.',
+        kind,
+        MESSAGES[kind] ?? 'The application database rejected the request.',
         response.status,
         detail === '' ? null : detail,
+        typeof body.code === 'string' ? body.code : null,
+        typeof body.message === 'string' ? body.message : null,
       );
     }
 

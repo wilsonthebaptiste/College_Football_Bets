@@ -101,6 +101,15 @@
       "note": null
     },
     {
+      "name": "conference-teams",
+      "url": "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/2026/types/2/groups/8/teams?limit=200",
+      "purpose": "One conference's member teams ($ref list). Hop 3: team id -> conference. Captured 2026-09-19 (Phase 5).",
+      "status": 200,
+      "ok": true,
+      "bytes": 2419,
+      "note": null
+    },
+    {
       "name": "prediction-present",
       "url": "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/events/401858225/competitions/401858225/predictor",
       "purpose": "Matchup predictor when ESPN publishes one (§12).",

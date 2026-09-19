@@ -10,6 +10,8 @@ export default defineConfig({
       'packages/*/src/**/*.test.ts',
       'apps/*/src/**/*.test.{ts,tsx}',
       'apps/*/test/**/*.test.ts',
+      // The database security model, on real Postgres (PGlite). See the file.
+      'supabase/test/**/*.test.ts',
     ],
     // Fixtures are data, not tests.
     exclude: ['**/node_modules/**', '**/dist/**', '**/test/fixtures/**'],

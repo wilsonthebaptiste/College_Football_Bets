@@ -76,6 +76,20 @@ export function espnResponse(url: URL, options: EspnStubOptions = {}): Response 
   }
 
   if (url.hostname === 'sports.core.api.espn.com') {
+    // Conferences (espn-notes §7). The index and the SEC are real captures.
+    // The other ten conferences are served as the SEC's shape with no teams,
+    // so a full `getConferences` run has something to read for every group.
+    const group = /\/groups\/([^/]+)(\/children|\/teams)?$/.exec(path);
+    if (group !== null) {
+      const [, id, hop] = group;
+      if (hop === '/children') return json(fixtureText('conferences-index'));
+      if (id === '8')
+        return json(fixtureText(hop === '/teams' ? 'conference-teams' : 'conference-single'));
+      if (hop === '/teams') return json('{"count":0,"items":[]}');
+      return json(
+        JSON.stringify({ id, name: `Conference ${id ?? ''}`, shortName: `C${id ?? ''}` }),
+      );
+    }
     const predictor = /\/events\/([^/]+)\/competitions\/[^/]+\/predictor$/.exec(path);
     if (predictor !== null && (options.predictors ?? ['401858225']).includes(predictor[1] ?? '')) {
       return json(fixtureText('prediction-present'));

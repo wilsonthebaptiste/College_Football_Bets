@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { AppBindings } from './env';
 import { corsMiddleware } from './middleware/cors';
 import { notFoundHandler, onError } from './middleware/errors';
+import { readRateLimit } from './middleware/rate-limit';
 import { requestId } from './middleware/request-id';
 import { adminRoutes } from './routes/admin';
 import { gameRoutes } from './routes/games';
@@ -25,6 +26,8 @@ export function createApp(): Hono<AppBindings> {
 
   app.use('*', requestId);
   app.use('*', corsMiddleware);
+  // After CORS, so a 429 still carries the headers a browser needs to read it.
+  app.use('/api/*', readRateLimit);
 
   app.onError(onError);
   app.notFound(notFoundHandler);

@@ -85,9 +85,10 @@ export function AdminSessionProvider({ children }: { children: ReactNode }) {
     return {
       getAccessToken: () => client.accessToken(),
       refresh: () => client.refresh(),
-      onUnauthorized: () => {
+      onUnauthorized: (redirect = true) => {
         void client.signOut();
         queryClient.removeQueries({ queryKey: ['admin'] });
+        if (!redirect) return;
         const next = `${window.location.pathname}${window.location.search}`;
         void navigate(`/login?next=${encodeURIComponent(next)}`, { replace: true });
       },

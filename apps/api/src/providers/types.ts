@@ -43,11 +43,28 @@ import type {
 export interface SportsDataProvider {
   readonly name: ProviderName;
 
+  /**
+   * Whose id space `providerTeamId` belongs to, which is what the `teams`
+   * table's `provider` column records (§43). Usually the provider's own name.
+   * The mock borrows ESPN's ids, so that every seeded board resolves in mock
+   * mode, and says so here: a team the administrator adds in mock mode is the
+   * same `teams` row as in ESPN mode, not a mock-only duplicate.
+   */
+  readonly teamNamespace: ProviderName;
+
   /** The provider's own calendar (§21). `null` when it has no opinion. */
   getCurrentSeason(): Promise<Season | null>;
 
   /** Every team the provider knows. The admin search source (§43). */
   listTeams(): Promise<TeamIdentity[]>;
+
+  /**
+   * Conference short names for a season, keyed by provider team id: `SEC`,
+   * `Big Ten`. Teams in no conference the provider lists are simply absent.
+   * Shown beside each team in the admin search (§43, plan §5.1) and stored
+   * with a team when it is added to a board.
+   */
+  getConferences(season: Season): Promise<ConferenceMap>;
 
   /** A team's full season schedule, from no team's point of view. */
   getTeamSchedule(providerTeamId: string, season: Season): Promise<ProviderSchedule>;
@@ -71,6 +88,9 @@ export interface SportsDataProvider {
 }
 
 // ─── Provider-layer data shapes ──────────────────────────────────────────────
+
+/** Provider team id → conference short name. A plain object so it caches as JSON. */
+export type ConferenceMap = Record<string, string>;
 // Normalized, but not yet from any team's perspective. Internal to the API:
 // the web app never sees these, only the `Game` they are converted into.
 

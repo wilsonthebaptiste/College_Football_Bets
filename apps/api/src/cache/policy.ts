@@ -8,6 +8,7 @@ import type { ProviderName, SeasonType } from '@cfb/shared';
 
 export type CacheCategory =
   | 'team_list'
+  | 'conferences'
   | 'season_calendar'
   | 'rankings'
   | 'schedule'
@@ -57,6 +58,13 @@ const TABLE: Readonly<Record<CacheCategory, PolicyRow>> = {
   team_list: {
     ttlSeconds: DAY,
     staleSeconds: 7 * DAY,
+    tiers: DURABLE,
+    kvWriteIntervalSeconds: DAY,
+  },
+  // Phase 5: conference membership changes at most once a year (espn-notes §7).
+  conferences: {
+    ttlSeconds: DAY,
+    staleSeconds: 30 * DAY,
     tiers: DURABLE,
     kvWriteIntervalSeconds: DAY,
   },
@@ -150,6 +158,7 @@ export const L3_MIN_TTL_SECONDS = 300;
  */
 export type CacheResource =
   | 'team_list'
+  | 'conferences'
   | 'season_calendar'
   | 'rankings'
   | 'schedule'

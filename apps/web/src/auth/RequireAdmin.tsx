@@ -1,13 +1,13 @@
-import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router';
 import { ErrorState, LoadingNote } from '../components/States';
-import { api, queryKeys } from '../lib/api';
 import { isApiError } from '../lib/apiClient';
 import { useAdminSession } from './AdminSessionProvider';
+import { useAdminCheck } from './useAdminCheck';
 
 /**
- * Guards `/admin`, and only `/admin` (plan §9). Two checks, both UX:
+ * Guards `/admin` and the pages under it, and nothing else (plan §9). Two
+ * checks, both UX:
  *
  * 1. A session exists. Without one, go to `/login` and come back afterwards.
  * 2. The Worker agrees this session is an administrator. A valid login that
@@ -21,14 +21,7 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
   const session = useAdminSession();
   const location = useLocation();
 
-  const check = useQuery({
-    queryKey: queryKeys.adminSession,
-    queryFn: ({ signal }) => api.adminSession(session.authHooks, signal),
-    enabled: session.authHooks !== null,
-    staleTime: 5 * 60_000,
-    retry: false,
-    refetchOnWindowFocus: false,
-  });
+  const check = useAdminCheck();
 
   if (!session.configured) {
     return (

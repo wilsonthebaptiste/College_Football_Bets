@@ -1,4 +1,5 @@
 import type { ProviderName, Team, UserTeamSelection } from '@cfb/shared';
+import { sizedLogoUrl, TEAM_LOGO_PX } from '../providers/logos';
 
 /**
  * Postgres row shapes, kept separate from the domain model on the same principle
@@ -34,6 +35,14 @@ export interface SelectionRow {
   teams: TeamRow | null;
 }
 
+/** A `user_team_selections` row as a write returns it (`Prefer: return=representation`). */
+export interface SelectionIdRow {
+  id: string;
+  user_id: string;
+  team_id: string;
+  selection_order: number;
+}
+
 export interface UserWithSelectionsRow extends AppUserRow {
   user_team_selections: SelectionRow[] | null;
 }
@@ -51,6 +60,10 @@ function toProviderName(value: string): ProviderName {
   return value === 'mock' ? 'mock' : 'espn';
 }
 
+/**
+ * The stored logo URL stays canonical (the provider's full-size image); what
+ * leaves the API is a copy sized for the page (plan §5.3, `providers/logos.ts`).
+ */
 export function toTeam(row: TeamRow): Team {
   return {
     id: row.id,
@@ -59,7 +72,7 @@ export function toTeam(row: TeamRow): Team {
     name: row.name,
     displayName: row.display_name,
     abbreviation: row.abbreviation,
-    logoUrl: row.logo_url,
+    logoUrl: sizedLogoUrl(row.logo_url, TEAM_LOGO_PX),
     conference: row.conference,
     primaryColor: row.primary_color,
     altColor: row.alt_color,

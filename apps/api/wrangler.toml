@@ -12,9 +12,11 @@ workers_dev = true
 SPORTS_PROVIDER = "mock"
 
 # Optional User-Agent for ESPN requests. Unset uses the descriptive default in
-# src/providers/espn/client.ts. ESPN's CDN answers 403 to that default from local
-# workerd (see docs/espn-notes.md §1), so ESPN mode under `wrangler dev` needs
-# an override. Decide what production sends before the first deploy.
+# src/providers/espn/client.ts. ESPN's CDN answers 403 to that default, both from
+# local workerd and from the deployed Worker (docs/espn-notes.md §1), so ESPN
+# mode under `wrangler dev` needs an override, e.g.
+# `--var ESPN_USER_AGENT:"curl/8.9.1 college-football-bets/0.5"`. Production
+# sets it in [env.production.vars] below.
 # ESPN_USER_AGENT = ""
 
 # Development and test only: make chosen provider calls fail, to see stale and
@@ -23,8 +25,13 @@ SPORTS_PROVIDER = "mock"
 # SPORTS_PROVIDER_FAULT = ""
 
 # Comma-separated CORS allowlist. "*" is accepted for local development only.
-# Phase 5 narrows this to the deployed Pages origin.
+# The deployed Worker overrides this with the Pages origin: see [env.production]
+# below and docs/ops.md, "Deploying".
 ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
+
+# Public reads allowed per client address per minute, per isolate (plan §5.3).
+# Unset means 120; "off" disables it. See src/middleware/rate-limit.ts.
+# READ_RATE_LIMIT_PER_MINUTE = "120"
 
 LOG_LEVEL = "info"
 
@@ -52,4 +59,46 @@ id = "REPLACE_WITH_KV_NAMESPACE_ID"
 preview_id = "REPLACE_WITH_KV_PREVIEW_ID"
 
 [observability]
+enabled = true
+
+# ─── Cron warmers (plan §5.4, src/cron/warm.ts) ──────────────────────────────
+# Every 10 minutes on autumn weekends (Fri–Sun UTC, August–January), hourly
+# otherwise. They refresh the season calendar, rankings, team list, and
+# conferences into KV, off the request path, and run one Postgres select so the
+# free Supabase project never pauses. A handful of KV writes a day. The handler
+# skips the hourly run when the game-day schedule is also firing.
+# `wrangler dev --test-scheduled` exposes /__scheduled to run one by hand.
+[triggers]
+crons = ["*/10 * * 8-12,1 FRI,SAT,SUN", "0 * * * *"]
+
+# ─── Production (wrangler deploy --env production) ───────────────────────────
+# Deployed 2026-09-19 as https://cfb-api.cfb-api.workers.dev, serving the site
+# at https://cfb-board-pfc.pages.dev (docs/ops.md, "Deploying").
+# Top-level [vars] and bindings are NOT inherited by an environment, so every
+# one is restated here. Secrets are per environment too:
+#   wrangler secret put SUPABASE_URL --env production
+#   wrangler secret put SUPABASE_ANON_KEY --env production
+[env.production]
+name = "cfb-api"
+workers_dev = true
+
+[env.production.vars]
+SPORTS_PROVIDER = "espn"
+# The deployed Pages origin. Nothing else.
+ALLOWED_ORIGINS = "https://cfb-board-pfc.pages.dev"
+LOG_LEVEL = "info"
+# The owner's decision (plan Phase 2 follow-up; docs/ops.md, "The ESPN
+# User-Agent"). Measured on the first deploy: ESPN answers 403 to the default
+# from Cloudflare's network, as it did from local workerd, and accepts a value
+# with a common HTTP-library prefix.
+ESPN_USER_AGENT = "curl/8.9.1 college-football-bets/0.5"
+
+[[env.production.kv_namespaces]]
+binding = "SPORTS_KV"
+id = "5777a3ec40164cc283c45de25f685ed3"
+
+[env.production.triggers]
+crons = ["*/10 * * 8-12,1 FRI,SAT,SUN", "0 * * * *"]
+
+[env.production.observability]
 enabled = true

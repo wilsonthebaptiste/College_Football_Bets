@@ -1,5 +1,5 @@
 import type { Prediction, RankingsSnapshot, Season, TeamIdentity } from '@cfb/shared';
-import type { ProviderGame, ProviderSchedule, SportsDataProvider } from '../types';
+import type { ConferenceMap, ProviderGame, ProviderSchedule, SportsDataProvider } from '../types';
 import { ProviderError } from '../types';
 import { ESPN_CORE_API, ESPN_SITE_API, EspnClient } from './client';
 import {
@@ -16,7 +16,9 @@ import {
 import type { RawSchedule } from './raw';
 import {
   readCalendar,
+  readGroup,
   readRankings,
+  readRefPage,
   readSchedule,
   readScoreboard,
   readStandalonePredictor,
@@ -27,6 +29,22 @@ import {
 /** Ids are interpolated into ESPN URLs; anything unusual cannot be a real id. */
 const SAFE_ID = /^[A-Za-z0-9_-]{1,40}$/;
 const SLATE_KEY = /^\d{8}$/;
+
+/** ESPN's group id for FBS, the parent of every FBS conference (espn-notes §7). */
+const FBS_GROUP = '80';
+/**
+ * Conferences fetched at once. Each costs two requests, and ESPN's CDN answers
+ * bursts with a 403 (espn-notes §1), so this stays small.
+ */
+const CONFERENCE_BATCH = 3;
+
+function chunks<T>(items: readonly T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let start = 0; start < items.length; start += size) {
+    out.push(items.slice(start, start + size));
+  }
+  return out;
+}
 
 function safeId(value: string): string {
   if (!SAFE_ID.test(value)) {
@@ -45,6 +63,7 @@ function invalid(what: string): ProviderError {
  */
 export class EspnProvider implements SportsDataProvider {
   readonly name = 'espn' as const;
+  readonly teamNamespace = 'espn' as const;
   private readonly client: EspnClient;
   private readonly now: () => number;
 
@@ -66,6 +85,45 @@ export class EspnProvider implements SportsDataProvider {
     const raw = readTeamList(body);
     if (raw === null) throw invalid('team list');
     return raw.map(toTeamIdentity);
+  }
+
+  /**
+   * FBS conference names, which no team payload carries (espn-notes §7). The
+   * core API lists FBS's conferences, and each conference its name and its
+   * teams: 1 + 2 × 11 small requests, cached for a day above this layer.
+   *
+   * All or nothing. A conference that fails to load throws, rather than
+   * leaving its teams silently conference-less for a day.
+   */
+  async getConferences(season: Season): Promise<ConferenceMap> {
+    const base = `${ESPN_CORE_API}/seasons/${String(season.year)}/types/2/groups`;
+    const children = readRefPage(
+      (await this.client.getJson(`${base}/${FBS_GROUP}/children?limit=100`)).body,
+      'groups',
+    );
+    if (children === null || children.ids.length === 0) throw invalid('conference list');
+
+    const map: ConferenceMap = {};
+    for (const batch of chunks(children.ids, CONFERENCE_BATCH)) {
+      await Promise.all(
+        batch.map(async (groupId) => {
+          const id = safeId(groupId);
+          const [detail, members] = await Promise.all([
+            this.client.getJson(`${base}/${id}`),
+            this.client.getJson(`${base}/${id}/teams?limit=200`),
+          ]);
+          const group = readGroup(detail.body);
+          const teams = readRefPage(members.body, 'teams');
+          const label = group?.shortName ?? group?.name ?? null;
+          if (label === null || teams === null) throw invalid(`conference ${groupId}`);
+          if (teams.count !== null && teams.count > teams.ids.length) {
+            throw invalid(`conference ${groupId} (a truncated team page)`);
+          }
+          for (const teamId of teams.ids) map[teamId] = label;
+        }),
+      );
+    }
+    return map;
   }
 
   async getTeamSchedule(providerTeamId: string, season: Season): Promise<ProviderSchedule> {

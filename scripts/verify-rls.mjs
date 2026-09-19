@@ -199,48 +199,66 @@ async function checkInsertsRefused(label, token, probeUserId, probeTeamId) {
  * row visible, and PostgREST returns 200 with an empty representation. So
  * "refused" here means: zero rows affected AND the row still holds its old
  * value. Checking only the status code would pass a policy that actually works.
+ *
+ * Every table, every verb (plan §5.2: "`for all` policies are easy to get
+ * subtly wrong"). The targets are probe rows the administrator created for
+ * this run, so a broken policy damages nothing real.
  */
 async function checkUpdateDeleteRefused(label, token, probe) {
   if (probe === null) {
-    skip(`${label}: UPDATE/DELETE app_users`, 'no probe row (admin credentials absent)');
+    skip(`${label}: UPDATE/DELETE on every table`, 'no probe rows (admin credentials absent)');
     return;
   }
 
-  const update = await rest(`/app_users?id=eq.${probe.id}`, {
-    method: 'PATCH',
-    token,
-    body: { display_name: '__rls_probe_TAMPERED__' },
-    prefer: 'return=representation',
-  });
-  const afterUpdate = await rest(`/app_users?id=eq.${probe.id}&select=display_name`);
-  const nameNow = Array.isArray(afterUpdate.body) ? afterUpdate.body[0]?.display_name : null;
+  const targets = [
+    ['app_users', probe.userId, 'display_name', '__rls_probe_TAMPERED__'],
+    ['teams', probe.teamId, 'name', '__rls_probe_TAMPERED__'],
+    ['user_team_selections', probe.selectionId, 'selection_order', 23],
+  ];
 
-  if (nameNow === probe.displayName && (isRefusal(update) || update.body?.length === 0)) {
-    pass(`${label}: UPDATE app_users refused`, `HTTP ${update.status}, row unchanged`);
-  } else {
-    fail(`${label}: UPDATE app_users`, `ROW WAS MODIFIED — display_name is now "${nameNow}"`);
-  }
+  for (const [table, id, column, tampered] of targets) {
+    const read = async () => {
+      const result = await rest(`/${table}?id=eq.${id}&select=${column}`);
+      return Array.isArray(result.body) ? result.body[0]?.[column] : undefined;
+    };
+    const original = await read();
 
-  const del = await rest(`/app_users?id=eq.${probe.id}`, {
-    method: 'DELETE',
-    token,
-    prefer: 'return=representation',
-  });
-  const afterDelete = await rest(`/app_users?id=eq.${probe.id}&select=id`);
-  const stillThere = Array.isArray(afterDelete.body) && afterDelete.body.length === 1;
+    const update = await rest(`/${table}?id=eq.${id}`, {
+      method: 'PATCH',
+      token,
+      body: { [column]: tampered },
+      prefer: 'return=representation',
+    });
+    const afterUpdate = await read();
+    if (afterUpdate === original && (isRefusal(update) || update.body?.length === 0)) {
+      pass(`${label}: UPDATE ${table} refused`, `HTTP ${update.status}, row unchanged`);
+    } else {
+      fail(
+        `${label}: UPDATE ${table}`,
+        `ROW WAS MODIFIED — ${column} is now ${JSON.stringify(afterUpdate)}`,
+      );
+    }
 
-  if (stillThere && (isRefusal(del) || del.body?.length === 0)) {
-    pass(`${label}: DELETE app_users refused`, `HTTP ${del.status}, row still present`);
-  } else {
-    fail(`${label}: DELETE app_users`, 'ROW WAS DELETED');
+    const del = await rest(`/${table}?id=eq.${id}`, {
+      method: 'DELETE',
+      token,
+      prefer: 'return=representation',
+    });
+    const stillThere = (await read()) !== undefined;
+    if (stillThere && (isRefusal(del) || del.body?.length === 0)) {
+      pass(`${label}: DELETE ${table} refused`, `HTTP ${del.status}, row still present`);
+    } else {
+      fail(`${label}: DELETE ${table}`, 'ROW WAS DELETED');
+    }
   }
 }
 
-async function checkReorderRpcRefused(label, token, userId) {
+async function checkReorderRpcRefused(label, token, userId, selectionIds) {
+  // A real, well-formed call: the board's own ids. Only the caller is wrong.
   const result = await rest('/rpc/reorder_selections', {
     method: 'POST',
     token,
-    body: { p_user_id: userId ?? '00000000-0000-0000-0000-000000000000', p_ordered_ids: [] },
+    body: { p_user_id: userId, p_ordered_ids: selectionIds },
   });
   if (isRefusal(result)) {
     pass(
@@ -267,15 +285,36 @@ async function checkIsAdmin(label, token, expected) {
   }
 }
 
+/**
+ * Plan §5.2: "confirm sign-ups are still disabled in Supabase Auth". Read from
+ * the public settings endpoint; no account is created to find out.
+ */
+async function checkSignupsDisabled() {
+  const response = await fetch(`${AUTH}/settings`, { headers: { apikey: ANON_KEY } });
+  const body = await response.json().catch(() => null);
+  if (response.ok && body?.disable_signup === true) {
+    pass('Auth: public sign-ups are disabled', 'disable_signup = true');
+  } else if (response.ok && body?.disable_signup === false) {
+    fail(
+      'Auth: public sign-ups',
+      'ENABLED — Authentication → Sign In / Providers → turn off "Allow new users to sign up"',
+    );
+  } else {
+    fail('Auth: public sign-ups', `could not read ${AUTH}/settings (HTTP ${response.status})`);
+  }
+}
+
 // ─── Run ─────────────────────────────────────────────────────────────────────
 
 console.log(`\nRLS verification against ${SUPABASE_URL}`);
 console.log('Talking to PostgREST directly — the Worker is not involved.\n');
 
 // Seeded ids used as INSERT targets and as a source of truth for reads.
-const seedUsers = await rest('/app_users?select=id,display_name&limit=1');
+const seedUsers = await rest('/app_users?select=id,display_name,user_team_selections(id)&limit=1');
 const seedTeams = await rest('/teams?select=id&limit=1');
-const seededUserId = Array.isArray(seedUsers.body) ? (seedUsers.body[0]?.id ?? null) : null;
+const seededUser = Array.isArray(seedUsers.body) ? (seedUsers.body[0] ?? null) : null;
+const seededUserId = seededUser?.id ?? null;
+const seededSelectionIds = (seededUser?.user_team_selections ?? []).map((row) => row.id);
 const seededTeamId = Array.isArray(seedTeams.body) ? (seedTeams.body[0]?.id ?? null) : null;
 
 if (seededUserId === null) {
@@ -291,16 +330,40 @@ if (env.VERIFY_ADMIN_EMAIL && env.VERIFY_ADMIN_PASSWORD) {
   if (adminToken === null) console.log(`(admin sign-in failed: ${result.error})`);
 }
 
+// Probe rows, one per table, created by the administrator for this run and
+// removed at the end. The update/delete attacks target these, never real rows.
 let probe = null;
 if (adminToken !== null) {
-  const created = await rest('/app_users', {
-    method: 'POST',
-    token: adminToken,
-    body: { display_name: '__rls_probe__' },
-    prefer: 'return=representation',
+  const createOne = async (table, body) => {
+    const created = await rest(`/${table}`, {
+      method: 'POST',
+      token: adminToken,
+      body,
+      prefer: 'return=representation',
+    });
+    return Array.isArray(created.body) ? (created.body[0] ?? null) : null;
+  };
+  const user = await createOne('app_users', { display_name: '__rls_probe__' });
+  const team = await createOne('teams', {
+    provider: 'espn',
+    provider_team_id: '__rls_probe_admin__',
+    name: '__rls_probe__',
   });
-  const row = Array.isArray(created.body) ? created.body[0] : null;
-  if (row) probe = { id: row.id, displayName: row.display_name };
+  const selection =
+    user && team
+      ? await createOne('user_team_selections', {
+          user_id: user.id,
+          team_id: team.id,
+          selection_order: 1,
+        })
+      : null;
+  if (user && team && selection) {
+    probe = { userId: user.id, teamId: team.id, selectionId: selection.id };
+  } else {
+    console.log('(the probe rows could not all be created; removing the ones that were)');
+    if (user) await rest(`/app_users?id=eq.${user.id}`, { method: 'DELETE', token: adminToken });
+    if (team) await rest(`/teams?id=eq.${team.id}`, { method: 'DELETE', token: adminToken });
+  }
 }
 
 // ── 1. anon ──────────────────────────────────────────────────────────────────
@@ -310,7 +373,7 @@ await checkAdminsInvisible('anon', null);
 await checkIsAdmin('anon', null, false);
 await checkInsertsRefused('anon', null, seededUserId, seededTeamId);
 await checkUpdateDeleteRefused('anon', null, probe);
-await checkReorderRpcRefused('anon', null, seededUserId);
+await checkReorderRpcRefused('anon', null, seededUserId, seededSelectionIds);
 
 // ── 2. non-admin authenticated ───────────────────────────────────────────────
 section('2. authenticated, not in `admins` — a signed-in stranger');
@@ -324,7 +387,7 @@ if (env.VERIFY_NONADMIN_EMAIL && env.VERIFY_NONADMIN_PASSWORD) {
     await checkIsAdmin('non-admin', token, false);
     await checkInsertsRefused('non-admin', token, seededUserId, seededTeamId);
     await checkUpdateDeleteRefused('non-admin', token, probe);
-    await checkReorderRpcRefused('non-admin', token, seededUserId);
+    await checkReorderRpcRefused('non-admin', token, seededUserId, seededSelectionIds);
   }
 } else {
   skip('non-admin matrix', 'set VERIFY_NONADMIN_EMAIL / VERIFY_NONADMIN_PASSWORD');
@@ -339,20 +402,38 @@ if (adminToken === null) {
   await checkIsAdmin('admin', adminToken, true);
 
   if (probe === null) {
-    fail('admin: INSERT app_users', 'the probe row could not be created — admin writes are broken');
+    fail('admin: INSERT', 'the probe rows could not be created — admin writes are broken');
   } else {
-    pass('admin: INSERT app_users', `created ${probe.id}`);
+    pass('admin: INSERT app_users, teams, user_team_selections', 'probe rows created');
 
-    const renamed = await rest(`/app_users?id=eq.${probe.id}`, {
-      method: 'PATCH',
+    const updates = [
+      ['app_users', probe.userId, { display_name: '__rls_probe_renamed__' }],
+      ['teams', probe.teamId, { display_name: '__rls_probe__' }],
+      ['user_team_selections', probe.selectionId, { selection_order: 2 }],
+    ];
+    for (const [table, id, patch] of updates) {
+      const result = await rest(`/${table}?id=eq.${id}`, {
+        method: 'PATCH',
+        token: adminToken,
+        body: patch,
+        prefer: 'return=representation',
+      });
+      if (result.status === 200 && result.body?.length === 1) {
+        pass(`admin: UPDATE ${table}`);
+      } else {
+        fail(`admin: UPDATE ${table}`, `HTTP ${result.status} ${JSON.stringify(result.body)}`);
+      }
+    }
+
+    const reorder = await rest('/rpc/reorder_selections', {
+      method: 'POST',
       token: adminToken,
-      body: { display_name: '__rls_probe_renamed__' },
-      prefer: 'return=representation',
+      body: { p_user_id: probe.userId, p_ordered_ids: [probe.selectionId] },
     });
-    if (renamed.status === 200 && renamed.body?.[0]?.display_name === '__rls_probe_renamed__') {
-      pass('admin: UPDATE app_users');
+    if (reorder.status >= 200 && reorder.status < 300) {
+      pass('admin: reorder_selections()', `HTTP ${reorder.status}`);
     } else {
-      fail('admin: UPDATE app_users', `HTTP ${renamed.status} ${JSON.stringify(renamed.body)}`);
+      fail('admin: reorder_selections()', `HTTP ${reorder.status} ${JSON.stringify(reorder.body)}`);
     }
   }
 
@@ -361,17 +442,28 @@ if (adminToken === null) {
   await checkAdminsInvisible('admin', adminToken);
 }
 
-// ── Cleanup ──────────────────────────────────────────────────────────────────
+// ── 4. Auth settings ─────────────────────────────────────────────────────────
+section('4. Supabase Auth');
+await checkSignupsDisabled();
+
+// ── Cleanup, which is also the admin DELETE check ───────────────────────────
 if (probe !== null && adminToken !== null) {
-  const removed = await rest(`/app_users?id=eq.${probe.id}`, {
-    method: 'DELETE',
-    token: adminToken,
-    prefer: 'return=representation',
-  });
-  if (removed.status === 200 && removed.body?.length === 1) {
-    pass('admin: DELETE app_users (probe cleaned up)');
-  } else {
-    fail('cleanup', `probe row ${probe.id} may still exist — delete it by hand`);
+  const removals = [
+    ['user_team_selections', probe.selectionId],
+    ['teams', probe.teamId],
+    ['app_users', probe.userId],
+  ];
+  for (const [table, id] of removals) {
+    const removed = await rest(`/${table}?id=eq.${id}`, {
+      method: 'DELETE',
+      token: adminToken,
+      prefer: 'return=representation',
+    });
+    if (removed.status === 200 && removed.body?.length === 1) {
+      pass(`admin: DELETE ${table} (probe cleaned up)`);
+    } else {
+      fail('cleanup', `probe row ${id} in ${table} may still exist — delete it by hand`);
+    }
   }
 }
 

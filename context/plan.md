@@ -5,7 +5,7 @@
 - [x] **Phase 1 — Foundation & Contracts** — ✅ **Complete, 2026-09-18.** Monorepo, strict TS, normalized domain types, season logic, Supabase schema + RLS + seed, admin-only auth, Worker skeleton, ESPN fixture spike. Details, departures from this plan, and ESPN findings are in [Phase 1 — Completion Notes](#phase-1--completion-notes).
   - *Owner follow-ups (not blocking Phase 2):* run `npm run verify:rls` with the two test accounts in `.env`, and the live 403/201 token test (README, Level 3c). Both behaviours are already proven by the automated tests and the Postgres run. These two checks repeat them against the live project.
 - [x] **Phase 2 — Sports Data Layer** — ✅ **Complete, 2026-09-18. Committed as `10c6425` on `main`.** Provider interface, ESPN adapter and validators, a generated mock season, a three-tier cache with a centralized TTL policy, board/team/schedule/game/prediction and admin team-search endpoints, error isolation, and fault injection. 287 tests. The README's Phase 2 test plan was run end to end, first by the owner, then again in full against mock and live ESPN. Details, departures, findings, and recommendations for later phases are in [Phase 2 — Completion Notes](#phase-2--completion-notes).
-  - *Owner decision before the first deploy:* what `ESPN_USER_AGENT` production sends. ESPN's CDN refused the default from local workerd (see the notes).
+  - *Owner decision before the first deploy:* what `ESPN_USER_AGENT` production sends. ESPN's CDN refused the default from local workerd (see the notes). **Decided at the Phase 5 deploy:** try the default, fall back. It was refused from Cloudflare too, so production sends `curl/8.9.1 college-football-bets/0.5`.
   - *Owner follow-ups:* see [Phase 2 owner follow-ups](#phase-2-owner-follow-ups). The main one left is creating a GitHub remote and pushing `main`. There is still no remote.
 - [x] **Phase 3 — Frontend Core** — ✅ **Complete, 2026-09-18.** The website in `apps/web` includes:
   - an app shell that needs no login, with the admin session loaded only for the administrator;
@@ -14,13 +14,20 @@
 
   One small API addition: `GET /api/admin/session`. The suite is now 387 tests. Every exit criterion was checked in a real browser against a real Worker before handover, and again by the owner (README "Testing Phase 3", Levels A, B, B2, and B3). Level C, admin sign-in with the owner's real admin and non-admin accounts, passed all six steps in headless Edge. Details, departures, and findings are in [Phase 3 — Completion Notes](#phase-3--completion-notes).
   - *Two small sign-in findings from Level C* are carried to Phase 5 (see "Known limitations" in the [completion notes](#phase-3--completion-notes)): the header shows an Admin link to a signed-in non-admin, and an unconfirmed account is told its password is wrong.
-- [ ] **Phase 4 — Detail & Live** — 🟡 **Built and verified 2026-09-19; waiting for the owner's test pass and commit.** The team page now has:
+- [x] **Phase 4 — Detail & Live** — ✅ **Built and verified 2026-09-19. Committed as `3ee11b8` on `main`.** The team page now has:
   - the matchup prediction, labeled with its source, and never shown for a finished game;
   - the full-season schedule, a table on wide screens and stacked entries on phones, with bye weeks as rows;
   - live treatment with the score's own update time, and offseason and bye states.
 
   One contract addition: `TeamSnapshot.liveUpdatedAt`. The suite is now 473 tests. Every exit criterion was checked in headless Edge against real Workers (57 checks). Details are in [Phase 4 — Completion Notes](#phase-4--completion-notes).
-- [ ] **Phase 5 — Admin & Ship**: admin UI (users, team search, add/remove/reorder), server-side authorization tests, a11y + perf pass, deploy, cron warmers, docs
+- [ ] **Phase 5 — Admin & Ship** — 🟢 **Built, verified, and deployed 2026-09-19. Not yet committed.** Live at <https://cfb-board-pfc.pages.dev> (API: <https://cfb-api.cfb-api.workers.dev>), on real ESPN data. What was built:
+  - the admin console (people: add, rename, delete; boards: search with logo and conference, add, remove with confirmation, reorder with Up/Down);
+  - authorization proven route by route (131 API tests), verb by verb on real Postgres (44 PGlite tests), and against the live project (`verify:rls`, 44/44, run before and after the deploy);
+  - a per-address read budget, cron warmers, API-sized logos, route code splitting, self-hosted fonts;
+  - deploy configuration (`[env.production]`, a gated CI deploy job), a smoke script, a bundle secret scan, and [docs/ops.md](../docs/ops.md).
+
+  The suite is 704 tests in 31 files. Browser runs in headless Edge: 116/116 locally (console, keyboard only, real accounts, axe everywhere), 26/26 on real ESPN data, and 48/48 against the **deployed** site at phone width. The deploy found two things: ESPN refuses the default User-Agent from Cloudflare too (production sends the owner's curl-style fallback), and a live-overlay bug that marked live cards stale (fixed, with a test). Details: [Phase 5 — Completion Notes](#phase-5--completion-notes), "Deploy".
+  - *Left for the owner:* approve the commit message, 24 h of usage numbers (the one exit criterion that needs time), and a look on a real phone. The box gets its tick once the usage numbers are in.
 
 Phases are sequential; each ends at a verifiable state. Phase 3 depends on Phase 2's API contract but not its ESPN accuracy (mock mode covers that). Phase 5's admin UI is deliberately last — seeded data (Phase 1) makes boards real long before an admin screen exists.
 
@@ -398,6 +405,10 @@ Methods **throw** `ProviderError` on failure and return `null` for legitimate ab
 > - `ProviderError.kind` is `unavailable`, `invalid_response`, or `not_found`, and the error handler maps each to an `AppErrorKind`.
 > - A second provider, `mock`, and a fault wrapper, `faults.ts`, already implement this interface. That is the §5 acceptance test, passed in practice.
 
+> **Phase 5 note: two additions to the interface.** Details are in the [Phase 5 completion notes](#phase-5--completion-notes).
+> - `teamNamespace`: whose id space `teams.provider` records. The mock says `espn`, because its roster borrows ESPN's ids.
+> - `getConferences(season)`: provider team id → conference short name. ESPN reads it from the core API, FBS only, all or nothing.
+
 ### ESPN endpoints — ✅ confirmed in the Phase 1 spike (2026-09-18)
 
 > **Phase 1 note.** Every endpoint below responded, and real payloads are saved in `apps/api/test/fixtures/espn/`. **[docs/espn-notes.md](../docs/espn-notes.md) is now the authoritative reference** for URLs, field paths, and status vocabulary. It supersedes this table. Two additions the table lacks:
@@ -505,6 +516,12 @@ The `fetchedAt` of stale data is never refreshed on a failed revalidate — that
 >   - `fetchedAt` is the oldest of those parts.
 > - Concurrent reads of one key share one load (in-flight coalescing, per isolate).
 
+> **Phase 5 note.**
+> - A new category, `conferences`: 1 day TTL, 30 days stale, all three tiers, a KV write at most daily.
+> - `swr.read` re-checks L1 just before loading. Without it, a read whose KV lookup was still in flight when a sibling finished loading would load and write KV again. That was seen in workerd as three calendar writes in one cron run.
+> - `tiers.evictL1` lets an admin write drop the board composite in its own isolate.
+> - Cron warmers (`src/cron/warm.ts`) keep the calendar, rankings, team list, and conferences refreshed into KV off the request path. They never warm schedules or live data; the reasons are in the file.
+
 ---
 
 ## 8. API Contract (§28)
@@ -590,6 +607,25 @@ All routes under `/api`.
 > - It writes nothing. Its only database call is the `is_admin()` check.
 > - The web app's `RequireAdmin` uses it to tell "not signed in" apart from "signed in, but not an administrator".
 
+> **Phase 5 note: the admin surface as built** (`apps/api/src/routes/admin.ts`). All `private, no-store`, all behind `requireAdmin`:
+>
+> | Method | Path | Returns |
+> |---|---|---|
+> | GET | `/api/admin/session` | `AdminSessionResponse` |
+> | GET | `/api/admin/users` | `AdminUsersResponse` (the public list, uncached) |
+> | POST | `/api/admin/users` | 201 `CreateUserResponse` |
+> | GET | `/api/admin/users/:userId` | `AdminBoardResponse` (one board, uncached) |
+> | PATCH | `/api/admin/users/:userId` | `RenameUserResponse` |
+> | DELETE | `/api/admin/users/:userId` | 204, and the board goes with the user |
+> | POST | `/api/admin/users/:userId/selections` | 201 `AddSelectionResponse` (the whole board, plus the new selection) |
+> | DELETE | `/api/admin/selections/:selectionId` | `SelectionsResponse`, renumbered 1…n |
+> | PUT | `/api/admin/users/:userId/selections/order` | `SelectionsResponse`. The list must be exactly the board's set, or it is a 409 |
+> | GET | `/api/admin/teams/search?q=` | `TeamSearchResponse`, now with conferences and sized logos |
+>
+> - New error kinds: `conflict` (409: a duplicate team, or a board that changed underneath the editor) and `rate_limited` (429).
+> - Public reads have a best-effort per-address budget (`middleware/rate-limit.ts`).
+> - Logo URLs in every response are resized copies (`providers/logos.ts`); stored URLs stay canonical.
+
 ---
 
 ## 9. Frontend Structure
@@ -650,6 +686,13 @@ Every async region has four renders: skeleton, data, empty/unavailable, error. `
 > - **Three independent reads:** team, schedule, and prediction. The schedule starts on mount, alongside the team request.
 > - **Polling:** `POLL` gains `predictionMs` (5 min), and `schedulePollInterval` applies the board's rule to the schedule's rows.
 > - **Schedule:** a `<table>` from 720 px, stacked entries below. Results are marked by letter, word, and shape.
+
+> **Phase 5 note: the admin console and the performance pass.** Details are in the [Phase 5 completion notes](#phase-5--completion-notes).
+> - **Routes:** `/admin` (people) and `/admin/u/:userId` (one board), both inside `RequireAdmin`.
+> - **Code splitting:** every page but home is a lazy chunk (`app/pages.ts`), under one `<Suspense>` in `RootLayout`. The board and team chunks are prefetched when idle.
+> - **Header:** the Admin link now waits for the server to confirm an administrator (`auth/useAdminCheck.ts`).
+> - **Fonts:** self-hosted from `public/fonts` (`styles/fonts.css`). Google Fonts is no longer used.
+> - **Pages headers:** `public/_headers` sets caching and security headers.
 
 ---
 
@@ -1419,20 +1462,260 @@ Walk §54's end-to-end flow as a user, and §55's principles as a reviewer. Conf
 - Creating a user in `app_users` creates no login, and that is intentional (§11.1). If viewer accounts are ever added, `app_users` needs an auth link *and* the read policies need narrowing — two deliberate changes, not one incidental one.
 - Deleting a team referenced by a selection is blocked by `on delete restrict` — surface that as a clear message, not a 500.
 
+### Phase 5 — Completion Notes
+
+**Built and verified locally, then deployed and verified live, 2026-09-19. Not committed.** As with the earlier phases: where these notes and the plan above disagree, the code and these notes win. These notes are written so that another engineer, or another model, can pick the work up cold.
+
+#### Handoff: where to pick up
+
+**State of the repository.**
+
+- Branch `main`. The last commit is `3ee11b8` (Phase 4). **All of Phase 5 is uncommitted in the working tree**: about 60 modified files and 30 new ones (`git status`). No GitHub remote exists yet.
+- `npm run verify` passes: typecheck, lint, 704 tests in 31 files, and the season check. `npm run format:check` passes.
+- Build outputs `apps/api/dist` and `apps/web/dist` are on disk, from the production deploy. Both are gitignored.
+- The live Supabase project is exactly as seeded: 9 users, 50 teams, 54 selections. Every probe row was removed (the deployed-site browser run cleans up through the API in a `finally`, and `verify:rls` cleans up its own). **No migration changed in Phase 5**, so the database needs nothing.
+
+**What is deployed** (details under "Deploy" below):
+
+| Piece | Where | Version |
+| --- | --- | --- |
+| Site | Pages project `cfb-board`, <https://cfb-board-pfc.pages.dev> | Built from this working tree with `VITE_API_BASE_URL=https://cfb-api.cfb-api.workers.dev` |
+| API | Worker `cfb-api` (`--env production`), <https://cfb-api.cfb-api.workers.dev> | Version `6b0ccb56-9d82-46f9-9eb2-aa969211334d`, including the live-overlay fix |
+| Cache | KV `production-SPORTS_KV`, id `5777a3ec40164cc283c45de25f685ed3` | |
+| Secrets | `SUPABASE_URL`, `SUPABASE_ANON_KEY` on `cfb-api` (production) | Same values as `apps/api/.dev.vars` |
+
+Cloudflare account `4bb72f432f1b9521a2310ba2bccf01eb`, signed in with `wrangler login` (OAuth) on this machine.
+
+**The owner's standing rules** (from their global CLAUDE.md). Never commit or push without asking immediately beforehand. Show a drafted commit message and wait for approval. Never add a `Co-Authored-By` trailer.
+
+**What is left, in order.**
+
+1. **Commit.** Draft a message, show it, and wait for approval. A suggested subject: `Phase 5: admin console, authorization, hardening, and deploy`.
+2. **24 hours of usage** (from 2026-09-20): Workers requests, KV writes, and CPU time in the dashboard, into docs/ops.md "Recorded measurements". This is the only exit criterion still open. `wrangler`'s OAuth token has no analytics scope, so it has to be read in the dashboard.
+3. **The owner on a real phone:** README "Testing Phase 5", Level C. Phone width was checked in headless Edge, not on a device.
+4. **Optional.** Create the GitHub remote and set the CI deploy variables (docs/ops.md, "Continuous deployment"). With `SITE_ORIGIN=https://cfb-board-pfc.pages.dev` and `PAGES_PROJECT=cfb-board`. A real screen-reader pass of the live region, the schedule table, and the confirm dialog: only axe and accessible names were checked.
+
+#### Exit criteria
+
+| Exit criterion | Result | How it was verified |
+| --- | --- | --- |
+| Admin adds, removes, and reorders teams; the board reflects it on reload with the intended order | ✅ | 41 API tests (`apps/api/test/admin.test.ts`), including "the public board reflects an admin change on the next read". Browser run with the owner's real admin account: a probe person was created, three teams added, one reordered twice, one removed; the public board read Texas, Alabama, and the same after a reload. The probe was deleted afterwards |
+| All negative authorization tests pass, including direct-to-database attempts | ✅ | 90 matrix tests (10 admin routes × 9 attacks), 44 PGlite tests (`supabase/test/rls.test.ts`), and `npm run verify:rls` against the live project: 44/44, including "public sign-ups are disabled" |
+| axe reports no violations; keyboard-only operation of the admin console works end to end | ✅ | Browser run: axe clean on home, board, team, and login (320 and 1440 px, both themes), the console and editor (320 px, both themes, and 1440 px with search results), the confirm dialog, and a probe board. The whole admin flow was driven with Tab, Enter, and Escape only, with focus checked after every change. Lighthouse accessibility: 100 on every page measured |
+| Deployed URLs serve the app with real ESPN data on a phone | ✅ (⏳ a real device) | Deployed 2026-09-19. `npm run smoke` against the live API: 15/15 with CORS. Headless Edge against the live site at 390 px (mobile, touch) and 320 px: 48/48. All nine boards filled from ESPN (54 of 54 cards, AP Top 25, 11 live games), team pages with schedule and ESPN's Matchup Predictor, deep links, axe clean, and the admin and non-admin flows with the owner's real accounts. The owner has yet to open it on a physical phone |
+| 24 h of normal use stays inside free-tier limits | ⏳ owner | Deployed 2026-09-19 around 19:15 UTC; read the dashboard from 2026-09-20 (docs/ops.md "Watching usage"). First signs: a whole-site load (9 boards, 50 schedules) cost no errors, and the cron ran on schedule. The per-request CPU finding is under "Deploy" |
+| Every §50 row confirmed graceful | ✅ | Earlier phases' tests (provider failure, incomplete data, missing prediction and ranking, no upcoming game, postponed, canceled, bye, live, season complete, logo unavailable), plus a live fault drill in workerd with `rankings,team:251,prediction` on a cold cache: board 200, Texas unavailable, every rank "—" with records intact, prediction `unavailable` sent `no-store`, Texas's team route 200. And an unplanned one in production: while ESPN refused the default User-Agent, every board still answered 200 with six labelled "unavailable" cards and a date-derived season |
+
+#### What was built
+
+| Area | Where | Notes |
+| --- | --- | --- |
+| Admin API | `apps/api/src/routes/admin.ts` | New: `GET /users`, `GET /users/:userId`, `PATCH /users/:userId`, `DELETE /users/:userId`, `POST /users/:userId/selections`, `DELETE /selections/:selectionId`, `PUT /users/:userId/selections/order`. Kept: `GET /session`, `POST /users`, `GET /teams/search`. Every answer is `private, no-store`. Every write goes to PostgREST with the admin's own token (`supabaseAsAdmin`). After each write the board's L1 composite is evicted (`evictL1`) |
+| DB layer | `db/queries.ts`, `db/rows.ts`, `db/postgrest.ts` | `renameUser`, `deleteUser`, `findTeamByProviderId`, `insertTeam`, `insertSelection`, `deleteSelection`, `reorderSelections`. `DbError` now carries the SQLSTATE (`code`), Postgres's message (`dbMessage`), and `violates(constraint)`. PostgREST 400 maps to `invalid_request`, 409 to `conflict` |
+| Contract | `packages/shared/src/api/requests.ts`, `envelope.ts` | Types: `AdminUsersResponse`, `AdminBoardResponse`, `RenameUserResponse`, `SelectionsResponse`, and `AddSelectionResponse` (which adds `selection`). Constants: `BOARD_TEAM_COUNT` (6), `MAX_SELECTIONS` (24), `DISPLAY_NAME_MAX_LENGTH` (60). `AppErrorKind` gains `conflict` (409) and `rate_limited` (429) |
+| Conferences | `providers/espn/provider.ts` `getConferences`, `validate.ts` `readRefPage`/`readGroup`, `services/search.ts` | ESPN's core API: `groups/80/children`, then `groups/{id}` and `groups/{id}/teams` for each FBS conference, three at a time. All or nothing. Cached as its own category (`conferences`: 1 day TTL, 30 days stale, a KV write at most daily). Merged into search results at read time, and stored with a team when it is first added. The mock returns its roster's conferences. New fault token: `conferences` |
+| Team identity | `providers/types.ts` `teamNamespace` | Which provider's id space `teams.provider` records. ESPN says `espn`; so does the mock, because its roster borrows ESPN ids. So a team added in mock mode reuses ESPN's row instead of creating a duplicate |
+| Logo sizing | `providers/logos.ts`, `providers/espn/logos.ts` | ESPN's image combiner (`/combiner/i?img=…&w=&h=`). Team logos 144 px (drawn at up to 72), opponents 48 px (drawn at 24). Applied in `db/rows.ts` `toTeam`, `services/perspective.ts` (opponents), and search results. Stored URLs stay canonical. On a real board, six logos weighed 28 KB instead of about 180 KB |
+| Read budget | `middleware/rate-limit.ts`, mounted in `app.ts` after CORS | A per-isolate token bucket keyed by `CF-Connecting-IP`: burst 120, refill 2/s, `READ_RATE_LIMIT_PER_MINUTE` (`off` disables). GETs and HEADs only, admin routes excluded. 429 with `Retry-After` and the standard error body. It applies under `wrangler dev` too: a 200-request parallel burst got 39 × 200 and 161 × 429 |
+| Cron warmers | `cron/warm.ts`, `index.ts` `scheduled`, `wrangler.toml` `[triggers]` | Game days: `*/10 * * 8-12,1 FRI,SAT,SUN`. Otherwise hourly, `0 * * * *`, which skips itself when both fire. Each run refreshes the season calendar, rankings, team list, and conferences through the normal cache, and runs one Postgres `select` (the Supabase keep-alive). Deliberately not schedules or live scores; see the file's header. `services/context.ts` gained `createServices(env, …)` for use outside a request |
+| Cache fix | `cache/swr.ts`, `cache/tiers.ts` `freshInL1` | Found in workerd: when a load finished while a sibling read was still waiting on KV, the sibling loaded and wrote KV again (three calendar writes in one cron run). `read()` now re-checks L1 just before loading. The regression test fails without the fix |
+| Deploy config | `wrangler.toml` `[env.production]`, `apps/api/package.json` | Top-level config is local development (mock). `[env.production]` is the deployed Worker, named `cfb-api`, with `SPORTS_PROVIDER = "espn"`, both crons, and the KV binding. Two placeholders make an unconfigured `wrangler deploy` fail rather than ship. `npm run deploy` is now `wrangler deploy --env production`; `npm run bundle` is its dry run into `dist`. `APP_VERSION` is 0.5.0 |
+| Admin console | `apps/web/src/features/admin/` | `AdminPage.tsx` (people), `BoardEditorPage.tsx`, `TeamSearch.tsx` (250 ms debounce, 2-letter minimum), `ProblemNote.tsx`, `boardEdit.ts` (pure helpers), `useAdminWrite.ts` (`useAfterAdminWrite`, `problemOf`, `useAnnouncer`). Routes: `/admin` and `/admin/u/:userId`, both inside `RequireAdmin` |
+| Shared UI | `components/ConfirmDialog.tsx`, `icons.tsx` `ArrowIcon`, `tokens.css` `--color-on-danger` | A native modal `<dialog>`. Focus starts on Cancel, Escape cancels, and `returnFocus` is asked for its target in the effect cleanup, once the page is no longer inert |
+| Sign-in fixes (Phase 3 findings) | `auth/useAdminCheck.ts`, `components/AppHeader.tsx`, `auth/signInError.ts` | The header's Admin link waits for `GET /api/admin/session` to return 200, sharing one query with `RequireAdmin`. That check never redirects (`redirectOnUnauthorized: false`). `email_not_confirmed` gets its own message |
+| Web data layer | `lib/api.ts`, `lib/apiClient.ts` | `adminApi`, `publicPathsFor`, and admin query keys under `['admin', …]`. `refreshPublic(paths)` re-fetches public reads with `cache: 'reload'`, so the admin's browser cache holds the changed board. `parse` handles 204. `onUnauthorized(redirect?)` |
+| Code splitting | `app/pages.ts`, `app/routes.tsx`, `app/RootLayout.tsx` | Every page but home is a `React.lazy` chunk. One `<Suspense>` in `RootLayout` is already on screen, so navigation shows the old page until the new code arrives. The board and team chunks are prefetched when the browser is idle; the admin chunks never are |
+| Fonts and headers | `apps/web/public/fonts/` (6 woff2 files and `OFL.txt`), `src/styles/fonts.css`, `index.html`, `public/_headers` | Barlow and Barlow Condensed, self-hosted, Latin subset, `font-display: swap`, two faces preloaded. Google Fonts is gone. `_headers` gives `/assets/*` a year's immutable cache, `/fonts/*` 30 days, and every page four security headers |
+| Scripts | `scripts/verify-rls.mjs`, `check-bundle-secrets.mjs`, `smoke.mjs` | `verify-rls` now creates probe rows in all three tables as the admin and attacks each verb on each as `anon` and as the non-admin. It calls `reorder_selections` with real ids and checks `disable_signup` through `/auth/v1/settings`. `check:bundle` fails on `sb_secret_…`, a `service_role` JWT, or the variable name in shipped code. `smoke` is 15 read-only checks against a running Worker |
+| CI | `.github/workflows/ci.yml` | The Worker bundle now uses the production environment, and `check:bundle` runs after the web build. A new `deploy` job needs `verify`, and runs only on a push to `main` when the repository variable `DEPLOY_ENABLED` is `true`. It deploys the Worker, builds and scans the site, deploys it to Pages, and runs the smoke test |
+| Docs | `docs/ops.md` (new), `README.md`, `apps/api/.dev.vars.example` | ops.md covers: what runs where, free-tier limits checked 2026-09-19, the configuration reference, the first deploy in 10 steps, continuous deployment, the crons, day-to-day tasks, rotating secrets, watching usage, and deployment troubleshooting. README gains "Testing Phase 5" |
+| Fixture | `apps/api/test/fixtures/espn/conference-teams.json` | A real capture of `groups/8/teams` (the SEC), added to `_manifest.json` and `capture-espn-fixtures.ts`. `espn-stub.ts` serves the real SEC and ten empty conferences |
+
+**Dependencies added:** `@electric-sql/pglite` ^0.5.8, root devDependency only, for the database tests (§30, §31). Nothing added to either app.
+
+#### Decisions and departures, and why
+
+1. **Two new error kinds, `conflict` (409) and `rate_limited` (429).** Without them a duplicate team or a spent read budget could only be reported as `internal` (500), which blames the server.
+2. **Two admin reads beyond §8's table:** `GET /api/admin/users` and `GET /api/admin/users/:userId`. The console must not read through public caches (`max-age` up to 300 s on `/api/users`).
+3. **`DELETE /api/admin/users/:userId`** was added: scope 5.1 asks for delete, though §8's table omits it. The board goes with the user (`on delete cascade`); team rows stay, because other boards may hold them.
+4. **Every selection write returns the whole board** (`SelectionsResponse`), numbered 1…n, so the editor never has to guess what the server did.
+5. **A reorder must list exactly the board's current selections**, or it is a 409 "This board changed since it was loaded". The RPC alone refuses another board's ids, but a subset would have hit the deferred constraint at COMMIT.
+6. **Removal renumbers the board** by calling `reorder_selections` with the remaining ids, best effort. Adding renumbers only when the last slot is 24. Gaps would otherwise eventually hit the CHECK (1–24) with fewer than 24 teams.
+7. **No new migration.** Every admin write uses the Phase 1 tables and RPC. The owner has nothing to apply in Supabase.
+8. **A team row is reused as stored.** It is created from the provider's identity only the first time any board takes it. A seeded row's curated conference is never overwritten by the provider's.
+9. **Conferences are FBS only, and all or nothing.** FCS teams show "Conference unknown" in search and are stored with `conference = null`. All or nothing, because a partial map would sit in the cache for a day.
+10. **Board propagation.** The writing isolate evicts its L1 board, and the admin's browser primes its HTTP cache (`refreshPublic`). Other isolates' copies expire within 60 s (15 s while live), and viewers' browsers within their `max-age`. A version check on every board read would have cost a Postgres round trip per poll.
+11. **Reordering is a save queue, not one mutation per press.** Each press moves the row at once. The newest order is saved, and presses made during a save are sent together once it lands. Found in the browser run: a second Up press during the first save was being dropped. Add and remove wait for the queue (`orderSaved`) instead of refusing.
+12. **Confirmation is a native `<dialog>`**, with focus returned from its cleanup. Found in the browser run: focusing the heading while the modal was open failed silently, because the page behind a modal is inert.
+13. **Code splitting uses `React.lazy`, not React Router's route `lazy`.** It needs no hydrate fallback and keeps the component tests unchanged.
+14. **Fonts are self-hosted.** Lighthouse measured the Google Fonts stylesheet as about 0.9 s of render blocking on a phone.
+15. **wrangler environments:** top level for local development, `[env.production]` for deploys. Local development stays in mock mode with no `.dev.vars` changes.
+16. **The CI deploy job is off until `DEPLOY_ENABLED` is set.** The owner does the first deploy by hand.
+17. **PGlite reports `on delete restrict` as 23001 (restrict_violation), not 23503.** How PostgREST maps 23001 to an HTTP status was not checked, because nothing in the app deletes teams.
+18. **The browser scripts are not in the repo**, as in Phases 3 and 4. They need a browser binary that CI lacks. They lived in the session scratchpad (`phase5.mjs`: 116 checks; `espn.mjs`: 26), with `playwright-core`, `axe-core`, and `lighthouse` installed there. README Level B describes the same checks by hand.
+
+#### Verification performed
+
+- **Automated.** 703 tests in 31 files. Phase 5 added 230:
+  - `apps/api/test/admin.test.ts` 131. The authorization matrix, which checks itself against `app.routes`, and the console API over an in-memory PostgREST with real constraint errors (`test/helpers/admin-db.ts`).
+  - `supabase/test/rls.test.ts` 44 (PGlite).
+  - `apps/api/test/ops.test.ts` 20: the read budget, `Cache-Control`, and the crons, including that `wrangler.toml` declares exactly the handler's two schedules.
+  - Web 29: `AdminConsole.test.tsx` 13, `boardEdit.test.ts` 8, `signInError.test.ts` 4, `AppHeader.test.tsx` 4.
+  - ESPN provider 4, validate 1 (the new readers join the damage property test), cache 1 (the race).
+- **Builds.**
+  - Worker (production environment): 207.8 KiB, 53.2 KiB gzipped.
+  - Web main JS: 376 KB, 119.9 KB gzipped (was 127.5). Main CSS: 2.5 KB gzipped (was 5.0).
+  - Page chunks, gzipped: TeamPage 5.6 KB, TeamCard (shared) 3.3, BoardEditorPage 3.3, AdminPage 2.1, BoardPage 1.8.
+  - `check:bundle`: no privileged key in 33 files.
+- **Live database.** `npm run verify:rls`: 44 passed, 0 failed, 0 skipped. The rows it creates are removed at the end.
+- **Browser, mock data.** A production build (`vite preview`) against `wrangler dev` in mock mode and the live Supabase project, in headless Edge. 116/116, repeated to be sure after each fix.
+  - Viewers: no Supabase traffic, the auth library and admin chunks never downloaded, the board and team chunks load separately, and no console errors.
+  - The admin: signed in with the keyboard, then the full flow described under exit criteria.
+  - The non-admin: "Not an administrator", and no Admin link.
+- **Browser, real ESPN** (Saturday 2026-09-19, about 18:40 UTC), with `--var ESPN_USER_AGENT:curl/8.4.0` on the command line only. Nothing committed carries a User-Agent. 26/26:
+  - six filled cards with AP ranks, and Georgia live at Arkansas (31–3, 4th quarter);
+  - the team page with the live block and "Pregame prediction, made before kickoff" from the ESPN Matchup Predictor, and the 2026 schedule with its week-8 bye;
+  - only resized logos requested;
+  - search: Vanderbilt with SEC, and Montana State with "Conference unknown";
+  - axe clean.
+  - The cron mapped 138 FBS teams to conferences.
+- **Cron in workerd.** The game-day schedule ran all five warmers `ok` in mock and in ESPN mode. The hourly schedule skipped itself on the Saturday.
+- **Smoke script** against the ESPN Worker: 15/15, including CORS.
+- **Lighthouse, mobile** (Edge, simulated throttling, against the ESPN preview). Before self-hosting the fonts: home 86 and board 88 for performance. After: home 98, board 93, team 89. Accessibility 100 and best practices 100 on all three. What remains is LCP of about 3 s on board and team pages: main bundle, then the page chunk, then the API.
+- **Board payload** (real data): about 14 KB, 2.2 KB gzipped.
+- **Visual review** of screenshots at 320 and 1440 px in both themes. One fix came out of it: at 320 px each row's buttons wrapped onto a second line. They now share the line (`Admin.module.css`, below 30rem).
+
+#### Deploy (2026-09-19)
+
+Run in a later session, with the owner's go-ahead. The owner approved `wrangler login` in their browser, verified the account's email when Cloudflare asked, and chose the User-Agent policy: "try the default, fall back to curl-style". The steps are docs/ops.md 1–10, which now record what happened at each one.
+
+1. **Login.** A new Cloudflare account, with no Workers, KV, or Pages yet.
+2. **KV.** `production-SPORTS_KV` was created, and its id is in `wrangler.toml`.
+3. **Worker.** The first deploy failed with error 10034: the account's email was unverified. The owner verified it. That same run registered the account's `workers.dev` subdomain. Run without a terminal prompt, wrangler named it after the Worker, hence `cfb-api.cfb-api.workers.dev`. The Worker deployed with both crons.
+4. **Secrets.** `wrangler secret bulk`, from a scratchpad file that was deleted in a `finally`. The values were never printed.
+5. **Smoke test with the default User-Agent: 9 passed, 3 failed.** `wrangler tail` showed ESPN answering **403** to every request: calendar, rankings, and all six schedules. The board still answered 200, with six cards labelled unavailable.
+6. **`ESPN_USER_AGENT = "curl/8.9.1 college-football-bets/0.5"`** went into `[env.production.vars]`, then a redeploy. Smoke: 13/13, 6 of 6 cards.
+7. **Site.**
+   - Built with `VITE_API_BASE_URL`. `check:bundle` found no privileged key in 33 files.
+   - `pages project create` failed. wrangler 4.134 now hands it to the Workers-based Pages, which refuses to run at a workspace root and deploys nothing. `--force` created a classic Pages project, which is what `_headers` and the single-page-app fallback assume.
+   - `cfb-board.pages.dev` was taken, so the origin is `cfb-board-pfc.pages.dev`.
+   - 38 files uploaded, including `_headers`.
+8. **CORS.** `ALLOWED_ORIGINS` was set to that origin, then a redeploy. Smoke: 15/15.
+9. **Browser run against the deployed site: 48/48.** Headless Edge at 390 px (mobile, touch) and 320 px (dark):
+   - Viewers: home (9 boards), a board (6 cards, AP Top 25, resized logos only, no mock label), and a team page (previous, next, Matchup prediction, a 13-game schedule).
+   - No `undefined`, `NaN`, or `null` on any page. No sideways scroll. axe clean on all six pages.
+   - No Supabase traffic for a viewer. `_headers` security headers served.
+   - Deep links, a reload, and an unknown path all work.
+   - The admin, with the owner's real account: sign in; add a probe person; add Alabama and Georgia; move Georgia up; the public board reads Georgia then Alabama, and again after a reload; Escape cancels a removal; remove Alabama; delete the probe.
+   - The non-admin: "Not an administrator", and no Admin link.
+   - The script lived in the session scratchpad (`deployed.mjs`), as in earlier phases.
+10. **Cron.** The game-day schedule ran at 19:50 UTC, with all five warmers `ok`: season from the provider, rankings, 762 teams, 138 mapped to conferences, database 9 users.
+
+After the deploy, `npm run verify:rls` passed 44/44 against the same Supabase project production uses.
+
+**Measurements** (also in docs/ops.md, "Recorded measurements"):
+
+- **ESPN:** refused the default User-Agent from Cloudflare's network, exactly as from local workerd. With the curl-style value, all nine boards filled: 54 of 54 cards, 11 live games, and 50 schedules read in at most 135 ms each.
+- **L2 is live on `workers.dev`: `l2Available: true`.** The plan (§7, risk register) expected it to be inert. The probe writes a value and reads it back, so the Cache API really does store data there, and the tier code uses it.
+- **CPU:** `wrangler tail` for 11 minutes during a live slate, 82 invocations.
+  - Median 1 ms.
+  - A board read cold peaked at **44 ms**: six schedules plus the Saturday scoreboard parsed in one request.
+  - Schedules at most 16 ms; the cron 1 ms.
+  - Every invocation finished `ok`. 44 ms is above the documented 10 ms free-plan limit, but Cloudflare did not enforce it on these. Not changed; see "Known limitations".
+- **The board payload:** about 13.6 KB with real data.
+
+**Found and fixed during the deploy:**
+
+1. **A false "stale" on live cards** (`services/live.ts`).
+   - The code never used a slate older than the team's schedule, even one inside its 25-second TTL.
+   - On the deployed Worker, six teams load in parallel. One team's read fetches the day's slate; another team's schedule then arrives from ESPN a moment later. That team's live game lost its overlay (`liveUnverified`): no live block, the card marked stale, and the board sent `X-Cache: stale` with `max-age=10`.
+   - Four of nine boards did this on their first read. It repeats whenever a playing team's 15-minute schedule refreshes, and clears when the slate next refreshes.
+   - **The fix:** only a slate that is itself stale (kept past its TTL after a failed refresh) *and* older than the schedule is refused. The existing test "never lets an older slate move a game backwards" still passes. The new test "uses a current slate read moments before a newer schedule" failed before the fix.
+   - **The trade-off, accepted:** a current slate up to 25 s older than a newer schedule can show that game up to 25 s behind, e.g. live for a moment after the schedule says final. The score is dated by its own read (`liveUpdatedAt`), so nothing claims to be newer than it is (§39).
+   - Deployed as Worker version `6b0ccb56`. Smoke 15/15 afterwards.
+2. **A year in a comment** (`providers/espn/logos.ts`, "Checked 2026-09-19") failed `check:season`, so `npm run verify` was red at pickup, contrary to the handoff. Reworded to "measured in Phase 5".
+3. **Not changed, recorded:** deleting a person logs two 404s in the browser console. `refreshPublic` re-reads that person's public pages so the admin's HTTP cache drops the old board: the 404, which carries no `Cache-Control`, replaces the cached 200. That is its job, and the console lines are the browser's generic log for any 4xx.
+
+#### Verification against the spec (§5.5)
+
+**§54, as a user, on the deployed site** (minus "A user authenticates", §11.1). Each step was checked in the browser run:
+
+- the collection of boards;
+- a board of six teams, each with name, rank, record, previous result, next date and time, and live information;
+- choose a team: identity, rank, record, previous game, next game, the available prediction, and the full schedule;
+- automatic updates: polling was proven in Phases 3–4, and the live API served `max-age=15` while games were on;
+- the administrator managing boards;
+- usable when data is missing: the production 403 episode;
+- provider-specific logic isolated, on a free deployment.
+
+**§55, as a reviewer:**
+
+| Principle | Finding |
+| --- | --- |
+| Accuracy over convenience | No computed ranks or predictions. `odds` and `pickcenter` are never read: a search of the source finds them only in comments saying so. A prediction figure that isn't a percentage is refused. Mock data is labelled mock. The live site names "AP Top 25" and "ESPN Matchup Predictor" |
+| Current information over duplicated storage | Postgres holds people, teams, and selections only (§45). Sports data lives in the TTL-governed cache |
+| Simplicity | Pages, one Worker, and Supabase. No queue, no extra services, no stored sports data |
+| Separation of concerns | Outside `apps/api/src/providers/`, `espn` appears only in the `ProviderName` and `PredictionSource` label types and in comments. The browser never calls ESPN |
+| Maintainability | A provider is one directory plus one registry line. The production User-Agent change was one line of config |
+| Security | Enforced by RLS: `verify:rls` 44/44 against the production database after the deploy. The live Worker answers 401 to no token and to `alg:none` (smoke) |
+| Graceful degradation | Shown in production, unplanned: under ESPN's 403s every board answered 200 with labelled "unavailable" cards |
+| Responsive design | 320 and 390 px on the live site: no sideways scroll on any page, including the admin console |
+| Free operation | Cloudflare and Supabase free tiers. No card on file, no custom domain |
+
+**§53, not built:** none of it. There is no native app, paid service, custom domain, betting, messaging, social features, comments, analytics or tracking, fantasy scoring, automatic team selection, or generated or custom prediction. Checked by searching the source for the obvious markers (odds, spread, betting, analytics, chat, comment, AI SDKs, tracking) and by the dependency lists. The API depends on `hono`; the site on React, React Router, React Query, and `supabase-js`; the root adds only tooling.
+
+#### Known limitations carried forward
+
+- **A board change reaches other isolates' caches within 60 s**, and viewers' browsers within their `max-age`. docs/ops.md says so.
+- **The read budget is per isolate**, and keyed on an address that a shared Wi-Fi shares. 120 a minute was sized for nine people on one network.
+- **A usage alert may not exist on the free plan.** docs/ops.md says to look under Notifications and otherwise check the metrics weekly. Not verified in a dashboard.
+- **Conferences for FCS and lower divisions are unknown** (decision 9).
+- **Logos depend on ESPN's combiner endpoint.** If it stops answering, cards show initials (§36).
+- **The console's interactions are tested only in the browser run**, which is outside CI. The component tests render states statically.
+- **Nothing deletes a `teams` row.** Removed teams stay, harmlessly, as cached identity.
+- **Board and team pages on a cold phone visit** wait on main JS, then the page chunk, then the API (LCP about 3 s in Lighthouse). Prefetching board data in parallel with the chunk would help. It was not done.
+- **A screen-reader pass** (NVDA or VoiceOver) of the live region, the schedule table, and the confirm dialog was not done. Only axe and accessible names were checked.
+- **Placeholder names.** Eight of the nine people still have seed names (Avery…Jordan). The console can now rename them (a Phase 1 follow-up).
+- **CPU on a cold board exceeds the documented free limit.** A board whose six schedules and the Saturday scoreboard are all parsed in one request measured 44 ms, against 10 ms. Cloudflare let every such request through on the first Saturday. If `exceededCpu` (error 1102) ever appears, the options are, in order:
+  - warm the scoreboard from the cron on game days (one key, about 7 ms parsed off the request path);
+  - stagger a cold board's schedule loads across requests;
+  - Workers Paid, which is not free, so the owner's call (§32).
+- **ESPN access depends on a curl-style User-Agent.** If ESPN's CDN changes its rule, every card goes "unavailable" at once, labelled. The fix is one line in `[env.production.vars]`, and docs/ops.md step 4 says how to check it.
+- **A live game can lag its schedule by up to one slate TTL (25 s)** since the live-overlay fix. It is dated honestly (decision recorded under "Deploy").
+
+#### Housekeeping at close
+
+- **Not committed.** It waits for the owner's approval of the message (standing rule).
+- **Test servers.** `wrangler dev` ran on 8795 (faults), 8796 (ESPN), and 8797 (mock), each with its own `--persist-to` folder in the scratchpad. `vite preview` ran on 5182 and 5183. All five were stopped by exact PID with `taskkill /T /F`, after checking each command line. The owner's servers on 8787 and 5173 were not touched.
+- **Deploy session.** The two `wrangler tail` captures were stopped after their windows (12 s and 11 min). No local servers were started. The scratchpad holds the browser, load, and CPU scripts and the tail logs; nothing in the repo refers to them.
+- **Probe data.** Each browser run created one probe person and deleted it, through the UI or through the API in the script's `finally` block. `verify:rls` removes its probe rows. After the deployed-site runs, the API reported 9 people and no probes.
+- `apps/api/dist` and `apps/web/dist` hold the production build (see the handoff).
+
+#### Phase 5 owner follow-ups
+
+- [ ] Approve the Phase 5 commit.
+- [x] Decide `ESPN_USER_AGENT` for production. Try the default, fall back: the default was refused, so production sends `curl/8.9.1 college-football-bets/0.5` (2026-09-19).
+- [x] Deploy (docs/ops.md steps 1–10), and fill in its "Recorded measurements" table (2026-09-19, except the 24-hour row).
+- [ ] After 24 hours, check Workers requests, KV writes, and CPU time against the free tier (docs/ops.md, "Watching usage"), and fill in the last row.
+- [ ] Open <https://cfb-board-pfc.pages.dev> on a real phone (README, "Testing Phase 5", Level C).
+- [ ] Optionally, repeat README "Testing Phase 5", Levels B, B2, and B3.
+- [ ] Create the GitHub remote and push `main`; optionally enable CI deploys.
+- [ ] Rename the eight placeholder people in the console (now on the live site).
+
 ---
 
 ## 10. Risk Register
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| ESPN changes response shapes or blocks the Worker | Sports data stops | Isolated provider dir; guards degrade to `unavailable`; stale cache absorbs outages; fixtures make a fix a one-file change. Mock provider keeps the app demoable. **Phase 2:** the block half is real. ESPN's CDN refused the Worker's default User-Agent from local workerd. `ESPN_USER_AGENT` exists, and the deployed Worker must be measured before production uses ESPN. Every other mitigation here was exercised live. |
-| KV free-tier write limit exceeded | Writes fail, cache degrades | L3 refuses short-TTL writes; live data is L1-only; write counter warns; cron kept infrequent. **Phase 2:** added per-key KV write intervals (a schedule at most hourly) and a daily ledger that warns at 700 and refuses at 900 writes per isolate. Two cold boards cost 14–18 writes. |
-| Cache API inert on `workers.dev` | Fewer cache hits | Tier probe; L1 + KV + HTTP `Cache-Control` carry the load. Custom domain is an upgrade, never a dependency. |
+| ESPN changes response shapes or blocks the Worker | Sports data stops | Isolated provider dir; guards degrade to `unavailable`; stale cache absorbs outages; fixtures make a fix a one-file change. Mock provider keeps the app demoable. **Phase 2:** the block half is real. ESPN's CDN refused the Worker's default User-Agent from local workerd. `ESPN_USER_AGENT` exists, and the deployed Worker must be measured before production uses ESPN. Every other mitigation here was exercised live. **Phase 5:** a local spot check with `ESPN_USER_AGENT=curl/8.4.0` filled every card during a Saturday slate. **Deploy:** the deployed Worker was refused the same way (403 on everything with the default). It passes with `curl/8.9.1 college-football-bets/0.5`, now set in production. The 403 episode showed the degradation working as designed, live. |
+| KV free-tier write limit exceeded | Writes fail, cache degrades | L3 refuses short-TTL writes; live data is L1-only; write counter warns; cron kept infrequent. **Phase 2:** added per-key KV write intervals (a schedule at most hourly) and a daily ledger that warns at 700 and refuses at 900 writes per isolate. Two cold boards cost 14–18 writes. **Phase 5:** the cron adds only a handful of daily writes (it never warms schedules), and a cold-read race that duplicated KV writes was fixed in `swr.ts`. |
+| Cache API inert on `workers.dev` | Fewer cache hits | Tier probe; L1 + KV + HTTP `Cache-Control` carry the load. Custom domain is an upgrade, never a dependency. **Deploy:** did not happen. The probe round-trips a value on `cfb-api.cfb-api.workers.dev` (`l2Available: true`), so L2 is active. The probe stays in case that changes. |
 | Predictor endpoint unavailable or restricted | No win probability | `Prediction unavailable` is a designed state (§12). Never substitute a computed number (§46). |
-| Supabase free project pauses after inactivity | Cold-start failures | Cron keep-alive; documented in ops. |
+| Supabase free project pauses after inactivity | Cold-start failures | Cron keep-alive; documented in ops. **Phase 5:** built. The cron runs one `select` every hour (7 days of inactivity pauses a free project, checked 2026-09-19). |
 | Live-state edge cases (OT, suspended, weather) | Confusing UI | Unknown statuses normalize to `'unknown'` with a neutral render; `result` only on `final`. |
-| Worker 10 ms CPU limit | 5xx on the board path | Keep board work I/O-bound; move heavy schedule processing to the team route; measure in Phase 2. **Phase 2 measurement (Node):** a Saturday scoreboard parses in about 7 ms, the team list about 6.6 ms, a summary about 2 ms, a schedule about 1 ms. Only normalized results are cached, so each payload is parsed once per refresh. The remaining risk is a cold refresh on the request path. Measure in production, and use cron warmers (Phase 5). |
-| Public read API scraped or crawled | Free-tier request and KV-read budget burned | Cache headers plus three cache tiers mean most repeat traffic never reaches ESPN or KV; best-effort per-IP limit; usage alert. Exposure is a quota concern, not a data one — the content is nine display names and otherwise-public sports data. |
+| Worker 10 ms CPU limit | 5xx on the board path | Keep board work I/O-bound; move heavy schedule processing to the team route; measure in Phase 2. **Phase 2 measurement (Node):** a Saturday scoreboard parses in about 7 ms, the team list about 6.6 ms, a summary about 2 ms, a schedule about 1 ms. Only normalized results are cached, so each payload is parsed once per refresh. The remaining risk is a cold refresh on the request path. Measure in production, and use cron warmers (Phase 5). **Phase 5:** the cron refreshes the team list, conferences, rankings, and calendar off the request path. **Deploy (Saturday, live slate):** median 1 ms, but a cold board peaked at 44 ms (six schedules plus the scoreboard). Every request finished `ok`, so Cloudflare did not enforce 10 ms on these. Watch for `exceededCpu` in the metrics; the next steps, in order, are in Phase 5's "Known limitations". |
+| Public read API scraped or crawled | Free-tier request and KV-read budget burned | Cache headers plus three cache tiers mean most repeat traffic never reaches ESPN or KV; best-effort per-IP limit; usage alert. Exposure is a quota concern, not a data one — the content is nine display names and otherwise-public sports data. **Phase 5:** the per-address budget is built (120/min per isolate, 429 with `Retry-After`) and every read route sets `Cache-Control`. A usage alert is an owner step (docs/ops.md). |
 | Someone assumes viewer reads are authenticated | A future change re-adds a login gate, or worse, relaxes a write policy to match | §11.1 records the decision and its date; the read policies name `anon` explicitly with a comment. |
 | Scope creep from §52 | Delays | §52 is architecture-only. §53 is the do-not-build list. |
 
@@ -1459,7 +1742,7 @@ Items 1–3 are settled decisions. The rest are working assumptions; each is che
 
 *Added in Phase 2:*
 - `SPORTS_PROVIDER` defaults to `mock` in `wrangler.toml`.
-- `ESPN_USER_AGENT` (optional) overrides the User-Agent sent to ESPN. The owner must decide it before ESPN goes to production.
+- `ESPN_USER_AGENT` (optional) overrides the User-Agent sent to ESPN. Production sends `curl/8.9.1 college-football-bets/0.5` (the owner's decision, Phase 5 deploy).
 - `SPORTS_PROVIDER_FAULT` (development and test only) makes chosen provider calls fail: `all`, `team:<id>`, `schedule`, `rankings`, `slate`, `game`, `prediction`, `calendar`, `teams`. Never set it in production.
 
 All three are documented in `wrangler.toml` and `apps/api/.dev.vars.example`.
@@ -1470,6 +1753,11 @@ All three are documented in `wrangler.toml` and `apps/api/.dev.vars.example`.
 - `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are used by admin sign-in only. Viewers need no `.env` at all. A pasted `/rest/v1` suffix on the URL is tolerated.
 - `VITE_API_BASE_URL` is optional. When it is unset, the app calls `/api` on its own origin, and in development Vite proxies that to the Worker. Set it for a deployed build, and add the site's origin to the Worker's `ALLOWED_ORIGINS`.
 - `API_PROXY_TARGET` is for the dev server only: where the `/api` proxy points (default `http://127.0.0.1:8787`).
+
+*Added in Phase 5* (the full reference is in [docs/ops.md](../docs/ops.md), "Configuration reference"):
+- `READ_RATE_LIMIT_PER_MINUTE` (Worker, optional): public reads per address per minute, per isolate. Default 120; `off` disables it.
+- `wrangler.toml` `[env.production]` is the deployed Worker. It restates every var and binding, because environments inherit neither. Filled in at the deploy (2026-09-19): the KV namespace id, `ALLOWED_ORIGINS = "https://cfb-board-pfc.pages.dev"`, and `ESPN_USER_AGENT = "curl/8.9.1 college-football-bets/0.5"`.
+- CI deploy (off until the repository variable `DEPLOY_ENABLED` is `true`): secret `CLOUDFLARE_API_TOKEN`; variables `CLOUDFLARE_ACCOUNT_ID`, `VITE_API_BASE_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `PAGES_PROJECT`, `SITE_ORIGIN`.
 
 **Deliberately unused:** `SUPABASE_SERVICE_ROLE_KEY`. There is no provisioning script and no privileged code path, so the key never enters the repo, CI, or the Worker. If a future task appears to need it, that is a signal the RLS model is being worked around rather than used.
 

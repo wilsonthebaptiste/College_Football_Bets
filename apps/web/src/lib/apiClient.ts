@@ -44,6 +44,8 @@ const APP_ERROR_KINDS: readonly AppErrorKind[] = [
   'not_found',
   'unauthorized',
   'forbidden',
+  'conflict',
+  'rate_limited',
   'internal',
 ];
 
@@ -65,6 +67,8 @@ export function kindForStatus(status: number): AppErrorKind {
   if (status === 401) return 'unauthorized';
   if (status === 403) return 'forbidden';
   if (status === 404) return 'not_found';
+  if (status === 409) return 'conflict';
+  if (status === 429) return 'rate_limited';
   if (status === 502) return 'provider_invalid_response';
   if (status === 503) return 'provider_unavailable';
   return 'internal';
@@ -77,6 +81,8 @@ const FALLBACK_MESSAGES: Record<AppErrorKind, string> = {
   not_found: 'Not found.',
   unauthorized: 'Sign in to continue.',
   forbidden: 'This account does not have access.',
+  conflict: 'That change conflicts with what is already saved. Reload and try again.',
+  rate_limited: 'Too many requests. Wait a moment and try again.',
   internal: 'Something went wrong on the server.',
 };
 
@@ -117,6 +123,8 @@ async function send(path: string, init: RequestInit): Promise<Response> {
 
 async function parse<T>(response: Response): Promise<T> {
   if (!response.ok) throw await toApiError(response);
+  // A delete answers 204 with no body at all.
+  if (response.status === 204) return undefined as T;
   try {
     return (await response.json()) as T;
   } catch {
@@ -141,6 +149,27 @@ export async function getPublic<T>(path: string, signal?: AbortSignal): Promise<
   return parse<T>(response);
 }
 
+/**
+ * Re-fetches public reads straight from the network, replacing whatever the
+ * browser's HTTP cache holds for them. Called after an admin change, so the
+ * next ordinary read of a board or the user list, which may be served from
+ * that cache for up to its `max-age`, shows the change instead (plan §5.1).
+ * Best effort: a failure here only means the old copy lingers until it expires.
+ */
+export async function refreshPublic(paths: readonly string[]): Promise<void> {
+  await Promise.all(
+    paths.map((path) =>
+      // The body is read to the end: a response abandoned halfway is not cached.
+      fetch(apiUrl(path), { headers: { Accept: 'application/json' }, cache: 'reload' })
+        .then((response) => response.arrayBuffer())
+        .then(
+          () => undefined,
+          () => undefined,
+        ),
+    ),
+  );
+}
+
 // ─── Admin requests ──────────────────────────────────────────────────────────
 
 /**
@@ -153,14 +182,23 @@ export interface AdminAuthHooks {
   getAccessToken(): Promise<string | null>;
   /** Refreshes the session once. The new token, or `null` if that failed. */
   refresh(): Promise<string | null>;
-  /** The session is beyond saving: clear it and send the admin to sign in. */
-  onUnauthorized(): void;
+  /**
+   * The session is beyond saving: clear it, and (unless `redirect` is false)
+   * send the admin to sign in.
+   */
+  onUnauthorized(redirect?: boolean): void;
 }
 
 export interface AdminRequestInit {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
   signal?: AbortSignal;
+  /**
+   * `false` for a background check (the header's Admin link) that must not
+   * yank the admin off a public page when a dead session is discovered. The
+   * session is still cleared. Default `true`.
+   */
+  redirectOnUnauthorized?: boolean;
 }
 
 const SIGN_IN_REQUIRED: AppError = {
@@ -176,9 +214,10 @@ export async function requestAdmin<T>(
 ): Promise<T> {
   if (auth === null) throw new ApiError(SIGN_IN_REQUIRED, 401);
 
+  const redirect = init.redirectOnUnauthorized ?? true;
   const token = await auth.getAccessToken();
   if (token === null) {
-    auth.onUnauthorized();
+    auth.onUnauthorized(redirect);
     throw new ApiError(SIGN_IN_REQUIRED, 401);
   }
 
@@ -202,7 +241,7 @@ export async function requestAdmin<T>(
     const refreshed = await auth.refresh();
     if (refreshed !== null) response = await attempt(refreshed);
     if (refreshed === null || response.status === 401) {
-      auth.onUnauthorized();
+      auth.onUnauthorized(redirect);
       throw await toApiError(response);
     }
   }

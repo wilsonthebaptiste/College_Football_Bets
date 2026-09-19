@@ -83,13 +83,24 @@ Consequences:
 
 - `ESPN_USER_AGENT` (a Worker var) overrides the User-Agent. Unset, the
   descriptive default in `client.ts` is sent, and local workerd gets a 403.
-- **Production is unmeasured.** Deployed Workers make subrequests from
-  Cloudflare's network with Cloudflare's TLS stack. That may behave like local
-  workerd, better, or worse. Measure it on the first deploy, before relying on
-  ESPN mode.
 - Choosing a User-Agent that begins with another client's name is a decision
   for the owner, not something the code makes silently. ESPN's site API is
   undocumented and unofficial either way.
+
+### Phase 5: the deployed Worker behaves like local workerd
+
+Measured on the first deploy (2026-09-19, a Saturday, from `cfb-api` on
+`workers.dev`):
+
+| User-Agent sent                                             | Result                                                              |
+| ----------------------------------------------------------- | ------------------------------------------------------------------- |
+| The default (`college-football-bets/0.2 (…)`)               | **403 on every request**: calendar, rankings, and all six schedules |
+| `curl/8.9.1 college-football-bets/0.5` (the owner's choice) | 200. All nine boards filled, 6 of 6 cards each, 11 live games       |
+
+The app degraded as designed during the 403s: the board answered 200 with six
+cards labelled "Sports data temporarily unavailable", and the season came from
+the date. Production now sets `ESPN_USER_AGENT` in `wrangler.toml`
+`[env.production.vars]`.
 
 ---
 
@@ -457,9 +468,9 @@ same minute, with the `groups=80&limit=300` query the live overlay uses.
 
 1. **Does the throttle apply per-IP or per-ASN?** _Partly answered._ The 403 is
    not only rate-based. There is also a client check that local workerd fails
-   with the default User-Agent (§1, "Phase 2"). What a deployed Worker gets is
-   still unmeasured. The retry policy is unchanged: one retry after 250–750 ms,
-   then `provider_unavailable`.
+   with the default User-Agent (§1, "Phase 2"). A deployed Worker fails it the
+   same way, and passes with a curl-style User-Agent (§1, "Phase 5"). The retry
+   policy is unchanged: one retry after 250–750 ms, then `provider_unavailable`.
 2. **Is the inline `summary.predictor` always present for upcoming games?**
    _Answered for the cases that matter._ It is present in the upcoming-game
    capture and **absent once a game is live** (`game-live.json` has none) and

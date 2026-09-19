@@ -375,6 +375,11 @@ async function main(): Promise<void> {
       url: `${groupsBase}/8`,
       purpose: 'One resolved conference (name, shortName, logo). Hop 2.',
     });
+    await run({
+      name: 'conference-teams',
+      url: `${groupsBase}/8/teams?limit=200`,
+      purpose: "One conference's member teams ($ref list). Hop 3: team id -> conference.",
+    });
   }
 
   // ── Predictor: the endpoint most likely to be missing ─────────────────────

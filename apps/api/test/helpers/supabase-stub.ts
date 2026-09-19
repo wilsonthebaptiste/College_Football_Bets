@@ -87,10 +87,12 @@ export function installSupabaseStub(options: StubOptions = {}): SupabaseStub {
   };
 
   const json = (status: number, body: unknown): Response =>
-    new Response(JSON.stringify(body), {
-      status,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    status === 204
+      ? new Response(null, { status })
+      : new Response(JSON.stringify(body), {
+          status,
+          headers: { 'Content-Type': 'application/json' },
+        });
 
   vi.stubGlobal(
     'fetch',

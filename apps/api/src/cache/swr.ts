@@ -64,6 +64,8 @@ const USER_MESSAGES: Record<AppErrorKind, string> = {
   invalid_request: 'The request could not be processed.',
   unauthorized: 'Authentication required.',
   forbidden: 'Not permitted.',
+  conflict: 'The request conflicts with saved data.',
+  rate_limited: 'Too many requests.',
   internal: 'Something went wrong.',
 };
 
@@ -104,6 +106,24 @@ export class SwrCache {
           provider,
           ttlSeconds: entry.ttlSeconds,
           fetchedAt: entry.fetchedAt,
+        }),
+        status: 'hit',
+      };
+    }
+
+    // Reading L2 and KV takes a few milliseconds. If another request in this
+    // isolate refreshed the key meanwhile, use its copy rather than load (and
+    // write KV) a second time. In-flight coalescing only covers loads that
+    // overlap; this covers the one that finished while this read was waiting.
+    // Found in workerd: three cold reads of the season calendar made three KV
+    // writes.
+    const settled = this.deps.tiers.freshInL1<T>(options.key);
+    if (settled !== null) {
+      return {
+        envelope: cached(settled.value, {
+          provider,
+          ttlSeconds: settled.ttlSeconds,
+          fetchedAt: settled.fetchedAt,
         }),
         status: 'hit',
       };

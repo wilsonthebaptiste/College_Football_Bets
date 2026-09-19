@@ -20,6 +20,8 @@
     "test:watch": "vitest",
     "check:season": "node scripts/check-season-literals.mjs",
     "verify:rls": "node scripts/verify-rls.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "check:bundle": "node scripts/check-bundle-secrets.mjs apps/api/dist apps/web/dist",
     "capture:fixtures": "node --experimental-strip-types scripts/capture-espn-fixtures.ts",
     "dev": "npm run dev --workspace @cfb/api",
     "dev:web": "npm run dev --workspace @cfb/web",
@@ -27,6 +29,7 @@
     "verify": "npm run typecheck && npm run lint && npm run test && npm run check:season"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@eslint/js": "^9.36.0",
     "@types/node": "^22.13.0",
     "eslint": "^9.36.0",

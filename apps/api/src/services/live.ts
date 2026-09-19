@@ -27,8 +27,9 @@ export interface LiveSchedule {
   usedSlates: Envelope<ProviderGame[]>[];
   /**
    * A game in its live window could not be checked, because its slate was
-   * unavailable or older than the schedule. The card may show a pre-game
-   * status for a game in progress, so the whole snapshot is marked stale.
+   * unavailable, or stale and older than the schedule. The card may show a
+   * pre-game status for a game in progress, so the whole snapshot is marked
+   * stale.
    */
   liveUnverified: boolean;
   /**
@@ -124,10 +125,15 @@ export async function readLiveSchedule(
   slates.forEach((slate, index) => {
     const key = keys[index];
     const games = slate.envelope.data;
-    // A slate older than the schedule could move a game backwards (live →
-    // pre-game), so it is not used at all.
     if (key === undefined || games === null) return;
-    if (!isNewerOrSame(slate.envelope.freshness.fetchedAt, scheduleFetchedAt)) return;
+    // A slate kept past its TTL after a failed refresh, and older than the
+    // schedule, could move a game backwards (live → pre-game), so it is not
+    // used at all. One still inside its own TTL is as current as a live score
+    // is here, even if a schedule arrived a moment after it: rejecting it
+    // marked live cards stale on every Saturday schedule refresh. Its score is
+    // dated by its own read (`overlaidAt`), never by the schedule's.
+    const { state, fetchedAt } = slate.envelope.freshness;
+    if (state === 'stale' && !isNewerOrSame(fetchedAt, scheduleFetchedAt)) return;
     usable.set(key, {
       games: new Map(games.map((game) => [game.providerGameId, game])),
       fetchedAt: slate.envelope.freshness.fetchedAt,

@@ -11,7 +11,9 @@ import {
 import {
   readCalendar,
   readErrorBody,
+  readGroup,
   readRankings,
+  readRefPage,
   readSchedule,
   readScoreboard,
   readStandalonePredictor,
@@ -154,6 +156,10 @@ function pipeline(body: unknown): void {
 
   const rankings = readRankings(body);
   if (rankings !== null) toRankings(rankings, SEASON);
+
+  readRefPage(body, 'groups');
+  readRefPage(body, 'teams');
+  readGroup(body);
 }
 
 /** Bigger payloads get fewer rounds; every payload gets several damages per round. */

@@ -49,6 +49,7 @@ const liveOnSlate: ProviderGame = {
 
 class FakeProvider implements SportsDataProvider {
   readonly name = 'espn' as const;
+  readonly teamNamespace = 'espn' as const;
   slate: ProviderGame[] | Error = [liveOnSlate];
   slateCalls = 0;
 
@@ -59,6 +60,9 @@ class FakeProvider implements SportsDataProvider {
   }
   async listTeams(): Promise<TeamIdentity[]> {
     return [];
+  }
+  async getConferences(): Promise<Record<string, string>> {
+    return {};
   }
   async getTeamSchedule(_id: string, season: Season): Promise<ProviderSchedule> {
     return { season, games: this.games, droppedEvents: 0 };
@@ -192,6 +196,26 @@ describe('live overlay', () => {
     expect(later.games?.[0]).toMatchObject({ period: 3, statusDetail: '9:00 - 3rd Quarter' });
     expect(later.usedSlates).toHaveLength(0);
     expect(later.liveUnverified).toBe(true);
+  });
+
+  it('uses a current slate read moments before a newer schedule (§39: no false stale)', async () => {
+    // Seen on the deployed Worker on a Saturday: six teams load in parallel,
+    // one reads the slate, and a second's schedule arrives from ESPN a moment
+    // later. That slate is still inside its 25-second TTL, so it is current.
+    const services = servicesWith(new FakeProvider([played, kickedOff]));
+    await readLiveSchedule(services, US, SEASON); // the slate is read at NOW
+
+    now = NOW + 5 * 1000;
+    const opponentView = new FakeProvider([kickedOff]); // ESPN's schedule still says pre-game
+    const opponent = kickedOff.away.team.providerTeamId;
+    const later = await readLiveSchedule({ ...services, provider: opponentView }, opponent, SEASON);
+
+    expect(later.schedule.envelope.freshness.fetchedAt).toBe(new Date(NOW + 5000).toISOString());
+    expect(opponentView.slateCalls).toBe(0);
+    expect(later.games?.[0]).toMatchObject({ status: 'live', period: 2 });
+    expect(later.liveUnverified).toBe(false);
+    // The score is dated by the slate's own read, not by the newer schedule.
+    expect(later.overlaidAt.get('g5')).toBe(new Date(NOW).toISOString());
   });
 
   it('leaves a game alone that its (healthy) slate does not list', async () => {

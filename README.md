@@ -4,16 +4,19 @@ A private, mobile-friendly dashboard for nine people and their six college
 football teams each. The spec is in [context/spec.md](context/spec.md) and the
 build plan is in [context/plan.md](context/plan.md).
 
-**Status: Phases 1–3 are complete. Phase 4 (team detail and live games) is
-built and waiting for your test pass** (see
-[Testing Phase 4](#testing-phase-4-on-your-machine)). Phase 5 (admin and
-deploy) comes after it. The website has a home page listing every board, each
-person's board of six team cards, and a full team page: rank, record, the live
-game, the previous and next games, the matchup prediction, and the whole
-season's schedule. Nobody signs in to look at boards. The data comes from ESPN
-or from a built-in mock season. When ESPN fails, the API serves the last good
-data labeled as stale, and the site shows that label instead of breaking the
-page.
+**Status: Phases 1–4 are complete. Phase 5 (admin and ship) is built and
+deployed: the site is live at <https://cfb-board-pfc.pages.dev>, on real ESPN
+data.** What remains is yours: 24 hours of usage numbers, your own test pass,
+and approving the commit (see
+[Testing Phase 5](#testing-phase-5-on-your-machine) and
+[docs/ops.md](docs/ops.md)). The website has a home page listing every board,
+each person's board of six team cards, a full team page (rank, record, the
+live game, the previous and next games, the matchup prediction, and the whole
+season's schedule), and an admin console for the administrator: add, rename,
+and delete people, and add, remove, and reorder each board's teams. Nobody
+signs in to look at boards. The data comes from ESPN or from a built-in mock
+season. When ESPN fails, the API serves the last good data labeled as stale,
+and the site shows that label instead of breaking the page.
 
 ---
 
@@ -26,18 +29,22 @@ apps/api/            Cloudflare Worker: the application API
     providers/       ESPN adapter, mock provider, fault injection
     cache/           TTL policy, the three cache tiers, stale-while-revalidate
     services/        Board, team, game, and search logic
-  test/              Tests, plus test/fixtures/espn/ (19 real ESPN payloads)
+    cron/            Cron warmers (calendar, rankings, team list, conferences)
+  test/              Tests, plus test/fixtures/espn/ (20 real ESPN payloads)
 apps/web/            The website: React + Vite + TypeScript
   src/app/           Routes, page frame, not-found page
   src/features/      home (board picker), board (cards), team (detail, schedule,
-                     prediction), admin (sign-in)
+                     prediction), admin (sign-in, people, board editor)
   src/components/    Rank, record, game lines, live score, logos, freshness, states
   src/lib/           API client, polling intervals, date formatting
   src/auth/          The admin session (loaded only for the administrator)
   src/styles/        Design tokens and global CSS
-supabase/            SQL migrations, RLS policies, seed data
-scripts/             ESPN fixture capture, RLS verifier, season-literal check
-docs/                espn-notes.md (API findings), supabase-setup.md (setup guide)
+supabase/            SQL migrations, RLS policies, seed data, and test/ (the
+                     security model, verb by verb, on real Postgres)
+scripts/             ESPN fixture capture, RLS verifier, season-literal check,
+                     bundle secret scan, smoke test for a running Worker
+docs/                espn-notes.md (API findings), supabase-setup.md (setup
+                     guide), ops.md (deploying and running it)
 ```
 
 ## Commands
@@ -54,6 +61,8 @@ Run all of these from the repo root.
 | `npm run dev:web`          | Starts the website at <http://localhost:5173> (needs `npm run dev`)   |
 | `npm run build:web`        | Builds the website for production into `apps/web/dist`                |
 | `npm run verify:rls`       | Tests your real Supabase security rules (needs setup)                 |
+| `npm run smoke -- <url>`   | Read-only checks against a running Worker, local or deployed          |
+| `npm run check:bundle`     | Fails if a privileged key is in the built Worker or site              |
 | `npm run capture:fixtures` | Re-downloads ESPN sample payloads                                     |
 | `npm run format`           | Auto-formats all code                                                 |
 
@@ -76,13 +85,14 @@ npm run verify
 A pass looks like this at the end:
 
 ```
- Test Files  20 passed (20)
-      Tests  387 passed (387)
+ Test Files  31 passed (31)
+      Tests  704 passed (704)
 ✓ No hard-coded year literals outside packages/shared/src/season.ts
 ```
 
-(Those are the Phase 3 totals. Phase 1 on its own was 4 files and 101 tests;
-Phase 2 brought it to 13 files and 287.)
+(Those are the Phase 5 totals. Phase 1 on its own was 4 files and 101 tests.
+Phase 2 brought it to 13 files and 287, Phase 3 to 20 and 387, and Phase 4 to
+24 and 473.)
 
 That one command runs four checks:
 
@@ -90,7 +100,7 @@ That one command runs four checks:
 | ---------------- | -------------------------------------------------------------------------------------- |
 | **typecheck**    | The code is valid strict TypeScript. The API and the shared types agree on every shape |
 | **lint**         | No `any` types and no sloppy patterns (§41)                                            |
-| **test**         | 387 tests. Each phase's are listed under its own "Testing Phase N" section             |
+| **test**         | 704 tests. Each phase's are listed under its own "Testing Phase N" section             |
 | **check:season** | No year like `2026` is hard-coded anywhere, so next season needs no code change (§21)  |
 
 What Phase 1's 101 tests cover:
@@ -541,10 +551,9 @@ tolerated). Restart `npm run dev:web` after any change to it.
 4. Reload the page. You're still signed in (§29, persistent sessions).
 5. **Sign out.** You're back on the home page, and the Admin link is gone.
 6. Sign in as the non-admin account from Phase 1 (`VERIFY_NONADMIN_EMAIL`).
-   You get **Not an administrator**, with a sign-out button. The header still
-   shows an **Admin** link for this account. That is a known cosmetic issue,
-   not a hole: the link leads back to this same page, and the database refuses
-   the account's writes regardless. It's noted for Phase 5.
+   You get **Not an administrator**, with a sign-out button. Since Phase 5 the
+   header shows no **Admin** link for this account: it waits for the server to
+   confirm an administrator.
 
 ### Phase 3 exit criteria and how each is checked
 
@@ -688,21 +697,282 @@ scan of the team page. Details are in the Phase 4 completion notes in
 
 ---
 
+## Testing Phase 5 on your machine
+
+Phase 5 adds the admin console, proves the security model table by table and
+verb by verb, hardens the public API, and prepares the deploy. It needs what
+Phase 3's Level C needed: `apps/web/.env`, your administrator account, and the
+two `VERIFY_*` accounts in the root `.env`.
+
+**Restart both servers first** (`npm run dev`, `npm run dev:web`). Phase 5
+changed the API's routes and the website's page loading.
+
+### Where Phase 5 stands
+
+As of 2026-09-19. The full record is in
+[context/plan.md, "Phase 5 — Completion Notes"](context/plan.md#phase-5--completion-notes),
+which starts with a handoff section for whoever picks this up next.
+
+**Done and verified on this machine:**
+
+- **The admin console:** people (add, rename, delete) and each board (team
+  search showing logo and conference, add, remove with a confirmation, and
+  reorder with Up and Down).
+- **Security, proven three ways:**
+  - every admin route against every way of not being an administrator (131 API
+    tests);
+  - every verb on every table, on real Postgres (44 database tests);
+  - the live Supabase project, with `npm run verify:rls` passing 44/44. Public
+    sign-ups are confirmed off.
+- **Hardening:**
+  - a per-address limit on public reads;
+  - cron warmers, which also keep the free Supabase project awake;
+  - logos resized by the API (a real board's six logos: 28 KB instead of about 180 KB);
+  - each page loaded as its own chunk;
+  - the fonts served from this site. Lighthouse on a phone, performance:
+    home 98, board 93, team 89. Accessibility and best practices: 100 on every
+    page.
+- **Deploy preparation:** a production environment in `wrangler.toml`, a CI
+  deploy job (off until you enable it), `npm run smoke`, `npm run check:bundle`,
+  and [docs/ops.md](docs/ops.md).
+- **In a real browser** (headless Edge):
+  - 116 checks with your real admin and non-admin accounts, the console driven
+    by keyboard only, and axe clean everywhere;
+  - 26 checks on real ESPN data during Saturday's games.
+
+**Deployed, and verified live** (2026-09-19, a Saturday, during games):
+
+- The site is <https://cfb-board-pfc.pages.dev>, and the API is
+  <https://cfb-api.cfb-api.workers.dev>. Both are on Cloudflare's free tier.
+- **ESPN refused the app's default User-Agent from Cloudflare too.** You chose
+  to try the default first and then fall back, so production now sends
+  `curl/8.9.1 college-football-bets/0.5`. All nine boards filled (54 of 54
+  cards, 11 live games).
+- `npm run smoke` against the live API: 15/15, CORS included.
+- **48 checks in headless Edge at phone width against the live site:**
+  - every board, card, and team page on real data;
+  - deep links and reloads;
+  - axe clean on all six pages, in light and dark;
+  - no sideways scroll at 390 or 320 px;
+  - the whole admin flow with your real account (a probe person was added,
+    two teams added and reordered, one removed, then the probe deleted);
+  - your non-admin account turned away.
+- `npm run verify:rls` again, against the database production uses: 44/44.
+- The cron ran on schedule, with all five warmers `ok`.
+- **One bug turned up only under real Saturday traffic, and is fixed:** a live
+  card could briefly lose its live score and say "May be out of date" right
+  after its schedule refreshed. It now keeps the score. There's a test for it.
+
+**Not done, and waiting on you:**
+
+1. **The commit.** Nothing from Phase 5 is committed yet. A message will be
+   drafted for your approval first.
+2. **Open the site on your own phone** (Level C below). It was checked at
+   phone size in a desktop browser, not on a real phone.
+3. **After a day live:** the usage numbers
+   ([Watching usage](docs/ops.md#watching-usage)). Look at CPU time especially:
+   a cold board read on a Saturday measured up to 44 ms, against a documented
+   10 ms limit. Cloudflare let every one through.
+4. **Your test pass** of Levels B, B2, and B3 below, if you want to repeat
+   them. Level A passes.
+
+**Worth knowing before you test:**
+
+- A board change shows at once in the console and in your own browser. Other
+  people's open pages catch up within about a minute.
+- The public API refuses more than 120 reads a minute from one address, and
+  that applies under `npm run dev` as well.
+- Search shows "Conference unknown" for teams outside FBS: conference names
+  come only from FBS's conference list.
+- `apps/api/dist` and `apps/web/dist` are build output from the last check.
+  They are gitignored and safe to delete.
+
+### Level A — Automated checks
+
+```powershell
+npm run verify
+```
+
+The result should be 31 test files and 704 tests. Phase 5 added 231:
+
+- **Every admin route refuses every non-administrator** (90 of the 131 admin
+  API tests). Each of the ten `/api/admin/*` routes is sent no token, a
+  non-Bearer header, an `alg:none` forgery, an HS256 token keyed with the
+  public key, a real token with edited claims, an expired token, and another
+  project's token: all 401, with no database call. A valid non-admin token
+  gets 403, and the only database call is `is_admin()`. The test checks
+  itself against the router, so a new admin route that isn't added to it
+  fails.
+- **The console's API** (the other 41). Adding a team stores its provider
+  identity and conference the first time any board takes it; a duplicate is a
+  409 before any write, and again if one slips past; removal renumbers the
+  board; a reorder is one `reorder_selections` call and a stale list is a 409.
+  A write the database refuses is a 403 even when `is_admin()` said yes. After
+  any change, the next public read of that board shows it.
+- **The database itself** (44, `supabase/test/rls.test.ts`). The migration
+  and seed files run on real Postgres (PGlite), with Supabase's roles and
+  defaults simulated. As `anon` and as a signed-in stranger: insert, update,
+  and delete on each of the three tables, one test each; `admins` unreadable;
+  `reorder_selections` raising `42501`. As the administrator, every verb works.
+- **Operations** (20): the per-address read budget and its 429, `Cache-Control`
+  on every public read, and the cron warmers.
+- **The website** (29): the board editor and people list as they render, the
+  header's Admin link waiting for the server, and the sign-in message for an
+  unconfirmed account. Plus 6 more for the ESPN conference lookup and the cache.
+- **The live overlay** (1, added after the deploy): a live score read a moment
+  before a newer schedule is still used, and the card is not marked stale.
+
+Then the two builds and the key scan:
+
+```powershell
+npm run bundle --workspace @cfb/api
+npm run build:web
+npm run check:bundle
+```
+
+The last line should say `No service-role or secret key in … files`, and list
+the publishable key as public by design.
+
+### Level B — The admin console
+
+Open <http://localhost:5173/login> and sign in as the administrator.
+
+1. **The Admin link.** It appears in the header once the server has confirmed
+   the account, and the console lists everyone with their team counts.
+2. **Add a person.** Type `Test Person` in **Add a person**, press Enter. They
+   appear with `0 teams`.
+3. **Their board.** Press **Edit board** on their row. The page says the board
+   has no teams yet.
+4. **Add teams.** In **Find a team**, type `ala`. Each result shows a logo (or
+   initials, in mock mode), its name, and its conference. Press **Add** on
+   Alabama. Then add Georgia and Texas. The list shows them in that order, and
+   `This board has 3 of its 6 teams.`
+5. **No duplicates.** Search `ala` again. Alabama says **On this board**, with
+   no Add button.
+6. **Reorder.** Press **Up** on Texas twice. It moves to the top at once, and
+   focus stays on Texas's buttons.
+7. **Remove.** Press **Remove** on Georgia. A dialog asks first. Press Escape:
+   nothing changes. Press **Remove** again, then the red **Remove**. Georgia
+   is gone.
+8. **The board.** Follow **View the board**. The cards read Texas, then
+   Alabama. Reload: the same order.
+9. **Rename and delete.** Back on **Admin**, **Rename** Test Person, then
+   **Delete** them. The dialog names how many teams their board has. They are
+   gone from the home page too.
+10. **Keyboard only.** Do steps 2–9 again without the mouse: Tab to move,
+    Enter to press, Escape to cancel a dialog. Every control shows a focus
+    ring, and after each change focus lands somewhere sensible, never at the
+    top of the page.
+11. **Phone width.** In the device toolbar at 320 px, the console and the
+    board editor fit with no sideways scroll, and each row's buttons share
+    one line.
+
+### Level B2 — The security boundary
+
+1. **The live database, attacked directly.** `npm run verify:rls`. It should
+   end `44 passed, 0 failed, 0 skipped` and
+   `Every write path is refused by the database itself`. It now tries every
+   verb on every table as `anon` and as the non-admin, checks that public
+   sign-ups are off, and cleans up the probe rows it creates.
+2. **A non-administrator.** Sign out, then sign in as the non-admin account.
+   The page says **Not an administrator**, and the header has **no** Admin
+   link (the Phase 3 finding, fixed).
+3. **The API without a token.** With `npm run dev` running:
+
+   ```powershell
+   npm run smoke -- http://127.0.0.1:8787
+   ```
+
+   Every line passes, including the three that show the admin door shut.
+
+### Level B3 — Hardening
+
+1. **Cron warmers.** Stop `npm run dev`, then in `apps/api` run
+   `npx wrangler dev --test-scheduled`. Open
+   <http://127.0.0.1:8787/__scheduled?cron=*%2F10+*+*+8-12%2C1+FRI%2CSAT%2CSUN>.
+   The terminal prints a `cron_warm` line with `ok: true` for the season,
+   rankings, teams, conferences, and database. (The hourly schedule,
+   `cron=0+*+*+*+*`, skips itself on autumn weekends.) Stop it and start
+   `npm run dev` again.
+2. **Smaller logos.** On any board, the Network tab's images come from
+   `a.espncdn.com/combiner/…&w=144` (48 on a schedule), about a quarter of
+   the old size. Blocking one still shows initials.
+3. **Fonts.** The Network tab shows no request to Google Fonts: the two
+   families are served from `/fonts/`.
+4. **Lighthouse (optional).** `npm run build:web`, then
+   `npx vite preview --port 4173` in `apps/web` (with `npm run dev` running),
+   and run DevTools → Lighthouse → Mobile on <http://localhost:4173>.
+   Accessibility and best practices should be 100.
+
+### Level C — The live site, on your phone
+
+The deploy is done (2026-09-19). How it was done, and how to redo it, is in
+[docs/ops.md, "Deploying"](docs/ops.md#deploying-the-first-time).
+
+1. **On your phone**, open <https://cfb-board-pfc.pages.dev>. The home page
+   lists nine boards. A board shows six cards with AP ranks, records, and real
+   games. A team page shows the schedule and ESPN's Matchup Predictor (or
+   "Prediction unavailable").
+2. **Deep links.** Open a board, copy its URL, and open it in a new tab. Reload
+   a team page. Both load.
+3. **Admin.** Open `/login` on the live site (it is never linked) and sign in.
+   The header gains an **Admin** link. Change something small on a board, open
+   that board, and check it. Change it back.
+4. **The smoke test**, from the repo root, whenever you like:
+
+   ```powershell
+   npm run smoke -- https://cfb-api.cfb-api.workers.dev https://cfb-board-pfc.pages.dev
+   ```
+
+   It should end `15 passed, 0 failed`.
+
+5. **After 24 hours**, read the usage numbers in the Cloudflare dashboard
+   ([Watching usage](docs/ops.md#watching-usage)) and write them into
+   [Recorded measurements](docs/ops.md#recorded-measurements).
+
+### Phase 5 exit criteria and how each is checked
+
+| Exit criterion (plan, Phase 5)                                                | Checked by                        | Status                                            |
+| ----------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------- |
+| Admin adds, removes, and reorders teams; the board reflects it on reload      | Level A, Level B, Level C         | ✅ automated · ✅ browser run · ✅ live site      |
+| All negative authorization tests pass, including direct-to-database attempts  | Level A, Level B2 step 1          | ✅ automated · ✅ live `verify:rls` run (twice)   |
+| axe reports no violations; keyboard-only operation of the admin console works | Level B step 10                   | ✅ browser run · ✅ axe on the live site          |
+| Deployed URLs serve the app with real ESPN data on a phone                    | Level C                           | ✅ live site at phone size · ⏳ your real phone   |
+| 24 hours of normal use stays inside free-tier limits                          | Level C step 5, the dashboard     | ⏳ you, from 2026-09-20                           |
+| Every §50 row is handled gracefully                                           | Level A, and the Phase 2–4 levels | ✅ automated · ✅ live fault drill · ✅ live 403s |
+
+"Browser run" means headless Edge driven by `playwright-core` against real
+`wrangler dev` Workers and the live Supabase project, with your real
+administrator and non-admin accounts: 116 checks for the console, the viewer
+pages, and axe in both themes at 320 and 1440 px, plus 26 on real ESPN data.
+"Live site" means 48 more checks the same way, against the deployed site at
+390 and 320 px. "Live 403s": before the User-Agent change, ESPN refused
+everything from the deployed Worker, and every board still answered 200 with
+labelled "unavailable" cards. Details are in the Phase 5 completion notes in
+[context/plan.md](context/plan.md).
+
+---
+
 ## Troubleshooting
 
-| Problem                                               | Fix                                                                                                                                                                                                                              |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run dev` says port 8787 is in use                | An old server is still running. Close that terminal, or run `npx wrangler dev --port 8788` in `apps/api`                                                                                                                         |
-| `/api/users` returns 500 after setup                  | Check `apps/api/.dev.vars`, then restart `npm run dev`, which reads the file only at startup                                                                                                                                     |
-| Admin calls always return 401                         | See step 3 of `docs/supabase-setup.md`. The project may have no public signing key                                                                                                                                               |
-| Things worked last week and nothing does now          | Free Supabase projects pause after about 7 days idle. Press Restore in the dashboard                                                                                                                                             |
-| `verify:rls` says "Could not read any app_users"      | The seed has not been run, or the root `.env` points at a different project                                                                                                                                                      |
-| The website says "Unable to load boards"              | The API isn't running. Start `npm run dev` in another terminal, then press **Try again**                                                                                                                                         |
-| The website runs on 5174, not 5173                    | Something else holds 5173. Either port works: the dev server forwards `/api` to 8787 regardless                                                                                                                                  |
-| `/login` says "Admin sign-in isn't set up"            | `apps/web/.env` is missing or incomplete (Level C). Restart `npm run dev:web` after editing it                                                                                                                                   |
-| The team page says "Schedule unavailable"             | The schedule is its own request. Press **Try again**. If it keeps failing, check that DevTools isn't blocking it (Phase 4, Level B2) and that `npm run dev` is running                                                           |
-| Every card says "Season complete" in September        | `SEASON_OVERRIDE` is still in `apps/api/.dev.vars` from the offseason drill (Phase 4, Level B3). Remove the line and restart `npm run dev`                                                                                       |
-| A test account gets "Email or password is incorrect." | The account isn't in this Supabase project, its password doesn't match `.env`, or its email was never confirmed. Recreate it in **Authentication → Users** with **Auto Confirm User** ticked. Keep the non-admin out of `admins` |
+| Problem                                                    | Fix                                                                                                                                                                                                                              |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev` says port 8787 is in use                     | An old server is still running. Close that terminal, or run `npx wrangler dev --port 8788` in `apps/api`                                                                                                                         |
+| `/api/users` returns 500 after setup                       | Check `apps/api/.dev.vars`, then restart `npm run dev`, which reads the file only at startup                                                                                                                                     |
+| Admin calls always return 401                              | See step 3 of `docs/supabase-setup.md`. The project may have no public signing key                                                                                                                                               |
+| Things worked last week and nothing does now               | Free Supabase projects pause after about 7 days idle. Press Restore in the dashboard                                                                                                                                             |
+| `verify:rls` says "Could not read any app_users"           | The seed has not been run, or the root `.env` points at a different project                                                                                                                                                      |
+| The website says "Unable to load boards"                   | The API isn't running. Start `npm run dev` in another terminal, then press **Try again**                                                                                                                                         |
+| The website runs on 5174, not 5173                         | Something else holds 5173. Either port works: the dev server forwards `/api` to 8787 regardless                                                                                                                                  |
+| `/login` says "Admin sign-in isn't set up"                 | `apps/web/.env` is missing or incomplete (Level C). Restart `npm run dev:web` after editing it                                                                                                                                   |
+| The team page says "Schedule unavailable"                  | The schedule is its own request. Press **Try again**. If it keeps failing, check that DevTools isn't blocking it (Phase 4, Level B2) and that `npm run dev` is running                                                           |
+| Every card says "Season complete" in September             | `SEASON_OVERRIDE` is still in `apps/api/.dev.vars` from the offseason drill (Phase 4, Level B3). Remove the line and restart `npm run dev`                                                                                       |
+| A test account gets "Email or password is incorrect."      | The account isn't in this Supabase project, its password doesn't match `.env`, or its email was never confirmed. Recreate it in **Authentication → Users** with **Auto Confirm User** ticked. Keep the non-admin out of `admins` |
+| The console says "That team is already on this board."     | It is. The database refuses a team twice on one board (§3); the search marks such teams **On this board**                                                                                                                        |
+| The console says "This board changed since it was loaded." | Another tab or device changed the board. Reload the page and try again                                                                                                                                                           |
+| A changed board still shows the old order elsewhere        | Other people's pages catch up within about a minute (the board's cache). Your own admin browser sees it at once                                                                                                                  |
+| The API answers 429 "Too many requests."                   | More than 120 reads a minute from one address. Wait a few seconds. For a load test, set `READ_RATE_LIMIT_PER_MINUTE=off` in `apps/api/.dev.vars`                                                                                 |
+| Anything about deploying                                   | See the troubleshooting table at the end of [docs/ops.md](docs/ops.md#troubleshooting-a-deployment)                                                                                                                              |
 
 For database-side problems, the full table is at the bottom of
 [docs/supabase-setup.md](docs/supabase-setup.md).

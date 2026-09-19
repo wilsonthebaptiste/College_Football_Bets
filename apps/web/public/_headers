@@ -1,0 +1,17 @@
+# Cloudflare Pages response headers (docs/ops.md, "Deploying").
+
+# Vite puts a content hash in every file name under /assets: a changed file is
+# a new URL, so these can be cached for good.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Self-hosted fonts. Stable names, so a month rather than forever.
+/fonts/*
+  Cache-Control: public, max-age=2592000
+
+# Every page. index.html itself is revalidated, so a deploy is seen at once.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()

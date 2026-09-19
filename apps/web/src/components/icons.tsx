@@ -100,3 +100,30 @@ export function FootballIcon({ className, size = 22 }: IconProps) {
     </svg>
   );
 }
+
+/** Points up; `down` flips it. For the board editor's move buttons. */
+export function ArrowIcon({
+  className,
+  size = 16,
+  direction,
+}: IconProps & { direction: 'up' | 'down' }) {
+  return (
+    <svg
+      className={className}
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      style={direction === 'down' ? { transform: 'rotate(180deg)' } : undefined}
+    >
+      <path
+        d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

@@ -2,12 +2,14 @@ import type {
   RawCalendar,
   RawCompetitor,
   RawEvent,
+  RawGroup,
   RawInlinePredictor,
   RawLogo,
   RawPoll,
   RawRank,
   RawRankings,
   RawRecordEntry,
+  RawRefPage,
   RawSchedule,
   RawScoreboard,
   RawScore,
@@ -128,6 +130,43 @@ export function readTeamList(body: unknown): RawTeam[] | null {
     if (team !== null) valid.push(team);
   }
   return valid;
+}
+
+// ─── Conferences (espn-notes §7) ─────────────────────────────────────────────
+
+/**
+ * The last `/<kind>/<id>` segment of a core-API `$ref`, e.g. the `8` in
+ * `…/types/2/groups/8?lang=en`. Held to the same boring id shape as every
+ * other identifier, because these ids go back into URLs we build.
+ */
+function refId(ref: unknown, kind: 'groups' | 'teams'): string | null {
+  const href = text(ref);
+  if (href === null) return null;
+  const match = new RegExp(`/${kind}/([A-Za-z0-9_-]{1,40})(?:[/?#]|$)`).exec(href);
+  return match?.[1] ?? null;
+}
+
+/** `groups/80/children` and `groups/{id}/teams`: pages of `$ref`s. */
+export function readRefPage(body: unknown, kind: 'groups' | 'teams'): RawRefPage | null {
+  const items = field(body, 'items');
+  if (!Array.isArray(items)) return null;
+  const ids: string[] = [];
+  for (const item of items) {
+    const id = refId(field(item, '$ref'), kind);
+    if (id !== null) ids.push(id);
+  }
+  return { ids, count: finite(field(body, 'count')) };
+}
+
+/** `groups/{id}`: a conference's names. */
+export function readGroup(body: unknown): RawGroup | null {
+  const id = identifier(field(body, 'id'));
+  if (id === null) return null;
+  return {
+    id,
+    shortName: text(field(body, 'shortName')),
+    name: text(field(body, 'name')),
+  };
 }
 
 // ─── Games ───────────────────────────────────────────────────────────────────

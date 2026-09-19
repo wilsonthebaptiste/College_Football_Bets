@@ -43,10 +43,17 @@ export interface Freshness {
  * §38 requires distinguishing temporary provider failure, missing data, invalid
  * data, authorization failure, and application error. One kind per case.
  *
- * `invalid_request` is this list's one addition to the plan's §5 enumeration: a
- * malformed request body is a client error (400), and without it the only honest
- * mapping left is `internal` (500), which would blame the server for the
- * caller's typo and make a genuine 500 impossible to spot in the logs.
+ * Three additions to the plan's §5 enumeration, each for the same reason: without
+ * them the only honest mapping left is `internal` (500), which would blame the
+ * server for the caller's mistake and make a genuine 500 impossible to spot in
+ * the logs.
+ *
+ * - `invalid_request` (400): a malformed request body.
+ * - `conflict` (409, Phase 5): the write collides with what is already stored,
+ *   such as a team that is already on the board, or a board that changed since
+ *   the administrator loaded it. The database constraint is the enforcer.
+ * - `rate_limited` (429, Phase 5): one address sent more public reads than the
+ *   best-effort budget allows (plan §5.3, "open-API abuse budget").
  */
 export type AppErrorKind =
   | 'provider_unavailable'
@@ -55,6 +62,8 @@ export type AppErrorKind =
   | 'not_found'
   | 'unauthorized'
   | 'forbidden'
+  | 'conflict'
+  | 'rate_limited'
   | 'internal';
 
 export interface AppError {

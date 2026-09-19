@@ -22,6 +22,12 @@ SUPABASE_ANON_KEY=YOUR-ANON-KEY
 # slate, game, prediction, calendar, teams, team:<providerTeamId>.
 # SPORTS_PROVIDER_FAULT=team:251
 
+# Optional: public reads allowed per client address per minute (default 120).
+# "off" disables it. It applies under `wrangler dev` too, which is far more
+# than one person browsing uses; a load test would need "off". See
+# src/middleware/rate-limit.ts.
+# READ_RATE_LIMIT_PER_MINUTE=120
+
 # Deliberately absent: SUPABASE_SERVICE_ROLE_KEY.
 # It bypasses every RLS policy. Nothing in this Worker needs it, and if
 # something ever appears to, that is a sign the RLS model is being worked

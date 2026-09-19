@@ -1,11 +1,15 @@
 import type { TeamIdentity } from '@cfb/shared';
 import { cacheKey, policyFor } from '../cache/policy';
 import { HttpError, invalidRequest } from '../http/errors';
+import { sizedLogoUrl, TEAM_LOGO_PX } from '../providers/logos';
+import type { ConferenceMap } from '../providers/types';
+import { resolveSeason } from '../season/resolve';
 import type { Services } from './context';
 
 /**
  * Admin team search (§43): the provider's full team list, fetched once and
  * cached for 24 hours, filtered here. 762 teams is a list, not a search engine.
+ * Each result carries its conference (plan §5.1), from a second cached read.
  */
 
 export const SEARCH_MIN_LENGTH = 2;
@@ -56,7 +60,8 @@ export function rankMatches(teams: readonly TeamIdentity[], query: string): Team
     .map((entry) => entry.team);
 }
 
-export async function searchTeams(services: Services, query: string): Promise<TeamIdentity[]> {
+/** The provider's full team list, through the cache (24 h). */
+export async function readTeamList(services: Services): Promise<TeamIdentity[]> {
   const { cache, provider } = services;
   const read = await cache.read<TeamIdentity[]>({
     key: cacheKey('team_list', provider.name),
@@ -71,5 +76,55 @@ export async function searchTeams(services: Services, query: string): Promise<Te
       'Team search is temporarily unavailable.',
     );
   }
-  return rankMatches(teams, query);
+  return teams;
+}
+
+/**
+ * Conference names for the current season (espn-notes §7), through the cache
+ * (24 h). Optional garnish: if they cannot be loaded, teams are listed without
+ * a conference rather than not at all.
+ */
+export async function readConferences(services: Services): Promise<ConferenceMap> {
+  const { cache, provider } = services;
+  const { season } = await resolveSeason(services);
+  const read = await cache.read<ConferenceMap>({
+    key: cacheKey('conferences', provider.name, String(season.year)),
+    policyFor: () => policyFor('conferences'),
+    load: () => provider.getConferences(season),
+  });
+  return read.envelope.data ?? {};
+}
+
+function withConference(team: TeamIdentity, conferences: ConferenceMap): TeamIdentity {
+  return team.conference !== null
+    ? team
+    : { ...team, conference: conferences[team.providerTeamId] ?? null };
+}
+
+export async function searchTeams(services: Services, query: string): Promise<TeamIdentity[]> {
+  const [teams, conferences] = await Promise.all([
+    readTeamList(services),
+    readConferences(services),
+  ]);
+  return rankMatches(teams, query).map((team) => ({
+    ...withConference(team, conferences),
+    // Shown at 40 px in the results list; the stored URL stays canonical.
+    logoUrl: sizedLogoUrl(team.logoUrl, TEAM_LOGO_PX),
+  }));
+}
+
+/**
+ * One team's identity, as the provider lists it, with its conference: what a
+ * new `teams` row is made from when the administrator adds it to a board
+ * (§43). The logo URL is the canonical one, so the row stores that. `null`
+ * when the provider lists no such team.
+ */
+export async function findTeamIdentity(
+  services: Services,
+  providerTeamId: string,
+): Promise<TeamIdentity | null> {
+  const teams = await readTeamList(services);
+  const team = teams.find((candidate) => candidate.providerTeamId === providerTeamId);
+  if (team === undefined) return null;
+  return withConference(team, await readConferences(services));
 }

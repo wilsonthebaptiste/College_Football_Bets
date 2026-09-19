@@ -213,6 +213,16 @@ export class TieredCache {
   }
 
   /**
+   * L1 only, synchronously, and only while inside its TTL. For the moment just
+   * before a load: another request may have refreshed the key while this one
+   * was waiting on the slower tiers (see `SwrCache.read`).
+   */
+  freshInL1<T>(key: string): CacheEntry<T> | null {
+    const memo = l1.get(key);
+    return memo !== undefined && isFresh(memo, this.deps.now()) ? (memo as CacheEntry<T>) : null;
+  }
+
+  /**
    * Writes `entry` to every tier `policy` allows. L1 synchronously; L2 and L3
    * deferred to `waitUntil` when there is one, so a response never waits on KV.
    */
@@ -318,6 +328,15 @@ export class TieredCache {
       }),
     );
   }
+}
+
+/**
+ * Drops one key from this isolate's L1. For entries that are L1-only and that
+ * an admin write has just made wrong: the board composite (plan §5.1). Other
+ * isolates keep their copy until it expires, at most the board's 60 s TTL.
+ */
+export function evictL1(key: string): void {
+  l1.delete(key);
 }
 
 /** Test seam: L1, the L2 probe, and the KV ledger are all module scope. */

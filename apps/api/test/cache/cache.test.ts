@@ -310,6 +310,35 @@ describe('swr: the §39 state machine', () => {
     expect(new Set(results.map((result) => result.envelope.freshness.fetchedAt)).size).toBe(1);
   });
 
+  it('does not load again when another read refreshed the key while this one waited on KV', async () => {
+    // Found in workerd (Phase 5): KV reads take milliseconds, a fast load does
+    // not, so a load could finish before its siblings' KV reads did. Each then
+    // loaded again and wrote KV again: three writes for one calendar.
+    const kv = new FakeKv();
+    const slowKv = {
+      // Reads what is stored now, and answers later, like a network round trip.
+      get: async (key: string) => {
+        const stored = await kv.get(key, 'json');
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return stored;
+      },
+      put: kv.put.bind(kv),
+    };
+    const cache = swr(new TieredCache({ kv: slowKv, edge: null, now: clock, defer: null }));
+    let calls = 0;
+    const load = async (): Promise<string> => {
+      calls += 1;
+      return 'value';
+    };
+    const first = cache.read({ key: 'calendar', policyFor: () => policy, load });
+    const late = new Promise((resolve) => setTimeout(resolve, 2)).then(() =>
+      cache.read({ key: 'calendar', policyFor: () => policy, load }),
+    );
+    await Promise.all([first, late]);
+    expect(calls).toBe(1);
+    expect(kv.writes).toHaveLength(1);
+  });
+
   it('lets fatal errors through instead of serving stale', async () => {
     const cache = swr(tiers());
     await cache.read({ key: 'k', policyFor: () => policy, load: async () => 'v1' });

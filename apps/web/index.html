@@ -11,11 +11,21 @@
       content="Six college football teams per board: ranks, records, results, and what's next."
     />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Self-hosted (src/styles/fonts.css). The body face and the heading face
+         are on every page, so fetch them alongside the code, not after it. -->
     <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap"
+      rel="preload"
+      href="/fonts/barlow-400-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/barlow-condensed-700-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
     />
     <title>CFB Board</title>
   </head>

@@ -40,8 +40,10 @@ jobs:
         run: npm run format:check
 
       # Every test runs offline: the Worker tests stub Supabase and sign their
-      # own JWTs with real WebCrypto keys. CI needs no secrets, and deliberately
-      # has none — in particular no SUPABASE_SERVICE_ROLE_KEY (plan §12).
+      # own JWTs with real WebCrypto keys, and the database security tests run
+      # the migrations on PGlite (Postgres in WASM). CI needs no secrets, and
+      # deliberately has none — in particular no SUPABASE_SERVICE_ROLE_KEY
+      # (plan §12).
       - name: Test
         run: npm run test
 
@@ -49,11 +51,69 @@ jobs:
       - name: Season literal check
         run: npm run check:season
 
-      # Proves the Worker still bundles for the real runtime, not just for Node.
+      # The Worker exactly as `wrangler deploy --env production` would upload it.
       - name: Worker bundle (dry run)
-        working-directory: apps/api
-        run: npx wrangler deploy --dry-run --outdir dist
+        run: npm run bundle --workspace @cfb/api
 
       # The production web build, with no .env: viewers need no configuration.
       - name: Web build
         run: npm run build:web
+
+      # Plan §5.2 — no service-role or secret key in anything that ships.
+      - name: No privileged keys in the bundles
+        run: npm run check:bundle
+
+  # Deploys main to Cloudflare once `verify` passes (plan §5.4).
+  #
+  # Off until the owner turns it on: set the repository variable
+  # DEPLOY_ENABLED to `true`, after the first deploy by hand. docs/ops.md,
+  # "Continuous deployment", lists every secret and variable it reads.
+  deploy:
+    name: deploy to Cloudflare
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # The Worker first: the new site may call a route the old Worker lacks.
+      - name: Deploy the Worker
+        working-directory: apps/api
+        run: npx wrangler deploy --env production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+
+      # The Supabase URL and publishable key are public by design (RLS is the
+      # boundary), so they are variables, not secrets.
+      - name: Build the site
+        run: npm run build:web
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+
+      - name: No privileged keys in the site
+        run: node scripts/check-bundle-secrets.mjs apps/web/dist
+
+      - name: Deploy the site
+        run: npx wrangler pages deploy apps/web/dist --project-name "${{ vars.PAGES_PROJECT }}" --branch main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Smoke test the deployed API
+        run: npm run smoke -- "${{ vars.VITE_API_BASE_URL }}" "${{ vars.SITE_ORIGIN }}"

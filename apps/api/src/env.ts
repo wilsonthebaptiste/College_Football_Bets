@@ -20,6 +20,11 @@ export interface Env {
   SPORTS_PROVIDER_FAULT?: string | undefined;
   /** The User-Agent sent to ESPN. Unset means the default in `providers/espn/client.ts`. */
   ESPN_USER_AGENT?: string | undefined;
+  /**
+   * Public reads allowed per client address per minute, per isolate (plan
+   * §5.3). Unset means 120; `off` disables it. See `middleware/rate-limit.ts`.
+   */
+  READ_RATE_LIMIT_PER_MINUTE?: string | undefined;
 
   // KV namespace — cache tier L3. Optional at the type level because unit tests
   // run without it and because the Worker must not hard-fail if it is unbound.
@@ -41,7 +46,7 @@ export interface Variables {
 
 export type AppBindings = { Bindings: Env; Variables: Variables };
 
-export const APP_VERSION = '0.2.0';
+export const APP_VERSION = '0.5.0';
 
 /** `SPORTS_PROVIDER` is a string binding; narrow it rather than trusting it. */
 export function providerName(env: Env): ProviderName {

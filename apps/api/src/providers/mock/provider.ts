@@ -1,6 +1,6 @@
 import type { Prediction, RankingsSnapshot, Season, TeamIdentity } from '@cfb/shared';
 import { resolveSeasonFromDate } from '@cfb/shared';
-import type { ProviderGame, ProviderSchedule, SportsDataProvider } from '../types';
+import type { ConferenceMap, ProviderGame, ProviderSchedule, SportsDataProvider } from '../types';
 import { ProviderError } from '../types';
 import {
   DEFAULT_CURRENT_WEEK,
@@ -28,6 +28,8 @@ const RANKED_COUNT = 25;
  */
 export class MockProvider implements SportsDataProvider {
   readonly name = 'mock' as const;
+  /** The roster uses ESPN's team ids (see `roster.ts`), so its teams ARE ESPN's rows in Postgres. */
+  readonly teamNamespace = 'espn' as const;
   private readonly now: () => number;
 
   constructor(now: () => number = Date.now) {
@@ -51,6 +53,10 @@ export class MockProvider implements SportsDataProvider {
       primaryColor: team.color,
       altColor: team.alt,
     }));
+  }
+
+  async getConferences(_season: Season): Promise<ConferenceMap> {
+    return Object.fromEntries(ROSTER.map((team) => [team.id, team.conference]));
   }
 
   async getTeamSchedule(providerTeamId: string, season: Season): Promise<ProviderSchedule> {

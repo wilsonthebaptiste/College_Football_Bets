@@ -1,17 +1,22 @@
 import { Link, NavLink } from 'react-router';
 import { useAdminSession } from '../auth/AdminSessionProvider';
+import { useAdminCheck } from '../auth/useAdminCheck';
 import { cx } from '../lib/cx';
 import { APP_NAME } from '../lib/useDocumentTitle';
 import { FootballIcon } from './icons';
 import styles from './AppHeader.module.css';
 
 /**
- * The top bar. The Admin link appears only while an admin session exists;
- * `/login` is never linked and stays reachable by URL (plan §3.1). Hiding the
- * link protects nothing, and is not meant to: the database does (§31).
+ * The top bar. The Admin link appears only once the Worker has confirmed the
+ * signed-in account is an administrator, so a signed-in non-admin never sees
+ * it (Phase 3's Level C finding). `/login` is never linked and stays reachable
+ * by URL (plan §3.1). Hiding the link protects nothing, and is not meant to:
+ * the database does (§31).
  */
 export function AppHeader() {
   const { status } = useAdminSession();
+  const check = useAdminCheck();
+  const isAdmin = status === 'signed-in' && check.isSuccess;
 
   return (
     <header className={styles.bar}>
@@ -31,7 +36,7 @@ export function AppHeader() {
                 Boards
               </NavLink>
             </li>
-            {status === 'signed-in' && (
+            {isAdmin && (
               <li>
                 <NavLink
                   to="/admin"
