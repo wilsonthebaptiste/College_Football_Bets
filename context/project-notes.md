@@ -314,10 +314,9 @@ network. The test that now covers it reproduces the race directly.
    writes, CPU) and fill in the last row of
    [../docs/ops.md](../docs/ops.md#recorded-measurements). Wrangler's OAuth token
    has no analytics scope, so this has to be done in the dashboard. This is the
-   only Phase 5 exit criterion still open.
-2. **Open the live site on a real phone.** Phone width was checked in headless
-   Edge, not on a device.
-3. **Optional:** create the GitHub remote, push `main`, and turn on the CI deploy
+   only Phase 5 exit criterion still open: the owner confirmed the live site on
+   a real phone on 2026-09-19, which closed the other one.
+2. **Optional:** create the GitHub remote, push `main`, and turn on the CI deploy
    job (docs/ops.md, "Continuous deployment"); rename the eight placeholder
    people; a screen-reader pass.
 

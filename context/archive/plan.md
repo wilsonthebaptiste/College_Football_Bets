@@ -27,7 +27,7 @@
   - deploy configuration (`[env.production]`, a gated CI deploy job), a smoke script, a bundle secret scan, and [docs/ops.md](../../docs/ops.md).
 
   The suite is 704 tests in 31 files. Browser runs in headless Edge: 116/116 locally (console, keyboard only, real accounts, axe everywhere), 26/26 on real ESPN data, and 48/48 against the **deployed** site at phone width. The deploy found two things: ESPN refuses the default User-Agent from Cloudflare too (production sends the owner's curl-style fallback), and a live-overlay bug that marked live cards stale (fixed, with a test). Details: [Phase 5 — Completion Notes](#phase-5--completion-notes), "Deploy".
-  - *Left for the owner:* 24 h of usage numbers (the one exit criterion that needs time), and a look on a real phone. The box gets its tick once the usage numbers are in.
+  - *Left for the owner:* 24 h of usage numbers, the one exit criterion that needs time. The owner confirmed the live site on their own phone (2026-09-19). The box gets its tick once the usage numbers are in.
 
 Phases are sequential; each ends at a verifiable state. Phase 3 depends on Phase 2's API contract but not its ESPN accuracy (mock mode covers that). Phase 5's admin UI is deliberately last — seeded data (Phase 1) makes boards real long before an admin screen exists.
 
@@ -1492,7 +1492,7 @@ Cloudflare account `4bb72f432f1b9521a2310ba2bccf01eb`, signed in with `wrangler 
 
 1. **Commit these notes** with the 24-hour numbers below, once the owner approves the message.
 2. **24 hours of usage** (from 2026-09-20): Workers requests, KV writes, and CPU time in the dashboard, into docs/ops.md "Recorded measurements". This is the only exit criterion still open. `wrangler`'s OAuth token has no analytics scope, so it has to be read in the dashboard.
-3. **The owner on a real phone:** README "Testing Phase 5", Level C. Phone width was checked in headless Edge, not on a device.
+3. ~~**The owner on a real phone**~~ — done 2026-09-19: the owner opened the live site on their own phone and confirmed it works.
 4. **Optional.** Create the GitHub remote and set the CI deploy variables (docs/ops.md, "Continuous deployment"). With `SITE_ORIGIN=https://cfb-board-pfc.pages.dev` and `PAGES_PROJECT=cfb-board`. A real screen-reader pass of the live region, the schedule table, and the confirm dialog: only axe and accessible names were checked.
 
 #### Exit criteria
@@ -1502,7 +1502,7 @@ Cloudflare account `4bb72f432f1b9521a2310ba2bccf01eb`, signed in with `wrangler 
 | Admin adds, removes, and reorders teams; the board reflects it on reload with the intended order | ✅ | 41 API tests (`apps/api/test/admin.test.ts`), including "the public board reflects an admin change on the next read". Browser run with the owner's real admin account: a probe person was created, three teams added, one reordered twice, one removed; the public board read Texas, Alabama, and the same after a reload. The probe was deleted afterwards |
 | All negative authorization tests pass, including direct-to-database attempts | ✅ | 90 matrix tests (10 admin routes × 9 attacks), 44 PGlite tests (`supabase/test/rls.test.ts`), and `npm run verify:rls` against the live project: 44/44, including "public sign-ups are disabled" |
 | axe reports no violations; keyboard-only operation of the admin console works end to end | ✅ | Browser run: axe clean on home, board, team, and login (320 and 1440 px, both themes), the console and editor (320 px, both themes, and 1440 px with search results), the confirm dialog, and a probe board. The whole admin flow was driven with Tab, Enter, and Escape only, with focus checked after every change. Lighthouse accessibility: 100 on every page measured |
-| Deployed URLs serve the app with real ESPN data on a phone | ✅ (⏳ a real device) | Deployed 2026-09-19. `npm run smoke` against the live API: 15/15 with CORS. Headless Edge against the live site at 390 px (mobile, touch) and 320 px: 48/48. All nine boards filled from ESPN (54 of 54 cards, AP Top 25, 11 live games), team pages with schedule and ESPN's Matchup Predictor, deep links, axe clean, and the admin and non-admin flows with the owner's real accounts. The owner has yet to open it on a physical phone |
+| Deployed URLs serve the app with real ESPN data on a phone | ✅ | Deployed 2026-09-19. `npm run smoke` against the live API: 15/15 with CORS. Headless Edge against the live site at 390 px (mobile, touch) and 320 px: 48/48. All nine boards filled from ESPN (54 of 54 cards, AP Top 25, 11 live games), team pages with schedule and ESPN's Matchup Predictor, deep links, axe clean, and the admin and non-admin flows with the owner's real accounts. The owner then opened the live site on their own phone, 2026-09-19, and confirmed it works |
 | 24 h of normal use stays inside free-tier limits | ⏳ owner | Deployed 2026-09-19 around 19:15 UTC; read the dashboard from 2026-09-20 (docs/ops.md "Watching usage"). First signs: a whole-site load (9 boards, 50 schedules) cost no errors, and the cron ran on schedule. The per-request CPU finding is under "Deploy" |
 | Every §50 row confirmed graceful | ✅ | Earlier phases' tests (provider failure, incomplete data, missing prediction and ranking, no upcoming game, postponed, canceled, bye, live, season complete, logo unavailable), plus a live fault drill in workerd with `rankings,team:251,prediction` on a cold cache: board 200, Texas unavailable, every rank "—" with records intact, prediction `unavailable` sent `no-store`, Texas's team route 200. And an unplanned one in production: while ESPN refused the default User-Agent, every board still answered 200 with six labelled "unavailable" cards and a date-derived season |
 
@@ -1697,7 +1697,7 @@ After the deploy, `npm run verify:rls` passed 44/44 against the same Supabase pr
 - [x] Decide `ESPN_USER_AGENT` for production. Try the default, fall back: the default was refused, so production sends `curl/8.9.1 college-football-bets/0.5` (2026-09-19).
 - [x] Deploy (docs/ops.md steps 1–10), and fill in its "Recorded measurements" table (2026-09-19, except the 24-hour row).
 - [ ] After 24 hours, check Workers requests, KV writes, and CPU time against the free tier (docs/ops.md, "Watching usage"), and fill in the last row.
-- [ ] Open <https://cfb-board-pfc.pages.dev> on a real phone (README, "Testing Phase 5", Level C).
+- [x] Open <https://cfb-board-pfc.pages.dev> on a real phone — confirmed working, 2026-09-19.
 - [ ] Optionally, repeat README "Testing Phase 5", Levels B, B2, and B3.
 - [ ] Create the GitHub remote and push `main`; optionally enable CI deploys.
 - [ ] Rename the eight placeholder people in the console (now on the live site).

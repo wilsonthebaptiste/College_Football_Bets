@@ -10,7 +10,7 @@ the phase-by-phase build plan are archived in
 **Status: Phases 1–4 are complete. Phase 5 (admin and ship) is built and
 deployed: the site is live at <https://cfb-board-pfc.pages.dev>, on real ESPN
 data, and committed as `5dd38b3`.** What remains is yours: 24 hours of usage
-numbers, and a look on your own phone (see
+numbers (see
 [Testing Phase 5](#testing-phase-5-on-your-machine) and
 [docs/ops.md](docs/ops.md)). The website has a home page listing every board,
 each person's board of six team cards, a full team page (rank, record, the
@@ -772,8 +772,8 @@ which starts with a handoff section for whoever picks this up next.
 
 1. **Done: the commit.** Phase 5 is `5dd38b3` on `main`. It isn't pushed
    anywhere, because there's no GitHub remote yet.
-2. **Open the site on your own phone** (Level C below). It was checked at
-   phone size in a desktop browser, not on a real phone.
+2. **Done: the site on your phone.** You opened it on your own phone
+   (2026-09-19) and it works.
 3. **After a day live:** the usage numbers
    ([Watching usage](docs/ops.md#watching-usage)). Look at CPU time especially:
    a cold board read on a Saturday measured up to 44 ms, against a documented
@@ -942,7 +942,7 @@ The deploy is done (2026-09-19). How it was done, and how to redo it, is in
 | Admin adds, removes, and reorders teams; the board reflects it on reload      | Level A, Level B, Level C         | ✅ automated · ✅ browser run · ✅ live site      |
 | All negative authorization tests pass, including direct-to-database attempts  | Level A, Level B2 step 1          | ✅ automated · ✅ live `verify:rls` run (twice)   |
 | axe reports no violations; keyboard-only operation of the admin console works | Level B step 10                   | ✅ browser run · ✅ axe on the live site          |
-| Deployed URLs serve the app with real ESPN data on a phone                    | Level C                           | ✅ live site at phone size · ⏳ your real phone   |
+| Deployed URLs serve the app with real ESPN data on a phone                    | Level C                           | ✅ browser at phone size · ✅ your own phone      |
 | 24 hours of normal use stays inside free-tier limits                          | Level C step 5, the dashboard     | ⏳ you, from 2026-09-20                           |
 | Every §50 row is handled gracefully                                           | Level A, and the Phase 2–4 levels | ✅ automated · ✅ live fault drill · ✅ live 403s |
 
