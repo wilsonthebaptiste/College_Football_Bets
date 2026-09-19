@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   verify:
-    name: typecheck · lint · test · season check
+    name: typecheck · lint · test · season check · builds
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -53,3 +53,7 @@ jobs:
       - name: Worker bundle (dry run)
         working-directory: apps/api
         run: npx wrangler deploy --dry-run --outdir dist
+
+      # The production web build, with no .env: viewers need no configuration.
+      - name: Web build
+        run: npm run build:web

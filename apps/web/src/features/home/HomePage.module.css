@@ -1,0 +1,76 @@
+.page {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.title {
+  font-size: var(--text-display);
+  letter-spacing: -0.01em;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A roster entry, not a dashboard card: big name, monogram, and the count. */
+.tile {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: var(--space-4);
+  row-gap: 0.125rem;
+  align-items: center;
+  min-height: 5rem;
+  padding: var(--space-4);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  text-decoration: none;
+}
+
+a.tile:hover {
+  border-color: var(--color-accent);
+}
+
+a.tile:hover .name {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.12em;
+}
+
+.monogram,
+.monogramSkeleton {
+  grid-row: 1 / span 2;
+}
+
+.monogram {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 700;
+}
+
+.name {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.count {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+}

@@ -1,4 +1,5 @@
 import type {
+  AdminSessionResponse,
   ApiErrorBody,
   CreateUserResponse,
   HealthResponse,
@@ -401,6 +402,43 @@ describe('POST /api/admin/users — the authorization boundary', () => {
     });
 
     expect(response.status).toBe(201);
+  });
+});
+
+describe('GET /api/admin/session — what the web app asks before showing /admin', () => {
+  it('401 with no token', async () => {
+    stub = installSupabaseStub({ jwks: { keys: [signingKey.jwk] }, isAdmin: true });
+
+    const response = await request('/api/admin/session');
+    expect(response.status).toBe(401);
+    expect((await response.json<ApiErrorBody>()).error.kind).toBe('unauthorized');
+  });
+
+  it('403 for a signed-in account that is not an administrator', async () => {
+    stub = installSupabaseStub({ jwks: { keys: [signingKey.jwk] }, isAdmin: false });
+
+    const token = await userToken();
+    const response = await request('/api/admin/session', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(response.status).toBe(403);
+    expect((await response.json<ApiErrorBody>()).error.kind).toBe('forbidden');
+  });
+
+  it('200 for an administrator, never cached', async () => {
+    stub = installSupabaseStub({ jwks: { keys: [signingKey.jwk] }, isAdmin: true });
+
+    const token = await userToken();
+    const response = await request('/api/admin/session', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(await response.json<AdminSessionResponse>()).toEqual({
+      admin: { authUserId: 'auth-user-1' },
+    });
+    // It writes nothing: the only PostgREST call is the is_admin() check.
+    expect(stub.restRequests.map((r) => r.path)).toEqual(['/rest/v1/rpc/is_admin']);
   });
 });
 

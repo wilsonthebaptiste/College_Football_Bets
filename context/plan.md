@@ -6,8 +6,14 @@
   - *Owner follow-ups (not blocking Phase 2):* run `npm run verify:rls` with the two test accounts in `.env`, and the live 403/201 token test (README, Level 3c). Both behaviours are already proven by the automated tests and the Postgres run. These two checks repeat them against the live project.
 - [x] **Phase 2 — Sports Data Layer** — ✅ **Complete, 2026-09-18. Committed as `10c6425` on `main`.** Provider interface, ESPN adapter and validators, a generated mock season, a three-tier cache with a centralized TTL policy, board/team/schedule/game/prediction and admin team-search endpoints, error isolation, and fault injection. 287 tests. The README's Phase 2 test plan was run end to end, first by the owner, then again in full against mock and live ESPN. Details, departures, findings, and recommendations for later phases are in [Phase 2 — Completion Notes](#phase-2--completion-notes).
   - *Owner decision before the first deploy:* what `ESPN_USER_AGENT` production sends. ESPN's CDN refused the default from local workerd (see the notes).
-  - *Owner follow-ups:* see [Phase 2 owner follow-ups](#phase-2-owner-follow-ups). The main ones are cleaning `.env.example`, and creating a GitHub remote and pushing `main`. There is still no remote.
-- [ ] **Phase 3 — Frontend Core**: app shell (no login required), design tokens, home user picker, board page, team cards, loading/error/freshness states, responsive
+  - *Owner follow-ups:* see [Phase 2 owner follow-ups](#phase-2-owner-follow-ups). The main one left is creating a GitHub remote and pushing `main`. There is still no remote.
+- [x] **Phase 3 — Frontend Core** — ✅ **Complete, 2026-09-18.** The website in `apps/web` includes:
+  - an app shell that needs no login, with the admin session loaded only for the administrator;
+  - design tokens (light and dark), a home board picker, a board of six team cards, and a basic team page;
+  - loading, error, stale, and unavailable states, and responsive layouts from 320 px up.
+
+  One small API addition: `GET /api/admin/session`. The suite is now 387 tests. Every exit criterion was checked in a real browser against a real Worker before handover, and again by the owner (README "Testing Phase 3", Levels A, B, B2, and B3). Level C, admin sign-in with the owner's real admin and non-admin accounts, passed all six steps in headless Edge. Details, departures, and findings are in [Phase 3 — Completion Notes](#phase-3--completion-notes).
+  - *Two small sign-in findings from Level C* are carried to Phase 5 (see "Known limitations" in the [completion notes](#phase-3--completion-notes)): the header shows an Admin link to a signed-in non-admin, and an unconfirmed account is told its password is wrong.
 - [ ] **Phase 4 — Detail & Live**: team detail page, full-season schedule, prediction panel, polling strategy, live game treatment, bye/offseason states
 - [ ] **Phase 5 — Admin & Ship**: admin UI (users, team search, add/remove/reorder), server-side authorization tests, a11y + perf pass, deploy, cron warmers, docs
 
@@ -574,6 +580,11 @@ All routes under `/api`.
 
 **Response conventions:** `X-Request-Id` on every response; `Cache-Control` from the TTL policy; error bodies are `{ error: { kind, message, requestId } }` with the kind drawn from `AppErrorKind` (§38 requires distinguishing provider failure / missing / invalid / authorization / application error).
 
+> **Phase 3 note: one new route.** `GET /api/admin/session` returns `AdminSessionResponse` (`{ admin: { authUserId } }`), with `Cache-Control: private, no-store`.
+> - It sits behind `requireAdmin` like every admin route: 401 with no token or a bad one, 403 for a valid token that is not in `admins`.
+> - It writes nothing. Its only database call is the `is_admin()` check.
+> - The web app's `RequireAdmin` uses it to tell "not signed in" apart from "signed in, but not an administrator".
+
 ---
 
 ## 9. Frontend Structure
@@ -619,6 +630,16 @@ Intervals live in one `POLL` constant object (§24 "centralized and configurable
 ### States (§37, §38, §42)
 
 Every async region has four renders: skeleton, data, empty/unavailable, error. `ErrorBoundary` wraps each team card individually so one bad card cannot blank a board.
+
+> **Phase 3 note: this section as built** (`apps/web`). Details are in the [Phase 3 completion notes](#phase-3--completion-notes).
+> - **Routes:** all five exist, plus a not-found page. `/login` and `/admin` are lazy-loaded chunks. The Supabase library is a separate chunk that only those two routes load, and only when this browser has a stored admin session.
+> - **Polling:** `POLL` in `src/lib/poll.ts`:
+>   - `liveMs` 15 s, `activeMs` 60 s, `idleMs` 5 min, `staleTimeMs` 10 s.
+>   - The board uses 15 s when `anyLive` is true. It uses 60 s when a non-TBD kickoff is within 12 hours or already past, or when any card is failing or stale. Otherwise it uses 5 min.
+>   - "No games today" is implemented as "no kickoff within 12 hours", which avoids midnight edge cases.
+>   - The team page applies the same rule to its one snapshot.
+> - **Visual system:** Barlow Condensed (numerals, names, headings) and Barlow (body). The palette is chalk and turf green, with one accent. The team colour is still only the 4 px left rule. Stale cards get a dashed amber outline and a note in words.
+> - **Accessibility, one change:** the card's single link is the team name, stretched over the whole card with `::after`, rather than an `<a>` wrapping the card. Keyboard, middle-click, and "open in new tab" behave the same, and a screen reader hears "Alabama, link" instead of the whole card. The focus ring is drawn on the card via `:has()`.
 
 ---
 
@@ -952,7 +973,7 @@ Full detail is in [docs/espn-notes.md](../docs/espn-notes.md) §1 and §11.
 #### Phase 2 owner follow-ups
 
 - [ ] **Decide what `ESPN_USER_AGENT` production sends**, before the first deploy. For ESPN mode locally, put `SPORTS_PROVIDER=espn` and the chosen value in `apps/api/.dev.vars`, not in the example file.
-- [ ] **Clean `.env.example`**: move the real values into `.env`, restore the placeholders, and drop `/rest/v1/` from the URL.
+- [x] **Clean `.env.example`**: move the real values into `.env`, restore the placeholders, and drop `/rest/v1/` from the URL. Done at the Phase 3 close.
 - [ ] **Admin team search with a real admin token** (README Level B, using `$ADMIN` from Phase 1's Level 3c). The 401 half was run.
 - [ ] **Create the GitHub remote and push `main`.** It holds two commits now. This was also a Phase 1 follow-up.
 - [ ] Phase 1's other follow-ups (`verify:rls`, the live 403/201 check, renaming users) are listed in its notes. Tick them there when they're done.
@@ -1038,6 +1059,167 @@ Full detail is in [docs/espn-notes.md](../docs/espn-notes.md) §1 and §11.
 ### Watch out for
 - Long team names ("Southern Mississippi") and three-digit-free layouts break card grids — test the longest real name in the seed.
 - Don't let `refetchOnWindowFocus` plus a 15 s interval produce a request storm on tab switching; `staleTime` guards this.
+
+### Phase 3 — Completion Notes
+
+**Complete, 2026-09-18.** Built and browser-tested before handover. The owner then ran README "Testing Phase 3", Levels A, B, B2, and B3. Level C (admin sign-in) was run in headless Edge with the owner's real admin and non-admin accounts, and all six steps passed (see Verification performed). As with Phases 1 and 2: where these notes and the plan above disagree, the code and these notes win.
+
+#### Exit criteria
+
+"Automated" means the criterion was checked in headless Microsoft Edge driven by `playwright-core`. The run used a fresh browser context each time, which is a private window with no storage. It ran against a real `wrangler dev` Worker in mock mode and the live Supabase project, in light and dark mode. The script lives outside the repo (see departure 12).
+
+| Exit criterion | Result | How it was verified |
+|---|---|---|
+| Home → board → team works against the real Worker in a private window, with no login step | ✅ automated · ✅ owner | Home listed 9 boards. Clicking Wilson showed 6 cards, and a card opened its team page. The back link and browser back/forward returned correctly. There were **zero requests to `supabase.co`** and the auth chunk was **never downloaded**. No console errors. README Level B |
+| The board renders at 320, 768, and 1440 px with no horizontal scroll | ✅ automated · ✅ owner | `scrollWidth − clientWidth = 0` for home, board, and team at all three widths, in both themes. Checked on Wilson's board and on Emerson's, which has Southern Miss, the longest seeded name. README Level B2 |
+| With the provider forced to fail: cached values plus a visible stale indicator; with no cache, clean unavailable states | ✅ automated · ✅ owner | With `SPORTS_PROVIDER_FAULT=slate,team:251`, the two live cards got a dashed amber outline and "May be out of date. Last updated: …". The board header was marked stale. Texas kept its logo and name above "Sports data temporarily unavailable." With `all` on a cold cache: six unavailable cards, no rank, no "Last updated". README Level B3 |
+| No `undefined` or `NaN` anywhere (§37) | ✅ | 29 card tests render every state the API can return and assert on the text. In every browser run and drill, each page's full text was checked for `undefined`, `NaN`, `null`, `[object Object]`, and `Invalid Date` |
+| Keyboard only: tab from the header to all six cards, visible focus, Enter opens a team (§48) | ✅ automated · ✅ owner | The recorded tab order was Skip to content, CFB Board, Boards, All boards, Refresh, then the six cards, each drawing a 3 px focus ring. Enter on the focused card opened that team |
+| A blocked logo shows initials and leaves the card intact (§36) | ✅ automated · ✅ owner | With every image request aborted: 6 labelled initials placeholders (`role="img"`, `aria-label="<Team> logo"`), 0 `<img>` elements, and all 6 cards intact |
+
+#### What was built
+
+| Area | Where | Notes |
+|---|---|---|
+| Shell | `apps/web/src/app/` | Vite, React 19, and strict TypeScript. `createBrowserRouter` with a root layout containing a skip link, the header, and one `<main>` that takes focus after each navigation (not on first load). Also a page-level `ErrorBoundary` keyed by path, and `ScrollRestoration`. Routes: `/`, `/u/:userId`, `/teams/:teamId`, `/login`, `/admin`, and a not-found page |
+| Data layer | `src/lib/` | `apiClient.ts`: `getPublic` (never sends a token) and `requestAdmin` (a bearer token; on a 401, one refresh and one retry, then sign out and go to `/login`). Every failure becomes an `ApiError` carrying the server's `AppError`, and a dropped connection has `status: null`. `api.ts`: endpoints and query keys. `queryClient.ts`: defaults, plus a retry policy (never retry a 4xx; otherwise twice, with backoff). `poll.ts`, `format.ts`, `freshness.ts`, `teamColor.ts`, `config.ts` |
+| Admin session | `src/auth/` | `adminAuth.ts` decides from localStorage alone whether to load anything, then lazy-loads the client. `supabaseClient.ts` is the only file that imports `supabase-js`: password sign-in, a persisted session, auto-refresh, and local sign-out. `AdminSessionProvider` exposes status, email, and per-request auth hooks. `RequireAdmin` checks for a session, then asks the Worker (`/api/admin/session`) |
+| Design system | `src/styles/`, `src/components/` | `tokens.css` and `global.css`. Components: `Card`, `RankBadge` and `RecordBadge` (in `Standing.tsx`), `GameLine` (opponent, home/away mark, result, status tag, previous and next lines, game facts), `LiveBadge`, `LiveScore`, `TeamLogo`, `FreshnessLabel`, `Skeleton`, `EmptyState`/`ErrorState`/`LoadingNote` (in `States.tsx`), `ErrorBoundary`, `BackLink`, `AppHeader`, and inline SVG icons |
+| Home (§15) | `features/home/` | One tile per board: monogram, name, team count. One tap opens the board |
+| Board (§13, §14) | `features/board/` | The header shows the name (the page's one bold typographic element), the season and week, the ranking poll's name, "Last updated" (the oldest card's time), a Refresh button, and a notice if a refresh failed. Six `TeamCard`s, each inside its own `ErrorBoundary`. A skeleton on the first load only; after that the data stays on screen with a quiet "Refreshing…" |
+| Team (Phase 3 scope) | `features/team/` | The hero (logo, name, full name, conference, rank, record, season, freshness), the live score, and previous and next game panels with date, venue, and TV. It opens instantly by borrowing the card's data from the loaded board, then replaces it with the real response |
+| Admin (shell only) | `features/admin/` | `/login`: an email and password form with plain error messages; after sign-in it goes to `next`, which must be an in-app path. `/admin`: shows who is signed in, that the server confirmed the account is an admin, and a sign-out button. Managing boards is Phase 5 |
+| API | `apps/api/src/routes/admin.ts` | `GET /api/admin/session` (see the §8 note), plus 3 route tests |
+| Tooling | root | Vitest runs `*.test.tsx` with React's automatic JSX runtime. ESLint covers `.tsx` and adds `react-hooks/rules-of-hooks` and `exhaustive-deps`, both as errors. The season check allows `.test.tsx`. New scripts `dev:web` and `build:web`. CI gains a web build step |
+| Docs | `README.md`, `apps/web/.env.example` | "Testing Phase 3", Levels A–C, with an exit-criteria table and new troubleshooting rows |
+
+**Dependencies added:**
+- `apps/web`: `react` and `react-dom` 19.3, `react-router` 7.18, `@tanstack/react-query` 5.103, and `@supabase/supabase-js` 2.116. The last three are the ones §3 names.
+- Dev: `vite` 7.3, `@vitejs/plugin-react` 5.2, and the React types.
+- Root dev: `eslint-plugin-react-hooks` 5.2.
+
+Vite 7 matches the version Vitest 3.2 already uses. Vite 8 and React Router 8 exist, but taking them would have meant two Vite majors in one tree and an unfamiliar router API, for no gain here.
+
+#### Design as built (§35)
+
+- **Palette.** "Chalk and turf":
+  - Light: page `#f2f5f1`, cards white, ink `#13201a`, one green accent `#1a6639`.
+  - Dark: page `#0e1511`, card `#16201a`, accent `#74d198`.
+  - Semantic colours for live, win, loss, and stale.
+  - Every text pairing was measured at WCAG AA or better in both themes. The lowest is muted text on the sunken surface in light mode, at 4.91:1.
+- **Type.** Barlow Condensed for names, ranks, records, and scores, with tabular figures. Barlow for body text. The board owner's name is set large, like a game-program cover.
+- **Team colour.** Only the card's 4 px left rule. Each theme picks its own colour: the primary if it shows up against that card, else the alternate, else neutral. So a white primary never disappears on a light card, and Michigan's navy switches to maize on a dark one.
+- **Stale.** A dashed amber outline plus the words "May be out of date. Last updated: …". It is a shape and words, not colour alone.
+- **Motion.** The LIVE dot pulses. Skeletons breathe on the first load. The Refresh icon spins while fetching. All of it is removed under `prefers-reduced-motion`.
+
+#### Departures from the plan, and why
+
+1. **The card link is the team name, stretched over the card**, not an `<a>` wrapping the card (§9). Clicking anywhere, the keyboard, middle-click, and "open in new tab" all behave the same. A screen reader hears "Alabama, link" rather than the whole card read out as one link name. The focus ring is drawn around the card with `:has()`. Where `:has()` isn't supported, the name itself shows the ring.
+2. **Public reads never carry a token, even while the admin is signed in** (plan §3.1 said "attaches a bearer token only when an admin session exists"). Reads are public. A token would add a CORS preflight and change how the response caches, and it would buy nothing. The auth hooks are passed to each admin call explicitly: there is no global token a request could pick up by accident.
+3. **A new API route, `GET /api/admin/session`,** so `RequireAdmin` can show "Not an administrator" to a valid non-admin login instead of a console whose every action fails. It is UX only; RLS remains the boundary.
+4. **The auth library is loaded based on localStorage.** The session is stored under the fixed key `cfb-admin-session`. When that key is absent, which is every viewer, nothing loads and nothing touches the network. `/login` and `/admin` load the chunk on demand. This is what makes "zero auth calls" measurable.
+5. **Per-card freshness is shown only when a card is stale.** The board header shows `Last updated:` from the oldest card, plus a stale marker if any card is stale (the Phase 2 guidance). Repeating the same time on six cards added clutter without adding information.
+6. **"No games today" means "no kickoff within 12 hours".** A calendar-day rule would flip at midnight, in the middle of a late game. A card that is failing or stale also keeps the 60 s pace, so the board recovers quickly.
+7. **TBD dates are formatted in US Eastern.** The placeholder time is midnight Eastern, so formatting it in Pacific would move the game to the previous day. College football game days are Eastern days, so this is domain knowledge, not ESPN knowledge.
+8. **The dev server proxies `/api` to the Worker**, so local work needs no CORS setup and no `.env`. Production (Pages plus a Worker on another origin) sets `VITE_API_BASE_URL` and uses the existing CORS allowlist. The direct, cross-origin path is still supported for development.
+9. **Layout additions to §2.**
+   - `src/app/` holds `App.tsx`, `routes.tsx`, `RootLayout`, and `NotFoundPage`; the plan had `App.tsx` and `routes.tsx` directly under `src/`.
+   - Two component files each hold a small family: `Standing.tsx` has the rank and record badges, and `States.tsx` has the empty, error, and loading states.
+   - `src/test/` holds fixture builders and render helpers.
+10. **Component tests render to static markup with `react-dom/server`.** This avoided adding jsdom or Testing Library as dependencies. They exercise the real components, router, and query cache. Static rendering never runs error boundaries, so `ErrorBoundary` is tested through its static state methods.
+11. **Fonts come from Google Fonts** (`Barlow`, `Barlow Condensed`, with `display=swap`). If they are blocked, the system fallbacks keep everything readable. Self-hosting them is a Phase 5 option (see the limitations below).
+12. **The browser end-to-end script is not in the repo.** It needs a browser binary, which CI does not have, and adding Playwright would be a new dependency. The README gives the owner the same checks to run by hand.
+
+#### Contract changes (`packages/shared`)
+
+- `AdminSessionResponse { admin: { authUserId: string } }`, for `GET /api/admin/session`. Nothing else changed. The web app consumes the Phase 2 contract exactly as it was.
+
+#### Verification performed
+
+- **Automated.** 387 tests across 20 files, all passing. Phase 3 added 100:
+  - Team card states: 29.
+  - Board and team pages, plus `ErrorBoundary`: 14.
+  - API client and configuration: 18.
+  - Date formatting: 16 (including a DST "Tomorrow" case, and TBD dates for a Pacific viewer).
+  - Polling: 11. Freshness summary: 6. Team colours: 3.
+  - The API's admin-session route: 3.
+- **Other checks.** `npm run verify` (typecheck, lint, tests, and the season check), `format:check`, and `npm run build:web` all pass.
+- **Bundle.**
+  - Main JS: 389 KB (123.5 KB gzipped), mostly `react-dom` and `react-router`. CSS: 15.8 KB (4 KB gzipped).
+  - The login and admin page chunks are about 1–2 KB each. The auth chunk is 225 KB (59 KB gzipped) and viewers never download it.
+- **Browser runs** (see "automated" under Exit criteria).
+  - 29 checks, run in light mode, in dark mode, and on Emerson's board. All passed.
+  - The `slate,team:251` drill and the cold `all` drill.
+  - The admin path: `/admin` redirected to `/login?next=%2Fadmin`, and the header had no Admin link. Opening `/login` loaded the auth chunk but made no auth call. A wrong password reached Supabase Auth and showed "Email or password is incorrect."
+- **Owner test pass.** The owner ran README Levels A, B, B2, and B3 by hand.
+- **Level C, with real accounts.** 31 checks in headless Edge (`playwright-core` driving the installed Edge), against the owner's own `npm run dev` and `npm run dev:web` and the live Supabase project. The accounts were read from the root `.env` (`VERIFY_ADMIN_*`, `VERIFY_NONADMIN_*`) and never printed. All passed:
+  1. No page (home, board, or team) links to `/login` or `/admin`. The header has no Admin link, and a viewer makes zero requests to `supabase.co`. `/admin` with no session lands on "Admin sign-in" at `/login?next=%2Fadmin`.
+  2. A wrong password for the admin's email reaches Supabase Auth (`POST /auth/v1/token`) and shows "Email or password is incorrect.". Focus moves to the message and nothing is stored.
+  3. The admin signs in and lands on `/admin`, which shows the email and "The server confirmed this account is an administrator". `GET /api/admin/session` answered **200**, and the Admin link appeared in the header.
+  4. After a reload the admin is still signed in, the session is stored under `cfb-admin-session`, and the Worker confirmed it again with 200. A new tab opened on `/admin` was signed in too.
+  5. Sign out lands on `/`, the Admin link disappears, and the stored session is removed. `/admin` then asks for sign-in again.
+  6. The non-admin signs in and sees "Not an administrator", naming the account, with a Sign out button. `GET /api/admin/session` answered **403**. Sign out returns to Admin sign-in and clears the session.
+
+  The only console errors were the expected 400 (wrong password) and 403 (non-admin). The first non-admin account in `.env` was refused by Supabase with `invalid_credentials`: that account was missing from the project or had a different password. The owner recreated it and the re-run passed. The README troubleshooting table now covers this.
+- **Visual review.** Screenshots of every page at 320, 768, and 1440 px in both themes. Three fixes came out of it:
+  - a stray gap inside "Last updated:";
+  - "(neutral site)" and results wrapping badly on phones;
+  - the team page's live score spreading across the full width, and plain panels showing a grey team-colour rule they didn't need.
+
+#### Known limitations carried forward
+
+- **"Last updated" during a live game can look old.** A card's `fetchedAt` is the oldest part of the card (Phase 2's `composeFreshness`). While a team is live, the 15-minute schedule is usually the oldest part, so the header can say 9:22 PM while the live score is seconds old. This was seen in the run. It is honest, but Phase 4 may want the live block to show its own age. That would need the API to expose the overlay's `fetchedAt` separately.
+- **Logos are ESPN's 500 px images, shown at 48–72 px** (§49, "reasonable image sizes"). Resizing them would mean ESPN URL knowledge in the frontend, which §26 forbids. The fix belongs in the API or at seed time, in Phase 5.
+- **The main bundle is 123.5 KB gzipped.** Review it in Phase 5's performance pass. React Router's data router is the largest piece after `react-dom`.
+- **A render crash inside a card has not been seen in a browser.** It can't be triggered without malformed data. The boundary's logic is unit-tested, and the fallback shows the team's identity plus "Unable to display this team."
+- **The header shows an Admin link to a signed-in non-admin.** `AppHeader` shows the link whenever the session status is `signed-in`, before and regardless of the Worker's `/api/admin/session` answer. It was seen in Level C step 6. Nothing is exposed: the link leads to "Not an administrator", and RLS refuses the writes anyway. Phase 5 can show the link only once that check returns 200.
+- **An unconfirmed account is told its password is wrong.** `describeSignInError` in `apps/web/src/auth/supabaseClient.ts` maps every 400 from Supabase to "Email or password is incorrect.". That includes `email_not_confirmed`, which is what an account created without **Auto Confirm User** gets. Phase 5 can map that code to its own message ("This account's email hasn't been confirmed").
+- **`npm audit` reports a moderate advisory in `vitest`** (the `@vitest/mocker` path traversal). It was already there before Phase 3 and affects development only. The fix is Vitest's next major version, which is a separate change.
+- **Google Fonts is a third-party request** on every first visit. Self-hosting the two families would remove it.
+
+#### Housekeeping at close
+
+- **Committed together with these notes, once the owner approved the message** (the owner's standing rule; no Co-Authored-By trailer). Not pushed: there is still no remote.
+- **`.env.example` was restored** to its committed placeholders (`git checkout -- .env.example`, at the owner's request). The working copy had held the real Supabase URL, with a stray `/rest/v1/` suffix, and the publishable key. This closes that Phase 2 follow-up. The real values live in the gitignored `.env`, which now also holds the two `VERIFY_*` test accounts.
+- **Level C tooling stayed outside the repo.** `playwright-core` was installed into a scratch folder, not the workspace, and drove the Edge already installed on the machine. The run used the owner's running servers on 8787 and 5173. It started and stopped no servers.
+- **`apps/web/.env` was created** from `apps/api/.dev.vars` (the Supabase URL and publishable key, both public by design) so `/login` works locally. It is gitignored, as `git check-ignore` confirmed.
+- **Test servers.** The browser runs used separate `wrangler dev` instances on ports 8798 and 8799, each with its own `--persist-to` folder in a scratch directory, and Vite on 5180 and 5181. All were stopped afterwards.
+  - Two lessons, for anyone repeating this on Windows. First, stopping the background task did not stop wrangler's child `workerd` processes, which then respawned onto the same port. Second, the pattern-based cleanup that followed also stopped **the owner's own `npm run dev` on port 8787** by mistake. No data was lost, but it has to be restarted.
+  - Next time, match processes by exact PID, never by a command-line pattern.
+- `apps/web/dist` (build output, gitignored) was removed after the size check.
+
+#### Phase 3 owner follow-ups
+
+- [x] Restart `npm run dev`. The Phase 3 cleanup stopped it (see Housekeeping).
+- [x] Run README "Testing Phase 3", Levels A, B, B2, and B3.
+- [x] README Level C with real accounts. All six steps passed (see Verification performed):
+  - the admin signs in and lands on **Admin**;
+  - the session survives a reload;
+  - signing out removes the Admin link;
+  - the non-admin account gets **Not an administrator**.
+- [x] Approve the Phase 3 commit, and tick the checklist at the top of this file.
+- [ ] Earlier follow-ups still open: Phase 1 (`verify:rls`, the live 403/201 test, renaming users) and Phase 2 (the `ESPN_USER_AGENT` decision, the admin team search with a real token, and creating the GitHub remote). Both test accounts are now in `.env`, so `npm run verify:rls` is ready to run.
+
+#### Notes for Phase 4 and beyond
+
+**Phase 4 (detail and live)**
+
+- **Build on the existing team page.** It already has the hero, the live block, and the previous and next panels. Add the schedule and the prediction as sections with their own `useQuery` calls, so a failing schedule cannot blank the hero (§42). Reuse `GameLine`'s pieces (`Opponent`, `GameResultText`, `StatusTag`, `GameFacts`) for schedule rows.
+- **Polling is already centralized.** Add any new intervals to `POLL` in `src/lib/poll.ts`. Hidden-tab pausing and the single refetch on focus are already global defaults.
+- **Done early:** Phase 2 asked Phase 4 to render a live game with no score as "score unavailable". `LiveScore` already does this and never shows 0–0.
+- **Still open from Phase 2:** hide the prediction, or label it "Pregame prediction", once a game is final.
+- **Worth considering:** the live block's own freshness (see the first limitation above).
+
+**Phase 5 (admin and ship)**
+
+- **The admin console goes inside `RequireAdmin`** at `/admin`. Call the API with `requestAdmin(session.authHooks, …)` and put query keys under `['admin', …]`: sign-out clears that prefix.
+- **Two sign-in fixes from Level C** (see Known limitations): show the header's Admin link only after `/api/admin/session` returns 200, and give `email_not_confirmed` its own message.
+- **Deploying to Cloudflare Pages.**
+  - Build with `VITE_API_BASE_URL` set to the Worker's URL, and with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` set.
+  - Add the Pages origin to `ALLOWED_ORIGINS`.
+  - Confirm that deep links (`/u/…`, `/teams/…`) reload correctly. Pages serves a single-page app when there is no `404.html`, but check it on the real deployment.
+- **Performance pass:** review the bundle, size the logos through the API, and consider self-hosting the fonts.
+- **Accessibility pass:** axe on all four pages, and a screen-reader check of the live score region.
 
 ---
 
@@ -1186,6 +1368,11 @@ Items 1–3 are settled decisions. The rest are working assumptions; each is che
 All three are documented in `wrangler.toml` and `apps/api/.dev.vars.example`.
 
 **Web** (`.env`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_BASE_URL`.
+
+*As built in Phase 3* (`apps/web/.env.example`):
+- `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are used by admin sign-in only. Viewers need no `.env` at all. A pasted `/rest/v1` suffix on the URL is tolerated.
+- `VITE_API_BASE_URL` is optional. When it is unset, the app calls `/api` on its own origin, and in development Vite proxies that to the Worker. Set it for a deployed build, and add the site's origin to the Worker's `ALLOWED_ORIGINS`.
+- `API_PROXY_TARGET` is for the dev server only: where the `/api` proxy points (default `http://127.0.0.1:8787`).
 
 **Deliberately unused:** `SUPABASE_SERVICE_ROLE_KEY`. There is no provisioning script and no privileged code path, so the key never enters the repo, CI, or the Worker. If a future task appears to need it, that is a signal the RLS model is being worked around rather than used.
 

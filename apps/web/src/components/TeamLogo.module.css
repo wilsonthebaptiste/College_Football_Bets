@@ -1,0 +1,21 @@
+.logo {
+  flex: none;
+  object-fit: contain;
+}
+
+.fallback {
+  --logo-size: 48px;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--logo-size);
+  height: var(--logo-size);
+  border-radius: 50%;
+  background: var(--color-sunken);
+  color: var(--color-ink-secondary);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: calc(var(--logo-size) * 0.34);
+  letter-spacing: 0.02em;
+  line-height: 1;
+}

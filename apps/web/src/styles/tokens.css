@@ -1,0 +1,102 @@
+/*
+ * Design tokens (plan §9, "Visual system"; spec §35).
+ *
+ * A chalk-and-turf palette: neutral card chrome, one green accent, and
+ * semantic colours that each mean exactly one thing (live, win, loss, stale).
+ * Team colours never appear here. A card gets its team's colour as a single
+ * 4 px left rule and nothing more, so six brands on one screen stay calm.
+ *
+ * Every text pairing below was checked for WCAG AA (4.5:1) against the page,
+ * card, and sunken surfaces in both themes.
+ */
+
+:root {
+  /* ── Colour: light ─────────────────────────────────────────────────────── */
+  --color-page: #f2f5f1;
+  --color-surface: #ffffff;
+  --color-sunken: #e8ede7;
+  --color-ink: #13201a;
+  --color-ink-secondary: #3d4d43;
+  --color-ink-muted: #586960;
+  --color-rule: #d3dcd5;
+  --color-rule-strong: #a9b7ad;
+
+  --color-accent: #1a6639;
+  --color-accent-soft: #e1eee4;
+  --color-on-accent: #ffffff;
+  --color-focus: #1a6639;
+
+  --color-live: #b8132c;
+  --color-on-live: #ffffff;
+  --color-win: #1a6639;
+  --color-loss: #b3261e;
+  --color-stale: #7d4b00;
+  --color-stale-soft: #fcefd8;
+  --color-stale-rule: #e3b25f;
+
+  /* ── Type ──────────────────────────────────────────────────────────────── */
+  --font-display:
+    'Barlow Condensed', 'Arial Narrow', 'Roboto Condensed', 'Helvetica Neue', system-ui, sans-serif;
+  --font-body: 'Barlow', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --text-xs: 0.8125rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-display: clamp(2.5rem, 1.6rem + 4.5vw, 4.25rem);
+
+  /* The two numeral sizes: rank and score (large), record (medium). */
+  --numeral-lg: 2rem;
+  --numeral-md: 1.375rem;
+
+  --leading-tight: 1.15;
+  --leading-body: 1.5;
+
+  /* ── Space: a 4 px scale ───────────────────────────────────────────────── */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+
+  /* ── Shape ─────────────────────────────────────────────────────────────── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-pill: 999px;
+  --team-rule-width: 4px;
+  --focus-ring: 3px solid var(--color-focus);
+
+  --page-max: 72rem;
+  --page-gutter: clamp(1rem, 0.5rem + 2vw, 2rem);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-page: #0e1511;
+    --color-surface: #16201a;
+    --color-sunken: #1f2b23;
+    --color-ink: #e6ede8;
+    --color-ink-secondary: #bccac0;
+    --color-ink-muted: #95a59b;
+    --color-rule: #28352d;
+    --color-rule-strong: #465a4d;
+
+    --color-accent: #74d198;
+    --color-accent-soft: #1c3325;
+    --color-on-accent: #0e1511;
+    --color-focus: #74d198;
+
+    --color-live: #ff6b7d;
+    --color-on-live: #1c0509;
+    --color-win: #74d198;
+    --color-loss: #ff8f85;
+    --color-stale: #f2b65c;
+    --color-stale-soft: #2c2313;
+    --color-stale-rule: #6b5020;
+  }
+}

@@ -1,0 +1,30 @@
+.rank,
+.record {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums lining-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.rank {
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+.record {
+  font-weight: 600;
+  color: var(--color-ink-secondary);
+}
+
+.lg {
+  font-size: var(--numeral-lg);
+}
+
+.md {
+  font-size: var(--numeral-md);
+}
+
+.quiet {
+  color: var(--color-ink-muted);
+  font-weight: 600;
+}

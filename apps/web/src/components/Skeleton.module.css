@@ -1,0 +1,18 @@
+.block {
+  display: block;
+  width: var(--sk-width, 100%);
+  height: var(--sk-height, 1em);
+  border-radius: var(--radius-sm);
+  background: var(--color-sunken);
+  animation: breathe 1.8s ease-in-out infinite;
+}
+
+.round {
+  border-radius: 50%;
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.55;
+  }
+}

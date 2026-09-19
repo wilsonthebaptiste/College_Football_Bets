@@ -1,4 +1,9 @@
-import type { CreateUserRequest, CreateUserResponse, TeamSearchResponse } from '@cfb/shared';
+import type {
+  AdminSessionResponse,
+  CreateUserRequest,
+  CreateUserResponse,
+  TeamSearchResponse,
+} from '@cfb/shared';
 import { Hono } from 'hono';
 import { supabaseAsAdmin } from '../db/client';
 import { createUser } from '../db/queries';
@@ -11,14 +16,25 @@ import { parseQuery, searchTeams } from '../services/search';
 /**
  * `/api/admin/*` — the only authenticated branch of the API.
  *
- * Implemented so far: user creation (Phase 1) and team search (Phase 2). The
- * rest of §8's admin surface (rename, add/remove selection, reorder) arrives
- * with the admin console in Phase 5. Everything added later inherits the
- * authorization by being mounted here.
+ * Implemented so far: user creation (Phase 1), team search (Phase 2), and the
+ * session check (Phase 3). The rest of §8's admin surface (rename, add/remove
+ * selection, reorder) arrives with the admin console in Phase 5. Everything
+ * added later inherits the authorization by being mounted here.
  */
 export const adminRoutes = new Hono<AppBindings>();
 
 adminRoutes.use('*', requireAdmin);
+
+/**
+ * Reaching this handler IS the answer: `requireAdmin` has already returned 401
+ * for a missing or bad token and 403 for a valid one that is not in `admins`.
+ * The web app's `/admin` route uses it to tell those cases apart.
+ */
+adminRoutes.get('/session', (c) => {
+  const body: AdminSessionResponse = { admin: { authUserId: c.get('admin').authUserId } };
+  c.header('Cache-Control', 'private, no-store');
+  return c.json(body);
+});
 
 const DISPLAY_NAME_MIN = 1;
 const DISPLAY_NAME_MAX = 60;

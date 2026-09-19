@@ -24,7 +24,7 @@ const ALLOWED = [
 ];
 
 const ALLOWED_PATTERNS = [
-  /\.test\.ts$/, // tests must be able to say "January 2026"
+  /\.test\.tsx?$/, // tests must be able to say "January 2026"
   /[/\\]test[/\\]/, // fixtures and test helpers
   /[/\\]fixtures[/\\]/,
   /[/\\]node_modules[/\\]/,

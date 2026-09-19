@@ -1,0 +1,103 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  height: 100%;
+  padding: var(--space-4);
+}
+
+.head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.identity {
+  min-width: 0;
+}
+
+.name {
+  font-size: var(--text-xl);
+  line-height: 1.1;
+}
+
+/* The team name is the card's one link, stretched over the whole card. */
+.link {
+  color: var(--color-ink);
+  text-decoration: none;
+}
+
+.link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.card:hover .link {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.12em;
+}
+
+/* With :has(), the focus ring goes round the whole card rather than the name. */
+@supports selector(:has(*)) {
+  .link:focus-visible {
+    outline: none;
+  }
+
+  .card:has(.link:focus-visible) {
+    outline: var(--focus-ring);
+    outline-offset: 2px;
+  }
+}
+
+.conference {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.standing {
+  display: grid;
+  justify-items: end;
+  gap: 0.2rem;
+}
+
+.games {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-rule);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.label {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.value {
+  min-width: 0;
+}
+
+.unavailable {
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-sunken);
+  color: var(--color-ink-secondary);
+}
+
+/* Pinned to the bottom of the card, whatever the card's height. */
+.staleNote {
+  align-self: flex-start;
+  margin-top: auto;
+}

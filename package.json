@@ -22,12 +22,15 @@
     "verify:rls": "node scripts/verify-rls.mjs",
     "capture:fixtures": "node --experimental-strip-types scripts/capture-espn-fixtures.ts",
     "dev": "npm run dev --workspace @cfb/api",
+    "dev:web": "npm run dev --workspace @cfb/web",
+    "build:web": "npm run build --workspace @cfb/web",
     "verify": "npm run typecheck && npm run lint && npm run test && npm run check:season"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
     "@types/node": "^22.13.0",
     "eslint": "^9.36.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
     "prettier": "^3.3.3",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.44.0",

@@ -1,0 +1,17 @@
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 44px;
+  margin-left: calc(var(--space-2) * -1);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink-secondary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.back:hover {
+  color: var(--color-ink);
+  text-decoration: underline;
+}

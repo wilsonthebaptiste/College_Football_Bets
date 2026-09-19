@@ -14,6 +14,7 @@ export type {
 } from './responses';
 
 export type {
+  AdminSessionResponse,
   AddSelectionRequest,
   AddSelectionResponse,
   CreateUserRequest,

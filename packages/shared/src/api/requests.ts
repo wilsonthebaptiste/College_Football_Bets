@@ -10,6 +10,17 @@ import type { TeamIdentity, UserTeamSelection } from '../domain';
  * database is the boundary.
  */
 
+// GET /api/admin/session
+/**
+ * The Worker's answer to "is this session an administrator?". The web app's
+ * `RequireAdmin` asks it so a signed-in stranger sees "not an administrator"
+ * rather than a console whose every action fails. That makes the UI honest; it
+ * does not make it the boundary. RLS still refuses the write (§30, §31).
+ */
+export interface AdminSessionResponse {
+  admin: { authUserId: string };
+}
+
 // POST /api/admin/users
 export interface CreateUserRequest {
   displayName: string;
