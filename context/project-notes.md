@@ -30,7 +30,7 @@ change them.
 | --- | --- |
 | Site | <https://cfb-board-pfc.pages.dev> (Cloudflare Pages project `cfb-board`) |
 | API | <https://cfb-api.cfb-api.workers.dev> (Worker `cfb-api`, `--env production`) |
-| Database | Supabase Postgres: 9 people, 50 teams, 54 selections |
+| Database | Supabase Postgres: 9 people, 54 selections, 65 team rows (11 no longer on any board) |
 | Cost | Nothing. Every service is on a free tier, with no card on file |
 | Source | Branch `main`. Phase 5 is commit `5dd38b3`. **There is no git remote yet** |
 | Tests | 704, in 31 files. `npm run verify` runs typecheck, lint, tests, and the season check |
@@ -300,12 +300,17 @@ network. The test that now covers it reproduces the race directly.
 - **The read budget is per isolate**, and keyed on an address that a shared
   network shares. Sized for nine people.
 - **Conferences are FBS-only**; everyone else shows "Conference unknown".
-- **Nothing deletes a `teams` row.** Removed teams stay as harmless cached identity.
+- **Nothing deletes a `teams` row.** Removed teams stay as harmless cached
+  identity: replacing the seeded boards with the real ones left 11 such rows.
 - **The console's interactions are covered only by the browser runs**, which are
   outside CI. The component tests render states statically.
 - **A real screen-reader pass was never done.** Only axe and accessible names.
-- **Eight of the nine people still have seed names** (Avery…Jordan), renameable
-  in the console.
+- **The repo's seed is not production's data, on purpose.** `supabase/seed.sql`
+  still creates nine placeholder people and 50 teams, four of them shared
+  between boards, because the database tests rely on that shape to exercise the
+  shared-team path (§27) and a team nobody selected. The live boards were
+  replaced with the real nine people and their teams on 2026-09-19, through the
+  admin API.
 - **No git remote**, so CI has never run and the deploy job is untested.
 
 ## 10. What is left
@@ -317,8 +322,7 @@ network. The test that now covers it reproduces the race directly.
    only Phase 5 exit criterion still open: the owner confirmed the live site on
    a real phone on 2026-09-19, which closed the other one.
 2. **Optional:** create the GitHub remote, push `main`, and turn on the CI deploy
-   job (docs/ops.md, "Continuous deployment"); rename the eight placeholder
-   people; a screen-reader pass.
+   job (docs/ops.md, "Continuous deployment"); a screen-reader pass.
 
 ## 11. Commands worth remembering
 

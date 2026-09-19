@@ -1700,7 +1700,7 @@ After the deploy, `npm run verify:rls` passed 44/44 against the same Supabase pr
 - [x] Open <https://cfb-board-pfc.pages.dev> on a real phone — confirmed working, 2026-09-19.
 - [ ] Optionally, repeat README "Testing Phase 5", Levels B, B2, and B3.
 - [ ] Create the GitHub remote and push `main`; optionally enable CI deploys.
-- [ ] Rename the eight placeholder people in the console (now on the live site).
+- [x] Rename the eight placeholder people — done 2026-09-19: the live boards were replaced with the owner's real nine people and their six teams each, through the admin API.
 
 ---
 

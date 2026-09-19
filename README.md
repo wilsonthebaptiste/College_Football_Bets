@@ -508,8 +508,8 @@ press `F12`, pick the **Network** tab, and then go to <http://localhost:5173>.
 - **Sizes.** In DevTools press `Ctrl+Shift+M` for the device toolbar, choose
   **Responsive**, and type the widths 320, 768, and 1440. That's one column of
   cards, then two, then three. At no width should the page scroll sideways.
-  Also check **Emerson's** board, which has the longest team name (Southern
-  Miss).
+  Also check a board with long team names, such as **Jalen's** (Virginia Tech,
+  North Texas) or **Oliver's** (James Madison, Notre Dame).
 - **Keyboard only.** Click the address bar, then press `Tab` repeatedly:
   `Skip to content`, `CFB Board`, `Boards`, `All boards`, `Refresh`, then each
   of the six cards in turn, each with a visible green outline. Press `Enter`
