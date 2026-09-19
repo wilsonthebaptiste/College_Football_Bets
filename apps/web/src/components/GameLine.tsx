@@ -68,8 +68,7 @@ export function PreviousGameLine({ game }: { game: Game | null }) {
   if (game === null) return <span className={styles.none}>No games played yet</span>;
   return (
     <span className={styles.line}>
-      <Opponent game={game} />
-      <GameResultText game={game} />
+      <Opponent game={game} /> <GameResultText game={game} />
     </span>
   );
 }
@@ -80,8 +79,13 @@ function UpcomingGame({ game }: { game: Game }) {
     <span className={styles.stack}>
       <span className={styles.line}>
         <Opponent game={game} />
-        {label !== null && <StatusTag>{label}</StatusTag>}
-      </span>
+        {label !== null && (
+          <>
+            {' '}
+            <StatusTag>{label}</StatusTag>
+          </>
+        )}
+      </span>{' '}
       <time className={styles.when} dateTime={game.kickoffUtc}>
         {formatKickoff(game)}
       </time>

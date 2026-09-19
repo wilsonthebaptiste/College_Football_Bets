@@ -1,0 +1,32 @@
+.mark {
+  display: inline-grid;
+  place-items: center;
+  width: 1.5em;
+  height: 1.5em;
+  border: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+/* Solid: the one filled shape in the column. */
+.win {
+  border-color: var(--color-win);
+  background: var(--color-win);
+  color: var(--color-on-accent);
+}
+
+/* Outlined. */
+.loss {
+  border-color: var(--color-loss);
+  color: var(--color-loss);
+}
+
+/* Dashed, and neutral: a tie is neither. */
+.tie {
+  border-style: dashed;
+  border-color: var(--color-ink-muted);
+  color: var(--color-ink-secondary);
+}

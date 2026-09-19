@@ -51,8 +51,7 @@ export function TeamCard({ entry, from }: TeamCardProps) {
       <CardHeader team={team} from={from}>
         {data !== null && (
           <div className={styles.standing}>
-            <RankBadge ranking={data.ranking} />
-            <RecordBadge record={data.record} />
+            <RankBadge ranking={data.ranking} /> <RecordBadge record={data.record} />
           </div>
         )}
       </CardHeader>
@@ -62,7 +61,11 @@ export function TeamCard({ entry, from }: TeamCardProps) {
       ) : (
         <>
           {data.liveGame !== null && (
-            <LiveScore game={data.liveGame} teamName={team.abbreviation ?? name} />
+            <LiveScore
+              game={data.liveGame}
+              teamName={team.abbreviation ?? name}
+              updatedAt={data.liveUpdatedAt}
+            />
           )}
           <dl className={styles.games}>
             <div className={styles.row}>

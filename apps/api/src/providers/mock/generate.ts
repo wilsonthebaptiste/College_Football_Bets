@@ -315,7 +315,11 @@ export function generateSeason(season: Season, now: number): ProviderGame[] {
     const neutralSite = (slot.pairIndex * 7 + slot.key.week) % 17 === 0;
     return {
       providerGameId: id,
-      season: { year: season.year, type: season.type, week: slot.key.week },
+      // Every mock game is a regular-season game, whichever phase the timeline
+      // is built around, as ESPN's are: in the postseason a team's week-4 game
+      // is still a regular-season game, and its bye weeks are still gaps in
+      // regular-season weeks. The phase lives in the game id, for `getGame`.
+      season: { year: season.year, type: 'regular', week: slot.key.week },
       week: slot.key.week,
       kickoffUtc: new Date(timing.kickoff).toISOString(),
       kickoffTbd: timing.tbd,

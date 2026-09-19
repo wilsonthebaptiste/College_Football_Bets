@@ -1,0 +1,267 @@
+.count {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+}
+
+/* ── One of two renderings at any width (§34) ───────────────────────────── */
+
+.table {
+  display: none;
+}
+
+.list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 720px) {
+  .table {
+    display: table;
+  }
+
+  .list {
+    display: none;
+  }
+}
+
+/* ── Desktop table ──────────────────────────────────────────────────────── */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.table th,
+.table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-rule);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.table th:first-child,
+.table td:first-child {
+  padding-left: var(--space-2);
+}
+
+.table thead th {
+  color: var(--color-ink-muted);
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.table tbody tr:last-child > * {
+  border-bottom: none;
+}
+
+.weekCol {
+  width: 4.5rem;
+}
+
+.table .resultCol {
+  text-align: right;
+}
+
+.week {
+  color: var(--color-ink-secondary);
+  font-family: var(--font-display);
+  font-size: var(--text-base);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.date {
+  white-space: nowrap;
+}
+
+.date time {
+  display: block;
+  font-weight: 600;
+}
+
+.time {
+  display: block;
+  color: var(--color-ink-secondary);
+}
+
+/* The opponent is each row's header: named for screen readers, set like body text. */
+.opponentCell {
+  font-weight: 400;
+}
+
+.opponent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.opponentText {
+  display: grid;
+  min-width: 0;
+}
+
+.opponentName {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.venue {
+  color: var(--color-ink-muted);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.table .result {
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Rows that are happening, or next. Marked in words too ("LIVE", "Next"). */
+.live > :first-child {
+  box-shadow: inset 3px 0 0 var(--color-live);
+}
+
+.next > :first-child {
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+
+.byeRow td {
+  background: var(--color-sunken);
+}
+
+.byeCell {
+  color: var(--color-ink-secondary);
+  font-style: italic;
+}
+
+/* ── Phone list ─────────────────────────────────────────────────────────── */
+
+.entry {
+  display: grid;
+  gap: 0.2rem;
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.entry:last-child {
+  border-bottom: none;
+}
+
+.entry.live {
+  box-shadow: inset 3px 0 0 var(--color-live);
+}
+
+.entry.next {
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+
+.byeEntry {
+  background: var(--color-sunken);
+}
+
+.meta {
+  color: var(--color-ink-secondary);
+  font-size: var(--text-sm);
+}
+
+.entryMain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+}
+
+.entryMain .result {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.entryFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+}
+
+/* ── Shared cells ───────────────────────────────────────────────────────── */
+
+.status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.flag {
+  display: inline-block;
+  padding: 0 0.45em;
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.nextTag {
+  display: inline-block;
+  padding: 0 0.45em;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.resultInner {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.score {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.muted {
+  color: var(--color-ink-muted);
+}
+
+.notice {
+  color: var(--color-stale);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* Empty, it leaves the grid (so it adds no gap) but stays in the accessibility
+   tree, so screen readers are already watching it when a message arrives. */
+.notice:empty {
+  position: absolute;
+}
+
+.skeleton {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.skeletonRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+}

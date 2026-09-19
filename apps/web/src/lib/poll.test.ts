@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import type { Game, ScheduleItem } from '@cfb/shared';
 import {
   envelope,
+  finalGame,
   liveGame,
   makeBoard,
   makeBoardTeam,
@@ -9,8 +11,9 @@ import {
   makeTeam,
   NOW,
   PROVIDER_DOWN,
+  scheduleResponse,
 } from '../test/fixtures';
-import { boardPollInterval, POLL, pollIntervalFor } from './poll';
+import { boardPollInterval, POLL, pollIntervalFor, schedulePollInterval } from './poll';
 
 const HOUR = 60 * 60 * 1000;
 const at = (offsetMs: number): string => new Date(NOW + offsetMs).toISOString();
@@ -105,5 +108,53 @@ describe('boardPollInterval', () => {
 
   it('idles on an empty board', () => {
     expect(pollIntervalFor([], NOW)).toBe(POLL.idleMs);
+  });
+});
+
+describe('schedulePollInterval (the team page’s schedule, §24)', () => {
+  const team = makeTeam();
+  const schedule = (games: Game[], state: 'fresh' | 'stale' = 'fresh') =>
+    scheduleResponse(
+      team,
+      games.map((game): ScheduleItem => ({ kind: 'game', game })),
+      state,
+    ).schedule;
+
+  it('follows a live row at the live pace', () => {
+    expect(schedulePollInterval(schedule([finalGame(), liveGame()]), NOW)).toBe(POLL.liveMs);
+  });
+
+  it('is active on a game day, idle in a quiet week', () => {
+    const soon = makeGame({ kickoffUtc: at(3 * HOUR) });
+    const later = makeGame({ kickoffUtc: at(4 * 24 * HOUR) });
+    expect(schedulePollInterval(schedule([finalGame(), soon]), NOW)).toBe(POLL.activeMs);
+    expect(schedulePollInterval(schedule([finalGame(), later]), NOW)).toBe(POLL.idleMs);
+  });
+
+  it('is not woken by old results, TBD placeholders, or a lapsed postponement', () => {
+    const games = [
+      finalGame({ kickoffUtc: at(-2 * HOUR) }),
+      makeGame({ kickoffUtc: at(HOUR), kickoffTbd: true }),
+      makeGame({ kickoffUtc: at(-HOUR), status: 'postponed' }),
+      makeGame({ kickoffUtc: at(-30 * 24 * HOUR) }),
+    ];
+    expect(schedulePollInterval(schedule(games), NOW)).toBe(POLL.idleMs);
+  });
+
+  it('retries at the active pace while failing or stale, so it recovers by itself', () => {
+    expect(schedulePollInterval(scheduleResponse(team, [], 'unavailable').schedule, NOW)).toBe(
+      POLL.activeMs,
+    );
+    expect(schedulePollInterval(schedule([finalGame()], 'stale'), NOW)).toBe(POLL.activeMs);
+  });
+
+  it('idles through a finished season', () => {
+    expect(schedulePollInterval(schedule([finalGame(), finalGame()]), NOW)).toBe(POLL.idleMs);
+  });
+});
+
+describe('POLL.predictionMs', () => {
+  it('rereads a prediction slowly: it does not move once published', () => {
+    expect(POLL.predictionMs).toBeGreaterThanOrEqual(POLL.activeMs);
   });
 });

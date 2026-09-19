@@ -44,7 +44,10 @@ function decode(text: string): string {
 function toText(markup: string): string {
   return decode(
     markup
-      .replace(/<\/(p|h1|h2|h3|div|li|dt|dd|header|section|article|ul|dl|a|button)>/g, ' ')
+      .replace(
+        /<\/(p|h1|h2|h3|div|li|dt|dd|header|section|article|ul|ol|dl|a|button|table|caption|tr|th|td)>/g,
+        ' ',
+      )
       .replace(/<[^>]+>/g, '')
       .replace(/\s+/g, ' ')
       .trim(),
@@ -53,7 +56,7 @@ function toText(markup: string): string {
 
 /** The text a sighted viewer reads: screen-reader-only text removed. */
 export function visibleText(markup: string): string {
-  return toText(markup.replace(/<span class="visually-hidden">[^<]*<\/span>/g, ''));
+  return toText(markup.replace(/<(\w+) class="visually-hidden">[^<]*<\/\1>/g, ''));
 }
 
 /** The text a screen reader announces: `aria-hidden` text removed. */

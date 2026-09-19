@@ -10,6 +10,11 @@ interface TeamLogoProps {
   abbreviation: string | null;
   /** Square size in CSS pixels. Set on the element, so nothing shifts while it loads. */
   size: number;
+  /**
+   * The team's name is printed right beside it (a schedule row), so the logo
+   * is hidden from assistive tech rather than read out as "LSU logo, LSU".
+   */
+  decorative?: boolean;
 }
 
 /**
@@ -17,7 +22,7 @@ interface TeamLogoProps {
  * missing URL, or one that fails to load, becomes the team's initials in a
  * neutral circle, labelled exactly as the image would have been.
  */
-export function TeamLogo({ src, name, abbreviation, size }: TeamLogoProps) {
+export function TeamLogo({ src, name, abbreviation, size, decorative = false }: TeamLogoProps) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const label = `${name} logo`;
 
@@ -26,7 +31,7 @@ export function TeamLogo({ src, name, abbreviation, size }: TeamLogoProps) {
       <img
         className={styles.logo}
         src={src}
-        alt={label}
+        alt={decorative ? '' : label}
         width={size}
         height={size}
         loading="lazy"
@@ -39,8 +44,7 @@ export function TeamLogo({ src, name, abbreviation, size }: TeamLogoProps) {
   return (
     <span
       className={styles.fallback}
-      role="img"
-      aria-label={label}
+      {...(decorative ? { 'aria-hidden': true } : { role: 'img', 'aria-label': label })}
       style={cssVars({ '--logo-size': `${String(size)}px` })}
     >
       <span aria-hidden="true">{initials(name, abbreviation)}</span>

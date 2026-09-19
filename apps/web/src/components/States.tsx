@@ -5,13 +5,18 @@ interface StateProps {
   title: string;
   message?: ReactNode;
   action?: ReactNode;
+  /** `h1` when the state IS the page (so the page still has its one heading); `h3` inside a section. */
+  headingLevel?: 1 | 2 | 3;
 }
 
+const HEADINGS = { 1: 'h1', 2: 'h2', 3: 'h3' } as const;
+
 /** Nothing to show, and nothing wrong: an empty board, an empty list. */
-export function EmptyState({ title, message, action }: StateProps) {
+export function EmptyState({ title, message, action, headingLevel = 2 }: StateProps) {
+  const Heading = HEADINGS[headingLevel];
   return (
     <div className={styles.state}>
-      <h2 className={styles.title}>{title}</h2>
+      <Heading className={styles.title}>{title}</Heading>
       {message !== undefined && <p className={styles.message}>{message}</p>}
       {action !== undefined && <div className={styles.action}>{action}</div>}
     </div>
@@ -21,8 +26,6 @@ export function EmptyState({ title, message, action }: StateProps) {
 interface ErrorStateProps extends StateProps {
   /** The failing response's `X-Request-Id`, so a failure can be matched to its log line. */
   requestId?: string | null;
-  /** `h1` when the error IS the page (so the page still has its one heading). */
-  headingLevel?: 1 | 2;
 }
 
 /** Something failed. Says what, and what to do about it (§38). */
@@ -33,7 +36,7 @@ export function ErrorState({
   requestId = null,
   headingLevel = 1,
 }: ErrorStateProps) {
-  const Heading = headingLevel === 1 ? 'h1' : 'h2';
+  const Heading = HEADINGS[headingLevel];
   return (
     <div className={styles.state} role="alert">
       <Heading className={styles.title}>{title}</Heading>

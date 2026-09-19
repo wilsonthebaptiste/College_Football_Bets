@@ -10,6 +10,11 @@
   font-size: var(--text-xl);
 }
 
+/* Inside a titled section: smaller than the section's own heading. */
+h3.title {
+  font-size: var(--text-lg);
+}
+
 .message {
   color: var(--color-ink-secondary);
 }

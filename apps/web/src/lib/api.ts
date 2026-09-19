@@ -1,7 +1,9 @@
 import type {
   AdminSessionResponse,
   BoardResponse,
+  PredictionResponse,
   TeamDetailResponse,
+  TeamScheduleResponse,
   UsersResponse,
 } from '@cfb/shared';
 import { getPublic, requestAdmin, type AdminAuthHooks } from './apiClient';
@@ -16,6 +18,15 @@ export const api = {
   team: (teamId: string, signal?: AbortSignal) =>
     getPublic<TeamDetailResponse>(`/api/teams/${encodeURIComponent(teamId)}`, signal),
 
+  schedule: (teamId: string, signal?: AbortSignal) =>
+    getPublic<TeamScheduleResponse>(`/api/teams/${encodeURIComponent(teamId)}/schedule`, signal),
+
+  prediction: (providerGameId: string, signal?: AbortSignal) =>
+    getPublic<PredictionResponse>(
+      `/api/games/${encodeURIComponent(providerGameId)}/prediction`,
+      signal,
+    ),
+
   adminSession: (auth: AdminAuthHooks | null, signal?: AbortSignal) =>
     requestAdmin<AdminSessionResponse>(auth, '/api/admin/session', signal ? { signal } : {}),
 };
@@ -26,5 +37,7 @@ export const queryKeys = {
   boards: ['board'] as const,
   board: (userId: string) => ['board', userId] as const,
   team: (teamId: string) => ['team', teamId] as const,
+  schedule: (teamId: string) => ['team', teamId, 'schedule'] as const,
+  prediction: (providerGameId: string) => ['prediction', providerGameId] as const,
   adminSession: ['admin', 'session'] as const,
 };

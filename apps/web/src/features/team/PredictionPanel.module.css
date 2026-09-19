@@ -1,0 +1,116 @@
+.panel {
+  gap: var(--space-3);
+}
+
+.matchup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+.when {
+  color: var(--color-ink-secondary);
+  font-size: var(--text-sm);
+}
+
+.split {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.sides {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.side {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.side:last-child {
+  text-align: right;
+}
+
+.name {
+  color: var(--color-ink-secondary);
+  font-weight: 600;
+}
+
+.ours .name {
+  color: var(--color-ink);
+}
+
+.pct {
+  font-family: var(--font-display);
+  font-size: var(--numeral-md);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums lining-nums;
+  white-space: nowrap;
+}
+
+/* One bar, split between the two sides. It only repeats the numbers above. */
+.bar {
+  display: flex;
+  gap: 2px;
+  height: 0.75rem;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--color-sunken);
+}
+
+.segment:first-child {
+  flex: 0 0 var(--first, 50%);
+}
+
+.segment:last-child {
+  flex: 1 1 auto;
+}
+
+.oursFill {
+  background: var(--color-accent);
+}
+
+.theirsFill {
+  background: var(--color-rule-strong);
+}
+
+.note {
+  color: var(--color-ink-secondary);
+  font-size: var(--text-sm);
+}
+
+.source {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+}
+
+.loading {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.unavailable {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-sunken);
+}
+
+.unavailableTitle {
+  font-weight: 600;
+}
+
+.reason {
+  color: var(--color-ink-secondary);
+  font-size: var(--text-sm);
+}
+
+.reference {
+  color: var(--color-ink-muted);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}

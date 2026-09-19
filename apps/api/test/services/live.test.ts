@@ -129,6 +129,37 @@ describe('live overlay', () => {
     expect(snapshot.envelope.freshness.ttlSeconds).toBe(25);
   });
 
+  it('dates the live score by its own slate read, not by the older schedule (§23)', async () => {
+    const services = servicesWith(new FakeProvider([played, kickedOff]));
+    now = NOW - 10 * 60 * 1000;
+    await buildSnapshot(services, TEAM, SEASON); // schedule and slate both read 10 minutes ago
+    now = NOW; // the 15-minute schedule is still cached; the 25-second slate is not
+    const snapshot = await buildSnapshot(services, TEAM, SEASON);
+
+    // The card as a whole is as old as its oldest part (§39)...
+    expect(snapshot.envelope.freshness.fetchedAt).toBe(
+      new Date(NOW - 10 * 60 * 1000).toISOString(),
+    );
+    // ...but the score on it was read just now, and says so.
+    expect(snapshot.envelope.data?.liveUpdatedAt).toBe(new Date(NOW).toISOString());
+  });
+
+  it('gives no live timestamp without a live game, or without a live read behind it', async () => {
+    const quiet = new FakeProvider([played, game({ week: 5, kickoff: daysFromNow(3) })]);
+    const idle = await buildSnapshot(servicesWith(quiet), TEAM, SEASON);
+    expect(idle.envelope.data?.liveUpdatedAt).toBeNull();
+
+    // The schedule alone says live, and the slate does not list the game. (A
+    // fresh cache, or the schedule above would be served from it.)
+    resetCacheTiers();
+    resetInflight();
+    const scheduleOnly = new FakeProvider([played, liveOnSlate]);
+    scheduleOnly.slate = [];
+    const unconfirmed = await buildSnapshot(servicesWith(scheduleOnly), TEAM, SEASON);
+    expect(unconfirmed.envelope.data?.liveGame).not.toBeNull();
+    expect(unconfirmed.envelope.data?.liveUpdatedAt).toBeNull();
+  });
+
   it('does not touch the slate when nothing is near kickoff', async () => {
     const provider = new FakeProvider([played, game({ week: 5, kickoff: daysFromNow(3) })]);
     await readLiveSchedule(servicesWith(provider), US, SEASON);

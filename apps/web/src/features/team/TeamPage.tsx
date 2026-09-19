@@ -1,5 +1,4 @@
 import type { Game, NextGameSlot } from '@cfb/shared';
-import type { ReactNode } from 'react';
 import { useLocation, useParams } from 'react-router';
 import { BackLink, readFromState } from '../../components/BackLink';
 import { Card } from '../../components/Card';
@@ -12,22 +11,33 @@ import { RankBadge, RecordBadge } from '../../components/Standing';
 import { TeamLogo } from '../../components/TeamLogo';
 import { isApiError } from '../../lib/apiClient';
 import { formatSeason, teamLabel } from '../../lib/format';
+import { predictionTarget } from '../../lib/prediction';
 import { teamAccent } from '../../lib/teamColor';
 import { useDocumentTitle } from '../../lib/useDocumentTitle';
 import { unavailableMessage } from '../board/TeamCard';
+import { Panel } from './Panel';
+import { PredictionPanel } from './PredictionPanel';
+import { ScheduleSection } from './ScheduleSection';
 import styles from './TeamPage.module.css';
+import { useSchedule } from './useSchedule';
 import { useTeam } from './useTeam';
 
 /**
- * §16 — one team. Phase 3 covers identity, rank, record, the live game, and
- * the previous and next games. The full schedule and the matchup prediction
- * are Phase 4, and load as their own sections so neither can blank this one.
+ * §16 — one team: identity, rank, record, and conference; the live game; the
+ * previous and next games; the matchup prediction; and the full schedule.
+ *
+ * The page is three independent reads (§42). The team snapshot drives the
+ * hero and the game panels, the schedule is its own request, started on mount
+ * alongside it (§27: never with the board), and the prediction follows once
+ * the snapshot names the game. Any one of them can fail, and the others still
+ * render.
  */
 export function TeamPage() {
   const { teamId = '' } = useParams();
   const location = useLocation();
   const from = readFromState(location.state);
   const team = useTeam(teamId);
+  const schedule = useSchedule(teamId);
   const detail = team.data;
   useDocumentTitle(detail === undefined ? null : teamLabel(detail.team));
 
@@ -85,6 +95,7 @@ export function TeamPage() {
       <Card
         as="section"
         accent={teamAccent(identity.primaryColor, identity.altColor)}
+        stale={stale}
         className={styles.heroCard}
       >
         <div className={styles.hero}>
@@ -104,13 +115,15 @@ export function TeamPage() {
           </div>
           {data !== null && (
             <div className={styles.standing}>
-              <RankBadge ranking={data.ranking} />
-              <RecordBadge record={data.record} />
+              <RankBadge ranking={data.ranking} /> <RecordBadge record={data.record} />
             </div>
           )}
         </div>
         <div className={styles.heroFooter}>
-          <span>{formatSeason(detail.season)}</span>
+          <span>
+            {formatSeason(detail.season)}
+            {data?.ranking.kind === 'ranked' && <> · Rankings: {data.ranking.poll}</>}
+          </span>
           <FreshnessLabel fetchedAt={snapshot.freshness.fetchedAt} stale={stale} />
         </div>
       </Card>
@@ -118,41 +131,57 @@ export function TeamPage() {
       {data === null ? (
         <ErrorState
           title={unavailableMessage(snapshot.error)}
+          message="The schedule below loads separately and may still be available."
           headingLevel={2}
           requestId={snapshot.error?.requestId ?? null}
         />
       ) : (
         <>
+          {/* §11, §51: a game in progress comes before everything else. */}
           {data.liveGame !== null && (
-            <LiveScore game={data.liveGame} teamName={identity.abbreviation ?? name} size="page" />
+            <LiveScore
+              game={data.liveGame}
+              teamName={identity.abbreviation ?? name}
+              size="page"
+              updatedAt={data.liveUpdatedAt}
+            />
           )}
           <div className={styles.panels}>
-            <GamePanel title="Previous game">
+            <Panel title="Previous game">
               <PreviousGameLine game={data.previousGame} />
               {data.previousGame !== null && <GameFacts game={data.previousGame} played />}
-            </GamePanel>
-            <GamePanel title="Next game">
+            </Panel>
+            <Panel title="Next game">
               <NextGameLine slot={data.nextGame} />
               <NextFacts slot={data.nextGame} />
-            </GamePanel>
+            </Panel>
+            <PredictionPanel
+              game={predictionTarget(data)}
+              team={{ providerTeamId: identity.providerTeamId, name }}
+            />
           </div>
         </>
       )}
+
+      <ScheduleSection
+        query={schedule}
+        teamName={name}
+        seasonYear={detail.season.year}
+        nextGameId={data === null ? null : nextGameIdOf(data.nextGame)}
+      />
     </div>
   );
 }
 
-function GamePanel({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <Card as="section" className={styles.panel}>
-      <h2 className={styles.panelTitle}>{title}</h2>
-      {children}
-    </Card>
-  );
+function upcomingOf(slot: NextGameSlot): Game | null {
+  return slot.kind === 'game' ? slot.game : slot.kind === 'bye' ? slot.following : null;
+}
+
+function nextGameIdOf(slot: NextGameSlot): string | null {
+  return upcomingOf(slot)?.providerGameId ?? null;
 }
 
 function NextFacts({ slot }: { slot: NextGameSlot }) {
-  const game: Game | null =
-    slot.kind === 'game' ? slot.game : slot.kind === 'bye' ? slot.following : null;
+  const game = upcomingOf(slot);
   return game === null ? null : <GameFacts game={game} played={false} />;
 }

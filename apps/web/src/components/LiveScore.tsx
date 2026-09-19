@@ -1,6 +1,6 @@
 import type { Game } from '@cfb/shared';
 import { cx } from '../lib/cx';
-import { liveSituation } from '../lib/format';
+import { formatUpdatedAt, liveSituation } from '../lib/format';
 import { HomeAwayMark } from './GameLine';
 import { LiveBadge } from './LiveBadge';
 import styles from './LiveScore.module.css';
@@ -10,6 +10,12 @@ interface LiveScoreProps {
   /** The viewed team's short name, for its side of the scoreboard. */
   teamName: string;
   size?: 'card' | 'page';
+  /**
+   * When the provider produced this score (`TeamSnapshot.liveUpdatedAt`). It
+   * is shown so a score seconds old is not dated by the card's oldest part,
+   * a schedule that may be 15 minutes older (§23). Omitted when unknown.
+   */
+  updatedAt?: string | null;
 }
 
 /**
@@ -20,25 +26,31 @@ interface LiveScoreProps {
  * (its scoreboard could not be fetched) says so in words rather than showing
  * 0–0, which would be fabricated (§4).
  */
-export function LiveScore({ game, teamName, size = 'card' }: LiveScoreProps) {
+export function LiveScore({ game, teamName, size = 'card', updatedAt = null }: LiveScoreProps) {
   const hasScore = game.teamScore !== null && game.opponentScore !== null;
+  const updated = formatUpdatedAt(updatedAt);
   return (
     <section className={cx(styles.live, styles[size])} aria-label={`${teamName} live game`}>
       <div className={styles.head}>
-        <LiveBadge />
-        <span className={styles.situation}>{liveSituation(game)}</span>
+        <LiveBadge /> <span className={styles.situation}>{liveSituation(game)}</span>
+        {updated !== null && updatedAt !== null && (
+          <span className={styles.updated}>
+            {' '}
+            Updated <time dateTime={updatedAt}>{updated}</time>
+          </span>
+        )}
       </div>
       <div className={styles.board} aria-live="polite" aria-atomic="true">
         {hasScore ? (
           <>
             <p className={styles.side}>
-              <span className={styles.name}>{teamName}</span>
+              <span className={styles.name}>{teamName}</span>{' '}
               <span className={styles.points}>{String(game.teamScore)}</span>
             </p>
             <p className={styles.side}>
               <span className={styles.name}>
                 <HomeAwayMark homeAway={game.homeAway} /> {game.opponent.name}
-              </span>
+              </span>{' '}
               <span className={styles.points}>{String(game.opponentScore)}</span>
             </p>
           </>

@@ -214,6 +214,29 @@ describe('TeamCard: live (§11)', () => {
     expect(seen.indexOf('LIVE')).toBeLessThan(seen.indexOf('Previous'));
   });
 
+  it('dates the live score by its own read, so a seconds-old score never looks stale (§23)', () => {
+    const { markup, seen } = render(
+      card({ liveGame: liveGame(), liveUpdatedAt: '2026-10-01T17:59:45.000Z' }),
+    );
+    // "Updated 1:59 PM" today, "Updated Oct 1, 1:59 PM" any other day.
+    expect(seen).toMatch(/Updated (\w{3} \d{1,2}, )?\d{1,2}:\d{2} [AP]M/);
+    expect(markup).toContain('dateTime="2026-10-01T17:59:45.000Z"');
+    // Outside the live region, so it is not announced on every poll.
+    const region = markup.match(/<div[^>]*aria-live="polite".*?<\/div>/)?.[0] ?? '';
+    expect(region).not.toContain('Updated');
+  });
+
+  it('adds no time to the live block when there is no live read behind it', () => {
+    const { seen } = render(card({ liveGame: liveGame(), liveUpdatedAt: null }));
+    expect(seen).not.toContain('Updated');
+  });
+
+  it('never repeats provider wording that calls a live game final (§11)', () => {
+    const { seen } = render(card({ liveGame: liveGame({ statusDetail: 'Final' }) }));
+    expect(seen).toContain('LIVE');
+    expect(seen).not.toMatch(/final/i);
+  });
+
   it('says "score unavailable" instead of inventing 0–0 when the score is missing', () => {
     const { seen } = render(
       card({ liveGame: liveGame({ teamScore: null, opponentScore: null }) }, 'stale'),

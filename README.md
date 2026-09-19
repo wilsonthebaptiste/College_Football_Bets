@@ -5,13 +5,15 @@ football teams each. The spec is in [context/spec.md](context/spec.md) and the
 build plan is in [context/plan.md](context/plan.md).
 
 **Status: Phases 1–3 are complete. Phase 4 (team detail and live games) is
-next.** Phase 3 was tested on 2026-09-18 (see
-[Testing Phase 3](#testing-phase-3-on-your-machine)). There is now a website:
-a home page listing every board, each person's board of six team cards, and a
-basic team page. Nobody signs in to look at boards. The API behind it serves
-rank, record, the previous game, the next game, and any live game, from ESPN or
-from a built-in mock season. When ESPN fails, the API serves the last good data
-labeled as stale, and the site shows that label instead of breaking the page.
+built and waiting for your test pass** (see
+[Testing Phase 4](#testing-phase-4-on-your-machine)). Phase 5 (admin and
+deploy) comes after it. The website has a home page listing every board, each
+person's board of six team cards, and a full team page: rank, record, the live
+game, the previous and next games, the matchup prediction, and the whole
+season's schedule. Nobody signs in to look at boards. The data comes from ESPN
+or from a built-in mock season. When ESPN fails, the API serves the last good
+data labeled as stale, and the site shows that label instead of breaking the
+page.
 
 ---
 
@@ -27,7 +29,8 @@ apps/api/            Cloudflare Worker: the application API
   test/              Tests, plus test/fixtures/espn/ (19 real ESPN payloads)
 apps/web/            The website: React + Vite + TypeScript
   src/app/           Routes, page frame, not-found page
-  src/features/      home (board picker), board (cards), team, admin (sign-in)
+  src/features/      home (board picker), board (cards), team (detail, schedule,
+                     prediction), admin (sign-in)
   src/components/    Rank, record, game lines, live score, logos, freshness, states
   src/lib/           API client, polling intervals, date formatting
   src/auth/          The admin session (loaded only for the administrator)
@@ -476,8 +479,8 @@ press `F12`, pick the **Network** tab, and then go to <http://localhost:5173>.
    tab shows a `board` request every 15 seconds while a team is live (every
    60 seconds or 5 minutes when nothing is on).
 3. **Team page.** Click any card. The team page shows the rank, record,
-   previous game, and next game (the schedule and prediction come in
-   Phase 4). The `Wilson's board` link at the top and the browser's back
+   previous game, and next game (Phase 4 added the prediction and the full
+   schedule; see [Testing Phase 4](#testing-phase-4-on-your-machine)). The `Wilson's board` link at the top and the browser's back
    button both return to the board.
 4. **No login traffic.** In the Network tab's filter box, type `supabase`.
    Nothing should match, on any of the three pages.
@@ -572,6 +575,117 @@ non-admin. It also turned up two small sign-in issues, both left for Phase 5:
 The full results are in the Phase 3 completion notes in
 [context/plan.md](context/plan.md).
 
+## Testing Phase 4 on your machine
+
+Phase 4 finishes the team page: the matchup prediction, the full season
+schedule, live games, and the offseason. It needs nothing new: the same
+Supabase setup as before, and the mock season for the sports data, so live
+games, byes, postponements, and missing predictions are always on screen
+somewhere.
+
+### Level A — Automated checks
+
+```powershell
+npm run verify
+```
+
+The result should be 24 test files and 473 tests. Phase 4 added 86:
+
+- **The team page** (30 tests), one group per exit criterion: every section
+  in order under one heading; "Prediction unavailable" for each way of having
+  none; a failed schedule leaving the rest of the page standing; a live game
+  with its quarter and clock and no "Final" anywhere; and a finished season.
+- **The schedule** (17). A real table with a caption and headers on wide
+  screens, stacked entries on phones, bye weeks as rows, results told by
+  letter, word, and shape (W solid, L outlined, T dashed), and no score ever
+  invented for a postponed, canceled, or live game.
+- **The prediction** (11). It is about the live or next game, never a
+  finished one. The team's own side comes first. A figure that isn't a
+  percentage is refused, never repaired.
+- **Hidden tabs** (3). Polling stops while the tab is hidden and one refetch
+  happens on return, checked against the app's real query settings.
+- **Formatting, polling, and cards** (16), and **the API** (9): a live score
+  carries the time it was read, and the offseason serves six finished seasons.
+
+### Level B — The team page
+
+Start both servers as in Phase 3 (`npm run dev`, then `npm run dev:web`) and
+open <http://localhost:5173>.
+
+1. **Everything on one page.** Open any board, then any team. Top to bottom:
+   the name, rank, record, and conference; the previous game, the next game,
+   and the **Matchup prediction** (two percentages, a bar, and
+   `Source: Mock predictor (synthetic data)`); then the **schedule**: every
+   game with its week, date and time, opponent, home or away, status, and
+   result. Bye weeks are rows of their own, and the next game is marked
+   **Next**.
+2. **Widths.** In the device toolbar (`Ctrl+Shift+M`), try 320, 768, and 1440.
+   Below 720 px the schedule turns into stacked entries. At no width does the
+   page scroll sideways.
+3. **A live game.** Find a card with a red **LIVE** block (some board always
+   has one) and open that team. The live block comes first, with the quarter,
+   the clock, the score, and `Updated <time>`, which is when that score was
+   read. The schedule's live row says LIVE with the score and no W or L. The
+   prediction panel says **Pregame prediction**, because a prediction is made
+   before kickoff and doesn't change during the game. Nothing on the page says
+   "Final".
+4. **No prediction.** About one game in four has no mock prediction. Open
+   teams until the panel says `Prediction unavailable` and
+   `No prediction has been published for this game.` The rest of the page is
+   complete.
+5. **Hidden tab.** On the live team's page, open the Network tab: a request
+   for the team goes out every 15 seconds. Switch to another tab for a minute,
+   then come back. Nothing was requested while you were away, and one request
+   goes out as soon as you return.
+
+### Level B2 — Failure states
+
+| Do this                                                                                          | Start from | What the team page shows                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------ | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| In the Network tab, right-click the `schedule` request, choose **Block request URL**, and reload | Any        | The schedule panel says `Schedule unavailable` with a **Try again** button. The name, rank, record, previous and next games, and prediction are all still there |
+| Unblock it (**More tools → Network request blocking**), then press **Try again**                 | —          | The schedule appears, and the rest of the page never moved                                                                                                      |
+| Add `SPORTS_PROVIDER_FAULT=prediction` to `apps/api/.dev.vars` and restart `npm run dev`         | Cold       | `Prediction unavailable` and `Sports data temporarily unavailable.`, with a reference number. Everything else is normal                                         |
+
+"Cold" means the same as in Phase 2's Level B2: stop the server, run
+`Remove-Item -Recurse -Force apps\api\.wrangler\state`, then start it. A
+prediction is cached for 30 minutes, so without that the fault never fires.
+Remove the line when you're done.
+
+### Level B3 — The offseason
+
+Add this line to `apps/api/.dev.vars`, using the current season's year, and
+restart `npm run dev`:
+
+```
+SEASON_OVERRIDE=2026:postseason
+```
+
+Every card on every board says **Season complete**, with its final record, and
+nothing is live. On a team page, the header says `<year> postseason`, the next
+game says `Season complete`, the prediction says
+`There's no upcoming game to predict.`, and the whole schedule is still there
+with every result and bye week. Nothing says "Upcoming", `undefined`, or
+`NaN`. The mock season's dates move back into the summer in this mode. That is
+expected: the mock timeline is anchored to today. **Remove the line
+afterwards**, or the site stays in the offseason.
+
+### Phase 4 exit criteria and how each is checked
+
+| Exit criterion (plan, Phase 4)                                                               | Checked by                  | Status                            |
+| -------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------- |
+| The team page shows identity, rank, record, conference, previous, next, prediction, schedule | Level A, Level B step 1     | ✅ automated browser run · ⏳ you |
+| With the prediction removed, the page renders fully with `Prediction unavailable`            | Level A, Level B step 4, B2 | ✅ automated browser run · ⏳ you |
+| With the schedule forced to fail, the hero and game panels still render                      | Level A, Level B2           | ✅ automated browser run · ⏳ you |
+| A live game shows the live block on board and page, with period and clock, and no "Final"    | Level A, Level B step 3     | ✅ automated browser run · ⏳ you |
+| Offseason: no upcoming games, no crashes, `Season complete` shown                            | Level A, Level B3           | ✅ automated browser run · ⏳ you |
+| Hidden tab: polling stops, then a single refetch on return                                   | Level A, Level B step 5     | ✅ automated browser run · ⏳ you |
+
+"Automated browser run" means 57 checks in headless Edge against two real
+`wrangler dev` Workers (one in season, one with the offseason override), in
+light and dark mode, at 320, 768, and 1440 px, including an axe accessibility
+scan of the team page. Details are in the Phase 4 completion notes in
+[context/plan.md](context/plan.md).
+
 ---
 
 ## Troubleshooting
@@ -586,6 +700,8 @@ The full results are in the Phase 3 completion notes in
 | The website says "Unable to load boards"              | The API isn't running. Start `npm run dev` in another terminal, then press **Try again**                                                                                                                                         |
 | The website runs on 5174, not 5173                    | Something else holds 5173. Either port works: the dev server forwards `/api` to 8787 regardless                                                                                                                                  |
 | `/login` says "Admin sign-in isn't set up"            | `apps/web/.env` is missing or incomplete (Level C). Restart `npm run dev:web` after editing it                                                                                                                                   |
+| The team page says "Schedule unavailable"             | The schedule is its own request. Press **Try again**. If it keeps failing, check that DevTools isn't blocking it (Phase 4, Level B2) and that `npm run dev` is running                                                           |
+| Every card says "Season complete" in September        | `SEASON_OVERRIDE` is still in `apps/api/.dev.vars` from the offseason drill (Phase 4, Level B3). Remove the line and restart `npm run dev`                                                                                       |
 | A test account gets "Email or password is incorrect." | The account isn't in this Supabase project, its password doesn't match `.env`, or its email was never confirmed. Recreate it in **Authentication → Users** with **Auto Confirm User** ticked. Keep the non-admin out of `admins` |
 
 For database-side problems, the full table is at the bottom of

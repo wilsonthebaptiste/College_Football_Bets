@@ -110,6 +110,8 @@ export async function buildSnapshot(
     previousGame: slots.previousGame,
     nextGame: slots.nextGame,
     liveGame: slots.liveGame,
+    liveUpdatedAt:
+      slots.liveGame === null ? null : (live.overlaidAt.get(slots.liveGame.providerGameId) ?? null),
   };
 
   const freshness = composeFreshness({

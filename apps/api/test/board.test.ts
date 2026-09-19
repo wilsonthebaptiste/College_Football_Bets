@@ -554,6 +554,118 @@ describe('game routes', () => {
   });
 });
 
+// ─── Phase 4: the team page's reads ──────────────────────────────────────────
+
+describe('the team page’s three reads, live (§11, §16, §17)', () => {
+  const season = { year: 2026, type: 'regular' as const, week: 6 };
+
+  it('agree on a live game, and date its score by its own live read (§23)', async () => {
+    stubWith();
+    const live = generateSeason(season, Date.now()).find((game) => game.status === 'live')!;
+    const teamId = teamUuid(live.home.team.providerTeamId);
+
+    const detail = await get<TeamDetailResponse>(`/api/teams/${teamId}`);
+    const snapshot = detail.body.snapshot.data!;
+    expect(snapshot.liveGame).toMatchObject({
+      providerGameId: live.providerGameId,
+      status: 'live',
+      result: null,
+    });
+    expect(snapshot.liveGame?.period).toBeGreaterThanOrEqual(1);
+    expect(snapshot.liveGame?.clock).toMatch(/^\d{1,2}:\d{2}$/);
+    expect(snapshot.liveUpdatedAt).toBe(new Date(MOCK_NOW).toISOString());
+
+    const schedule = await get<TeamScheduleResponse>(`/api/teams/${teamId}/schedule`);
+    const row = schedule.body.schedule.data?.items.find(
+      (item) => item.kind === 'game' && item.game.providerGameId === live.providerGameId,
+    );
+    expect(row).toMatchObject({
+      kind: 'game',
+      game: {
+        status: 'live',
+        result: null,
+        teamScore: snapshot.liveGame?.teamScore,
+        opponentScore: snapshot.liveGame?.opponentScore,
+      },
+    });
+    // The live part sets the schedule's lifetime too: 25 s, not 15 minutes.
+    expect(schedule.body.schedule.freshness.ttlSeconds).toBe(25);
+  });
+
+  it('answers a failed prediction with a 200 and an error, never with a number (§12)', async () => {
+    stubWith();
+    const game = generateSeason(season, Date.now()).find((g) => g.status === 'scheduled')!;
+    const env = testEnv({ SPORTS_PROVIDER_FAULT: 'prediction' });
+
+    const { response, body } = await get<PredictionResponse>(
+      `/api/games/${game.providerGameId}/prediction`,
+      env,
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(body.prediction).toMatchObject({ data: null, error: { kind: 'provider_unavailable' } });
+
+    // The rest of the page is unaffected (§42).
+    const detail = await get<TeamDetailResponse>(
+      `/api/teams/${teamUuid(game.home.team.providerTeamId)}`,
+      env,
+    );
+    expect(detail.body.snapshot.data).not.toBeNull();
+  });
+});
+
+describe('the offseason: SEASON_OVERRIDE=<year>:postseason (§22)', () => {
+  const env = (): Env => testEnv({ SEASON_OVERRIDE: '2026:postseason' });
+
+  it('a board of six finished seasons: records kept, nothing next, nothing live', async () => {
+    stubWith();
+    const { response, body } = await get<BoardResponse>(`/api/users/${WILSON_ID}/board`, env());
+    expect(response.status).toBe(200);
+    expect(body.season).toEqual({ year: 2026, type: 'postseason', week: null });
+    expect(body.anyLive).toBe(false);
+    expect(body.teams).toHaveLength(6);
+    for (const { snapshot } of body.teams) {
+      expect(snapshot.error).toBeNull();
+      expect(snapshot.data).toMatchObject({
+        nextGame: { kind: 'none', reason: 'season_complete' },
+        liveGame: null,
+        liveUpdatedAt: null,
+        previousGame: { status: 'final' },
+      });
+      expect(snapshot.data?.record?.summary).toMatch(/^\d+-\d+$/);
+    }
+  });
+
+  it('the final schedule stays whole: every game played or canceled, byes as rows', async () => {
+    stubWith();
+    const { body } = await get<TeamScheduleResponse>(
+      `/api/teams/${teamUuid('333')}/schedule`,
+      env(),
+    );
+    const items = body.schedule.data!.items;
+    const games = items.flatMap((item) => (item.kind === 'game' ? [item.game] : []));
+    expect(games.length).toBeGreaterThanOrEqual(8);
+    expect(games.every((game) => game.status === 'final' || game.status === 'canceled')).toBe(true);
+    expect(games.every((game) => (game.status === 'final') === (game.result !== null))).toBe(true);
+    expect(items.some((item) => item.kind === 'bye')).toBe(true);
+  });
+
+  it('the last game’s prediction is still answered, which is why the page never asks', async () => {
+    // The page targets only a live or upcoming game (web `predictionTarget`),
+    // so a pregame number never appears beside a final score. The API itself
+    // passes through what the provider says, as ESPN's core endpoint does.
+    stubWith();
+    const { body } = await get<TeamDetailResponse>(`/api/teams/${teamUuid('333')}`, env());
+    expect(body.snapshot.data?.nextGame).toEqual({ kind: 'none', reason: 'season_complete' });
+    const last = body.snapshot.data!.previousGame!;
+    const prediction = await get<PredictionResponse>(
+      `/api/games/${last.providerGameId}/prediction`,
+      env(),
+    );
+    expect(prediction.response.status).toBe(200);
+  });
+});
+
 // ─── Admin search, health, meta ──────────────────────────────────────────────
 
 describe('GET /api/admin/teams/search (§43)', () => {

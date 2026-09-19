@@ -1,4 +1,4 @@
-import type { BoardResponse, Envelope, Game, TeamSnapshot } from '@cfb/shared';
+import type { BoardResponse, Envelope, Game, ScheduleResult, TeamSnapshot } from '@cfb/shared';
 
 /**
  * §24 — every refresh interval in the app, in one place.
@@ -21,6 +21,12 @@ export const POLL = {
   staleTimeMs: 10_000,
   /** How far ahead a kickoff makes the board "active" rather than idle. */
   gameSoonMs: 12 * 60 * 60_000,
+  /**
+   * A matchup prediction. The Worker keeps one for 30 minutes and it barely
+   * moves before kickoff (and not at all after), so the team page rereads it
+   * at the idle pace. `Cache-Control` absorbs most of those rereads anyway.
+   */
+  predictionMs: 5 * 60_000,
 } as const;
 
 /** The game a snapshot is waiting on: the next game, or the one after a bye. */
@@ -67,4 +73,34 @@ export function boardPollInterval(board: BoardResponse, now: number): number {
     board.teams.map((entry) => entry.snapshot),
     now,
   );
+}
+
+/** Could this game be under way, or about to be? Final, canceled, and TBD games never are. */
+function nearKickoff(game: Game, now: number): boolean {
+  if (game.kickoffTbd) return false;
+  if (game.status === 'final' || game.status === 'canceled' || game.status === 'postponed') {
+    return false;
+  }
+  const kickoff = Date.parse(game.kickoffUtc);
+  if (Number.isNaN(kickoff)) return false;
+  return kickoff - now <= POLL.gameSoonMs && now - kickoff <= POLL.gameSoonMs;
+}
+
+/**
+ * The team page's schedule (§17), on the same rule as a board: its live row
+ * updates at the live pace, a game day at the active pace, and a quiet week
+ * at the idle pace. A schedule that failed or went stale retries at the
+ * active pace, so it recovers without a reload.
+ */
+export function schedulePollInterval(schedule: Envelope<ScheduleResult>, now: number): number {
+  const data = schedule.data;
+  if (data === null || schedule.freshness.state === 'stale') return POLL.activeMs;
+
+  let active = false;
+  for (const item of data.items) {
+    if (item.kind !== 'game') continue;
+    if (item.game.status === 'live') return POLL.liveMs;
+    if (nearKickoff(item.game, now)) active = true;
+  }
+  return active ? POLL.activeMs : POLL.idleMs;
 }

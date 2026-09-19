@@ -7,9 +7,14 @@ import type {
   FreshnessState,
   Game,
   NextGameSlot,
+  Prediction,
+  PredictionResponse,
   RankingState,
+  ScheduleItem,
   Team,
+  TeamDetailResponse,
   TeamRecord,
+  TeamScheduleResponse,
   TeamSnapshot,
 } from '@cfb/shared';
 
@@ -120,6 +125,7 @@ export function makeSnapshot(team: Team, overrides: Partial<TeamSnapshot> = {}):
     previousGame: finalGame(),
     nextGame,
     liveGame: null,
+    liveUpdatedAt: null,
     ...overrides,
   };
 }
@@ -175,3 +181,153 @@ export const PROVIDER_DOWN: AppError = {
   message: 'Sports data temporarily unavailable.',
   requestId: 'req-123',
 };
+
+// ─── The team page's other two reads (§12, §17) ─────────────────────────────
+
+export const SEASON = { year: 2026, type: 'regular', week: 5 } as const;
+
+export function teamDetail(
+  team: Team,
+  snapshot: Envelope<TeamSnapshot>,
+  season: TeamDetailResponse['season'] = SEASON,
+): TeamDetailResponse {
+  return { team, season, snapshot };
+}
+
+/**
+ * Alabama's season to date, from the card's point of view: a win, a tie, a
+ * loss, a bye, a canceled game, the next game (Tennessee), a postponement,
+ * and a TBD kickoff at the end.
+ */
+export function seasonItems(): ScheduleItem[] {
+  const opponent = (providerTeamId: string, name: string, abbreviation: string) => ({
+    providerTeamId,
+    name,
+    abbreviation,
+    logoUrl: null,
+  });
+  const games: Game[] = [
+    finalGame({
+      providerGameId: 'g1',
+      week: 1,
+      kickoffUtc: '2026-09-05T23:00:00.000Z',
+      opponent: opponent('2', 'Auburn', 'AUB'),
+      teamScore: 34,
+      opponentScore: 17,
+      result: 'W',
+      statusDetail: 'Final/OT',
+    }),
+    finalGame({
+      providerGameId: 'g2',
+      week: 2,
+      kickoffUtc: '2026-09-12T19:30:00.000Z',
+      homeAway: 'away',
+      opponent: opponent('57', 'Florida', 'FLA'),
+      teamScore: 20,
+      opponentScore: 24,
+      result: 'L',
+      venue: 'Ben Hill Griffin Stadium',
+    }),
+    finalGame({
+      providerGameId: 'g3',
+      week: 3,
+      kickoffUtc: '2026-09-19T16:00:00.000Z',
+      homeAway: 'neutral',
+      opponent: opponent('145', 'Ole Miss', 'MISS'),
+      teamScore: 17,
+      opponentScore: 17,
+      result: 'T',
+      venue: 'Neutral Site Stadium',
+    }),
+    makeGame({
+      providerGameId: 'g4',
+      week: 4,
+      kickoffUtc: '2026-09-26T16:00:00.000Z',
+      homeAway: 'home',
+      opponent: opponent('238', 'Vanderbilt', 'VAN'),
+      status: 'canceled',
+      statusDetail: 'Canceled',
+      venue: 'Bryant-Denny Stadium',
+    }),
+    makeGame({ providerGameId: '401000001' }), // week 5: Tennessee, next
+    makeGame({
+      providerGameId: 'g7',
+      week: 7,
+      kickoffUtc: '2026-10-17T19:30:00.000Z',
+      homeAway: 'home',
+      opponent: opponent('99', 'LSU', 'LSU'),
+      status: 'postponed',
+      statusDetail: 'Postponed',
+      venue: 'Bryant-Denny Stadium',
+      broadcast: null,
+    }),
+    makeGame({
+      providerGameId: 'g8',
+      week: 8,
+      kickoffUtc: '2026-10-24T04:00:00.000Z',
+      kickoffTbd: true,
+      homeAway: 'away',
+      opponent: opponent('201', 'Oklahoma', 'OU'),
+      venue: null,
+      broadcast: null,
+    }),
+  ];
+  const [w1, w2, w3, w4, w5, w7, w8] = games as [Game, Game, Game, Game, Game, Game, Game];
+  const game = (entry: Game): ScheduleItem => ({ kind: 'game', game: entry });
+  return [
+    game(w1),
+    game(w2),
+    game(w3),
+    game(w4),
+    game(w5),
+    { kind: 'bye', week: 6 },
+    game(w7),
+    game(w8),
+  ];
+}
+
+export function scheduleResponse(
+  team: Team,
+  items: ScheduleItem[] = seasonItems(),
+  state: FreshnessState = 'fresh',
+  error: AppError | null = null,
+): TeamScheduleResponse {
+  return {
+    team,
+    schedule: {
+      data: state === 'unavailable' ? null : { season: SEASON, items },
+      freshness: freshness(state),
+      error,
+    },
+  };
+}
+
+export function makePrediction(overrides: Partial<Prediction> = {}): Prediction {
+  return {
+    source: 'espn_matchup_predictor',
+    sourceLabel: 'ESPN matchup predictor',
+    providerGameId: '401000001',
+    homeWinPct: 33,
+    awayWinPct: 67,
+    // Alabama is away at Tennessee in `makeGame`, so Alabama is the away side.
+    home: { providerTeamId: '2633', name: 'Tennessee Volunteers', abbreviation: 'TENN' },
+    away: { providerTeamId: '333', name: 'Alabama Crimson Tide', abbreviation: 'ALA' },
+    retrievedAt: '2026-10-01T17:30:00.000Z',
+    ...overrides,
+  };
+}
+
+export function predictionResponse(
+  prediction: Prediction | null,
+  state: FreshnessState = 'fresh',
+  error: AppError | null = null,
+): PredictionResponse {
+  return {
+    prediction: {
+      data: prediction,
+      // "The provider has none" is a normal, fresh answer; only a failure is `unavailable`.
+      freshness: freshness(state),
+      error,
+    },
+  };
+}

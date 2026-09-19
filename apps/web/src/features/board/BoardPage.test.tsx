@@ -12,7 +12,7 @@ import {
   makeTeam,
   PROVIDER_DOWN,
 } from '../../test/fixtures';
-import { RAW_VALUE, renderAt, visibleText } from '../../test/render';
+import { RAW_VALUE, renderAt, spokenText, visibleText } from '../../test/render';
 import { TeamPage } from '../team/TeamPage';
 import { BoardPage } from './BoardPage';
 
@@ -56,7 +56,7 @@ describe('BoardPage (§13)', () => {
     expect(seen).toContain('Rankings: AP Top 25');
     expect(markup.match(/<article/g)).toHaveLength(6);
 
-    const positions = TEAM_NAMES.map((name) => seen.indexOf(`${name} `));
+    const positions = TEAM_NAMES.map((name) => markup.indexOf(`>${name}</a>`));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions); // §44: order preserved
   });
@@ -106,8 +106,8 @@ describe('BoardPage (§13)', () => {
   });
 
   it('shows skeleton cards, and says so, on the first load', () => {
-    const { markup, seen } = renderBoard(null);
-    expect(seen).toContain('Loading board…');
+    const { markup } = renderBoard(null);
+    expect(spokenText(markup)).toContain('Loading board…');
     expect(markup).toContain('role="status"');
     expect(markup).not.toContain('<article');
   });
@@ -175,7 +175,7 @@ describe('TeamPage (Phase 3 scope)', () => {
 
   it('shows a loading state with no board to borrow from', () => {
     const markup = renderAt('/teams/abc', '/teams/:teamId', <TeamPage />);
-    expect(visibleText(markup)).toContain('Loading team data…');
+    expect(spokenText(markup)).toContain('Loading team data…');
   });
 });
 

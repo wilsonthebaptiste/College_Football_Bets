@@ -117,6 +117,20 @@ export function formatGameDate(
 }
 
 /**
+ * The kickoff time alone, for a schedule's time column: `3:30 PM`, or `TBD`
+ * when no time has been announced (never the placeholder "12:00 AM", §4).
+ */
+export function formatKickoffTime(
+  game: Pick<Game, 'kickoffUtc' | 'kickoffTbd'>,
+  options: ClockOptions = {},
+): string {
+  if (game.kickoffTbd) return 'TBD';
+  const ms = Date.parse(game.kickoffUtc);
+  if (Number.isNaN(ms)) return 'TBD';
+  return formatter('time', TIME, options.timeZone).format(ms);
+}
+
+/**
  * §23 — the "Last updated" time. `3:42 PM` when it is today, `Sep 17, 3:42 PM`
  * otherwise, so day-old data can never pass for this afternoon's. `null` when
  * there is no timestamp to show.
@@ -178,18 +192,62 @@ function quarterLabel(period: number): string {
   return `${String(period - 4)}OT`;
 }
 
+/** "Final", "Final/OT", "F/2OT": a provider calling the game over. */
+const FINAL_WORDING = /\bfinal\b|^f\//i;
+
 /**
  * The live game's situation. The provider's own wording wins ("Halftime",
  * "End of 3rd Quarter"), because rebuilding it from period and clock would say
  * "2nd quarter, 0:00" at halftime. Period and clock are the fallback.
+ *
+ * §11: a game whose status is live is never described as final, even if the
+ * provider's wording has run ahead of its status. That wording is set aside
+ * until the status itself says final.
  */
 export function liveSituation(game: Pick<Game, 'statusDetail' | 'period' | 'clock'>): string {
-  if (game.statusDetail !== null && game.statusDetail.trim() !== '') return game.statusDetail;
+  const detail = game.statusDetail?.trim() ?? '';
+  if (detail !== '' && !FINAL_WORDING.test(detail)) return detail;
   if (game.period !== null && game.period > 0) {
     const label = quarterLabel(game.period);
     return game.clock === null ? label : `${label}, ${game.clock}`;
   }
   return 'In progress';
+}
+
+/**
+ * A schedule row's status (§17, §18), in words. A final game shows the
+ * provider's own wording ("Final/OT"), verbatim, rather than a reconstruction.
+ * Nothing but `status === 'final'` ever says Final (§11).
+ */
+export function scheduleStatus(
+  game: Pick<Game, 'status' | 'statusDetail' | 'period' | 'clock'>,
+): string {
+  switch (game.status) {
+    case 'final': {
+      const detail = game.statusDetail?.trim() ?? '';
+      return detail !== '' && FINAL_WORDING.test(detail) ? detail : 'Final';
+    }
+    case 'live':
+      return liveSituation(game);
+    case 'scheduled':
+      return 'Upcoming';
+    default:
+      return statusLabel(game) ?? 'Status unknown';
+  }
+}
+
+/** A schedule row's week: `4`, or the season phase when a week number means nothing. */
+export function weekLabel(game: Pick<Game, 'week' | 'season'>): string {
+  if (game.season.type === 'postseason') return 'Postseason';
+  if (game.season.type === 'preseason') return 'Preseason';
+  return game.week === null ? '—' : String(game.week);
+}
+
+const PERCENT = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 1 });
+
+/** `67%`, or `66.7%`: the provider's figure, to one decimal at most (§12). */
+export function formatPercent(value: number): string {
+  return `${PERCENT.format(value)}%`;
 }
 
 /** What a card calls a team: "Alabama", falling back to the provider's full name. */

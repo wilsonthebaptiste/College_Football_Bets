@@ -31,6 +31,12 @@ export interface LiveSchedule {
    * status for a game in progress, so the whole snapshot is marked stale.
    */
   liveUnverified: boolean;
+  /**
+   * For each game that got a live overlay, when its slate was fetched from the
+   * provider. That is the age of the score and clock on screen, which the
+   * composed freshness (the oldest part) cannot tell.
+   */
+  overlaidAt: ReadonlyMap<string, string | null>;
 }
 
 export async function readSchedule(
@@ -96,7 +102,12 @@ export async function readLiveSchedule(
 ): Promise<LiveSchedule> {
   const schedule = await readSchedule(services, providerTeamId, season);
   const data = schedule.envelope.data;
-  const none = { slates: [], usedSlates: [], liveUnverified: false };
+  const none = {
+    slates: [],
+    usedSlates: [],
+    liveUnverified: false,
+    overlaidAt: new Map<string, string | null>(),
+  };
   if (data === null) return { schedule, games: null, ...none };
 
   const now = services.now();
@@ -108,7 +119,7 @@ export async function readLiveSchedule(
   const slates = await Promise.all(keys.map((key) => readSlate(services, key)));
 
   const scheduleFetchedAt = schedule.envelope.freshness.fetchedAt;
-  const usable = new Map<string, Map<string, ProviderGame>>();
+  const usable = new Map<string, { games: Map<string, ProviderGame>; fetchedAt: string | null }>();
   const usedSlates: Envelope<ProviderGame[]>[] = [];
   slates.forEach((slate, index) => {
     const key = keys[index];
@@ -117,11 +128,15 @@ export async function readLiveSchedule(
     // pre-game), so it is not used at all.
     if (key === undefined || games === null) return;
     if (!isNewerOrSame(slate.envelope.freshness.fetchedAt, scheduleFetchedAt)) return;
-    usable.set(key, new Map(games.map((game) => [game.providerGameId, game])));
+    usable.set(key, {
+      games: new Map(games.map((game) => [game.providerGameId, game])),
+      fetchedAt: slate.envelope.freshness.fetchedAt,
+    });
     usedSlates.push(slate.envelope);
   });
 
   let liveUnverified = false;
+  const overlaidAt = new Map<string, string | null>();
   const games = data.games.map((game) => {
     if (!inLiveWindow(game, now)) return game;
     const slate = usable.get(slateOf(game));
@@ -129,13 +144,15 @@ export async function readLiveSchedule(
       liveUnverified = true;
       return game;
     }
-    const live = slate.get(game.providerGameId);
+    const live = slate.games.get(game.providerGameId);
     // Absent from a good slate is not an error: an FCS-only game is outside
     // groups=80, for one. The schedule's own status stands.
-    return live !== undefined && sameMatchup(game, live) ? overlay(game, live) : game;
+    if (live === undefined || !sameMatchup(game, live)) return game;
+    overlaidAt.set(game.providerGameId, slate.fetchedAt);
+    return overlay(game, live);
   });
 
-  return { schedule, games, slates, usedSlates, liveUnverified };
+  return { schedule, games, slates, usedSlates, liveUnverified, overlaidAt };
 }
 
 // ─── Freshness of a composite ────────────────────────────────────────────────

@@ -14,7 +14,12 @@
 
   One small API addition: `GET /api/admin/session`. The suite is now 387 tests. Every exit criterion was checked in a real browser against a real Worker before handover, and again by the owner (README "Testing Phase 3", Levels A, B, B2, and B3). Level C, admin sign-in with the owner's real admin and non-admin accounts, passed all six steps in headless Edge. Details, departures, and findings are in [Phase 3 — Completion Notes](#phase-3--completion-notes).
   - *Two small sign-in findings from Level C* are carried to Phase 5 (see "Known limitations" in the [completion notes](#phase-3--completion-notes)): the header shows an Admin link to a signed-in non-admin, and an unconfirmed account is told its password is wrong.
-- [ ] **Phase 4 — Detail & Live**: team detail page, full-season schedule, prediction panel, polling strategy, live game treatment, bye/offseason states
+- [ ] **Phase 4 — Detail & Live** — 🟡 **Built and verified 2026-09-19; waiting for the owner's test pass and commit.** The team page now has:
+  - the matchup prediction, labeled with its source, and never shown for a finished game;
+  - the full-season schedule, a table on wide screens and stacked entries on phones, with bye weeks as rows;
+  - live treatment with the score's own update time, and offseason and bye states.
+
+  One contract addition: `TeamSnapshot.liveUpdatedAt`. The suite is now 473 tests. Every exit criterion was checked in headless Edge against real Workers (57 checks). Details are in [Phase 4 — Completion Notes](#phase-4--completion-notes).
 - [ ] **Phase 5 — Admin & Ship**: admin UI (users, team search, add/remove/reorder), server-side authorization tests, a11y + perf pass, deploy, cron warmers, docs
 
 Phases are sequential; each ends at a verifiable state. Phase 3 depends on Phase 2's API contract but not its ESPN accuracy (mock mode covers that). Phase 5's admin UI is deliberately last — seeded data (Phase 1) makes boards real long before an admin screen exists.
@@ -640,6 +645,11 @@ Every async region has four renders: skeleton, data, empty/unavailable, error. `
 >   - The team page applies the same rule to its one snapshot.
 > - **Visual system:** Barlow Condensed (numerals, names, headings) and Barlow (body). The palette is chalk and turf green, with one accent. The team colour is still only the 4 px left rule. Stale cards get a dashed amber outline and a note in words.
 > - **Accessibility, one change:** the card's single link is the team name, stretched over the whole card with `::after`, rather than an `<a>` wrapping the card. Keyboard, middle-click, and "open in new tab" behave the same, and a screen reader hears "Alabama, link" instead of the whole card. The focus ring is drawn on the card via `:has()`.
+
+> **Phase 4 note: the team page.** Details are in the [Phase 4 completion notes](#phase-4--completion-notes).
+> - **Three independent reads:** team, schedule, and prediction. The schedule starts on mount, alongside the team request.
+> - **Polling:** `POLL` gains `predictionMs` (5 min), and `schedulePollInterval` applies the board's rule to the schedule's rows.
+> - **Schedule:** a `<table>` from 720 px, stacked entries below. Results are marked by letter, word, and shape.
 
 ---
 
@@ -1268,6 +1278,93 @@ Vite 7 matches the version Vitest 3.2 already uses. Vite 8 and React Router 8 ex
 ### Watch out for
 - ESPN's clock/period fields differ between the scoreboard and summary payloads — normalize both in `normalize.ts`, not in components.
 - Overtime finals and vacated/forfeited games produce odd `summary` strings; display the provider's string rather than reformatting.
+
+### Phase 4 — Completion Notes
+
+**Built and verified 2026-09-19. Waiting for the owner's test pass (README "Testing Phase 4") and commit approval.** As with the earlier phases: where these notes and the plan above disagree, the code and these notes win.
+
+#### Exit criteria
+
+"Automated browser run" means headless Microsoft Edge driven by `playwright-core`, against two real `wrangler dev` Workers in mock mode (one in season, one with `SEASON_OVERRIDE=<year>:postseason`) and the live Supabase project. Each check used a fresh browser context, like a private window. The script lives outside the repo, as in Phase 3.
+
+| Exit criterion | Result | How it was verified |
+|---|---|---|
+| The team page shows identity, rank, record, conference, previous, next, prediction, and the complete schedule | ✅ | 5 page tests (sections in §16 order under one `h1`, the poll named, every schedule state). In the browser at 320, 768, and 1440 px in both themes: every section present, no horizontal scroll, no raw values, no Supabase traffic, no console errors, and axe clean at 320 and 1440 px in both themes |
+| With the prediction removed, the page renders fully with `Prediction unavailable` | ✅ | 5 page tests: none published, provider failure, request failure, numbers that aren't percentages, and loading. In the browser, a mock game with no prediction (Oregon's next game) showed `Prediction unavailable` with the rest of the page complete |
+| With the schedule forced to fail, the hero and game panels still render | ✅ | 6 page tests: request failure, provider failure, stale, empty, loading, and the reverse (snapshot failed, schedule fine). In the browser the schedule request was blocked: `Schedule unavailable` with **Try again**, and the hero, both game panels, and the prediction stayed. Unblocking and pressing **Try again** brought the schedule back |
+| A live fixture shows the live block on both board and detail, with period and clock, and no "Final" wording | ✅ | 6 page tests and 3 new card tests. In the browser, Tennessee live at Tulane: the card and the team page showed `LIVE`, `0:26 - 3rd Quarter`, the score, and `Updated <time>`. The schedule's live row showed `31–20` with no verdict. The prediction was labeled pregame. No "Final" on either page |
+| Mock offseason season: no upcoming games, zero crashes, `Season complete` shown | ✅ | 4 page tests, 3 API route tests, and 2 mock tests. In the browser at 320 and 1440 px: all six cards on Wilson's board said `Season complete`, and the team page kept its record, its full final schedule with bye weeks, and `There's no upcoming game to predict.` |
+| Hidden tab: polling stopped, then a single refetch on focus | ✅ | 3 tests drive the app's real `QueryClient` with a fake clock. A mutation check (setting `refetchIntervalInBackground: true`) makes them fail. In the browser, on a live team's page: requests at 0, 16, and 31 s while visible, none in 45 s hidden, and exactly one on return |
+
+#### What was built
+
+| Area | Where | Notes |
+|---|---|---|
+| Team page | `features/team/TeamPage.tsx` | Three independent reads. The schedule query starts on mount, alongside the team request rather than after it. Panels: previous, next, prediction (stacked on phones, two across with the prediction below on tablets, three across on desktops), then the schedule. The hero now names the poll and gets the dashed stale outline, like a card |
+| Schedule | `features/team/ScheduleSection.tsx` | §17. From 720 px, a `<table>` with a hidden `<caption>`, `<th scope="col">`, and the opponent as each row's `<th scope="row">`. Below 720 px, an ordered list of stacked entries. Both are rendered and CSS shows one; the hidden one is out of the accessibility tree. Bye weeks are rows. The next game is marked **Next** and the live row carries a LIVE badge, and both also get an inset rule. Loading, error with **Try again**, empty, stale, and "couldn't refresh" states |
+| Result marks | `components/ResultMark.tsx` | W is a solid tile, L outlined, T dashed and neutral, each with its word for screen readers. It reads correctly in greyscale |
+| Prediction | `features/team/PredictionPanel.tsx`, `lib/prediction.ts` | §12, §46. It names the game it is about. The viewed team comes first, matched by provider team id. Both percentages are shown as text; one split bar repeats them and is `aria-hidden`. `Source: <sourceLabel>` always. Every way of having no prediction says `Prediction unavailable` plus a reason |
+| Live | `components/LiveScore.tsx`, `lib/format.ts` | The live block shows `Updated <time>` from the new `liveUpdatedAt`. `liveSituation` never repeats provider wording that says "Final" while the status is live |
+| Polling | `lib/poll.ts` | `schedulePollInterval` (live row → 15 s; kickoff within 12 h, stale, or failed → 60 s; else 5 min) and `POLL.predictionMs` (5 min) |
+| API | `services/live.ts`, `services/snapshot.ts` | `TeamSnapshot.liveUpdatedAt`: the fetch time of the slate that supplied the live game's score |
+| Mock | `providers/mock/generate.ts` | Every mock game is a regular-season game whatever phase the timeline is built around, as ESPN's are. This keeps bye weeks in the offseason schedule |
+| Shared pieces | `features/team/Panel.tsx`, `TeamLogo`, `States` | A titled section panel. `TeamLogo` gains `decorative` for logos printed beside the name. `EmptyState` and `ErrorState` take `headingLevel` 1–3 |
+| Docs | `README.md` | "Testing Phase 4", Levels A, B, B2, and B3, an exit-criteria table, and two troubleshooting rows |
+
+No dependencies were added.
+
+#### Decisions and departures, and why
+
+1. **Predictions for final games: never shown** (the open item from Phases 2 and 3). The panel's game is the live game, else the next one (after a bye, the game that follows it), and never a final or canceled game. During a live game the numbers are labeled "Pregame prediction, made before kickoff. It does not change during the game." The API still passes through whatever the provider returns; the page simply never asks about a finished game.
+2. **`TeamSnapshot.liveUpdatedAt` (contract change).** This fixes Phase 3's first known limitation: a card's `fetchedAt` is its oldest part, often a schedule up to 15 minutes old, which made a live score seconds old look stale. The composed freshness is unchanged, and so is the §39 rule. The live block now also says how old its own score is. It is `null` when there is no live game, or when the live status comes from the schedule alone.
+3. **"Schedule forced to fail" is a request-level drill, not a provider fault.** The schedule route and the team snapshot share one provider read, so `SPORTS_PROVIDER_FAULT=schedule` fails both, by design. What §42 requires of the page is that one *request* failing leaves the others standing. The README drill blocks the request in DevTools; the automated run blocked it with Playwright.
+4. **Two renderings of the schedule, switched by CSS at 720 px**, rather than one table restyled into cards. Changing a table's `display` drops its table semantics in some browsers, and a `matchMedia` hook would flash on load. Only one rendering is ever in the accessibility tree.
+5. **The schedule polls on its own rule.** A live row updates at the live pace, so the table agrees with the live block within one poll.
+6. **Mock games are always `regular` season type.** Before, in postseason mode every mock game was labeled postseason, so the offseason schedule lost its bye weeks and every week label read "Postseason". The game id still encodes the phase, so `getGame` rebuilds the same timeline.
+7. **Real spaces between inline pieces, including in Phase 3 components.** Flex gaps looked right on screen, but the text ran together for screen readers ("vs LSUW 31–24", "LIVE4:32", "#44-0"). There are now spaces in `GameLine`, `LiveScore`, the card's rank and record, and every new component.
+8. **Test helper changes.** `visibleText` now removes any visually hidden element, not only spans, and treats table cells and list items as blocks. Two Phase 3 tests changed accordingly: loading text is read with `spokenText`, because it is screen-reader-only, and board order is found by each card's link, because "LSU " now also matches a spaced previous-game line.
+
+The watch-out items needed no new code. Scoreboard and summary clock and period were already normalized in Phase 2, and tested against both captures (`normalize.test.ts`). Overtime finals show the provider's own wording (`Final/OT`), verbatim.
+
+#### Verification performed
+
+- **Automated.** 473 tests across 24 files, all passing. Phase 4 added 86:
+  - Team page: 30. Schedule: 17. Prediction: 11. Hidden tab: 3.
+  - Formatting: 7. Polling: 6. Cards: 3.
+  - API: 9 (routes 5, live overlay 2, mock 2).
+- **Other checks.** `npm run verify` (typecheck, lint, tests, season check), `format:check`, and `npm run build:web` all pass.
+- **Bundle.** Main JS 403.6 KB (127.5 KB gzipped), up 4 KB gzipped from Phase 3. CSS 22.1 KB (5.0 KB gzipped).
+- **Browser run.** 57 checks, all passing, in light and dark at 320, 768, and 1440 px. It found three script defects and no app defects. Two checks read the page before the schedule had arrived. The third was the hidden-tab simulation: a synthetic `visibilitychange` must be dispatched with `bubbles: true`, as the browser's own is, or the return refetch never fires.
+- **Visual review.** Screenshots of the full, live, schedule-failed, and offseason pages. Three fixes came out of it:
+  - the Result column header was left-aligned over right-aligned scores;
+  - an in-panel error heading was larger than its panel's title;
+  - on phones, the marked schedule entries' rule sat too close to the text.
+
+#### Known limitations carried forward
+
+- **Only mock data was used in Phase 4.** No real-ESPN spot check was made. The shapes are the same as Phase 2's, which was checked live, but the first real Saturday on the new page is a Phase 5 item.
+- **In development, the team request fires twice on mount.** React's StrictMode mounts twice, and the first fetch is cancelled. Production mounts once.
+- **The offseason drill's mock dates are in the summer.** The mock timeline is anchored to today. The data is labeled mock throughout.
+- **If a prediction's teams match neither side of the game** (a provider error), both halves of the bar are grey. The numbers and names are still shown, away team first.
+- The board header's "Last updated" is still the oldest card part, as designed. The live block now carries its own time.
+
+#### Housekeeping at close
+
+- **Not committed.** It waits for the owner's approval of the message (standing rule).
+- **Test servers.** `wrangler dev` ran on 8798 and 8799, each with its own `--persist-to` folder in the session scratchpad, and Vite on 5180 and 5181. All four were stopped by exact PID with `taskkill /T`, after confirming each command line, so their `workerd` children went too. The owner's own servers on 8787 and 5173 were never touched and are still running.
+- `playwright-core` and `axe-core` were installed in the scratchpad, not the workspace. `apps/web/dist` was removed after the size check.
+
+#### Phase 4 owner follow-ups
+
+- [ ] Run README "Testing Phase 4", Levels A, B, B2, and B3. Remove `SEASON_OVERRIDE` and `SPORTS_PROVIDER_FAULT` from `apps/api/.dev.vars` afterwards.
+- [ ] Approve the Phase 4 commit, and tick the checklist at the top of this file.
+- [ ] Earlier follow-ups are still open: Phase 1 (`verify:rls`, the live 403/201 test, renaming users) and Phase 2 (the `ESPN_USER_AGENT` decision, the admin team search with a real token, and creating the GitHub remote).
+
+#### Notes for Phase 5
+
+- **Accessibility pass.** Axe is already clean on the team page at 320 and 1440 px in both themes. What remains: home, board, and admin; the keyboard walkthrough; and a real screen-reader check of the live score region and the schedule table.
+- **The first real-ESPN look at the team page** belongs with the deploy measurement. Check that a real schedule's postseason rows read "Postseason", and that a live game's prediction shows the pregame label.
+- **Performance.** The main bundle is 127.5 KB gzipped. The schedule adds up to about 15 small opponent logos per team page. They are lazy-loaded, but they are ESPN's 500 px images, so sizing logos through the API (a Phase 3 limitation) matters more now.
 
 ---
 

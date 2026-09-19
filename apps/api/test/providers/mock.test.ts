@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { decodeGameId, encodeGameId, generateSeason } from '../../src/providers/mock/generate';
 import { MockProvider } from '../../src/providers/mock/provider';
 import { ROSTER } from '../../src/providers/mock/roster';
-import { deriveSlots } from '../../src/services/derive';
+import { deriveSlots, scheduleItems } from '../../src/services/derive';
 
 /**
  * The mock provider exists so Phase 3 can build every UI state offline. These
@@ -81,6 +81,28 @@ describe('mock season generation', () => {
   it('ends in a completed season in postseason mode (§22)', () => {
     const post = generateSeason({ year: 2026, type: 'postseason', week: null }, NOW);
     expect(post.every((game) => game.status === 'final' || game.status === 'canceled')).toBe(true);
+  });
+
+  it('labels every game a regular-season game, in any phase, as ESPN does', () => {
+    for (const type of ['preseason', 'regular', 'postseason'] as const) {
+      const games = generateSeason({ year: 2026, type, week: null }, NOW);
+      expect(games.every((game) => game.season.type === 'regular')).toBe(true);
+    }
+  });
+
+  it('keeps the bye weeks in a finished season’s schedule (§17, §22)', () => {
+    const post: Season = { year: 2026, type: 'postseason', week: null };
+    for (const team of ROSTER) {
+      const own = generateSeason(post, NOW).filter((game) =>
+        [game.home, game.away].some((side) => side.team.providerTeamId === team.id),
+      );
+      const items = scheduleItems(own, team.id, true);
+      expect(items.some((item) => item.kind === 'bye')).toBe(true);
+      const slots = deriveSlots(own, team.id, { now: NOW, season: post, complete: true });
+      expect(slots.nextGame).toEqual({ kind: 'none', reason: 'season_complete' });
+      expect(slots.liveGame).toBeNull();
+      expect(slots.record).not.toBeNull();
+    }
   });
 
   it('encodes enough in a game id to rebuild the game', () => {

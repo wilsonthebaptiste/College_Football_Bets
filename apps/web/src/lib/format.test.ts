@@ -3,13 +3,17 @@ import { finalGame, liveGame, makeGame } from '../test/fixtures';
 import {
   formatGameDate,
   formatKickoff,
+  formatKickoffTime,
+  formatPercent,
   formatScore,
   formatSeason,
   formatUpdatedAt,
   initials,
   liveSituation,
+  scheduleStatus,
   statusLabel,
   teamLabel,
+  weekLabel,
 } from './format';
 
 const CHICAGO = 'America/Chicago';
@@ -126,6 +130,68 @@ describe('scores and statuses', () => {
     expect(liveSituation(liveGame({ statusDetail: '  ', period: null, clock: null }))).toBe(
       'In progress',
     );
+  });
+});
+
+describe('live wording never says Final (§11)', () => {
+  it('sets aside provider wording that has run ahead of a live status', () => {
+    for (const detail of ['Final', 'Final/OT', 'FINAL', 'F/2OT', 'End of Game - Final']) {
+      const situation = liveSituation(liveGame({ statusDetail: detail, period: 4, clock: '0:00' }));
+      expect(situation).toBe('4th quarter, 0:00');
+      expect(situation).not.toMatch(/final/i);
+    }
+  });
+
+  it('keeps wording that merely resembles it', () => {
+    expect(liveSituation(liveGame({ statusDetail: 'End of 4th Quarter' }))).toBe(
+      'End of 4th Quarter',
+    );
+  });
+});
+
+describe('schedule cells (§17, §18)', () => {
+  it('says Final only for a final game, in the provider’s own words', () => {
+    expect(scheduleStatus(finalGame())).toBe('Final');
+    expect(scheduleStatus(finalGame({ statusDetail: 'Final/OT' }))).toBe('Final/OT');
+    expect(scheduleStatus(finalGame({ statusDetail: 'Final/3OT' }))).toBe('Final/3OT');
+    expect(scheduleStatus(finalGame({ statusDetail: null }))).toBe('Final');
+    expect(scheduleStatus(liveGame())).toBe('4:32 - 3rd Quarter');
+    expect(scheduleStatus(liveGame({ statusDetail: 'Final' }))).not.toMatch(/final/i);
+  });
+
+  it('names every other status in words (§18)', () => {
+    expect(scheduleStatus(makeGame())).toBe('Upcoming');
+    expect(scheduleStatus(makeGame({ status: 'postponed' }))).toBe('Postponed');
+    expect(scheduleStatus(makeGame({ status: 'canceled' }))).toBe('Canceled');
+    expect(scheduleStatus(makeGame({ status: 'delayed' }))).toBe('Delayed');
+    expect(scheduleStatus(makeGame({ status: 'suspended' }))).toBe('Suspended');
+    expect(scheduleStatus(makeGame({ status: 'unknown', statusDetail: null }))).toBe(
+      'Status unknown',
+    );
+  });
+
+  it('gives the kickoff time alone, or TBD, never the placeholder "12:00 AM" (§4)', () => {
+    const game = makeGame({ kickoffUtc: '2026-10-03T20:30:00.000Z' });
+    expect(formatKickoffTime(game, { timeZone: CHICAGO })).toBe('3:30 PM');
+    const tbd = makeGame({ kickoffUtc: '2026-10-10T04:00:00.000Z', kickoffTbd: true });
+    expect(formatKickoffTime(tbd, { timeZone: LA })).toBe('TBD');
+    expect(formatKickoffTime(makeGame({ kickoffUtc: 'garbage' }))).toBe('TBD');
+  });
+
+  it('labels a week by number, or by phase when a number means nothing', () => {
+    expect(weekLabel(makeGame({ week: 4 }))).toBe('4');
+    expect(weekLabel(makeGame({ week: null }))).toBe('—');
+    expect(
+      weekLabel(makeGame({ week: 1, season: { year: 2026, type: 'postseason', week: 1 } })),
+    ).toBe('Postseason');
+  });
+
+  it('shows a prediction’s figure as supplied, to one decimal at most', () => {
+    expect(formatPercent(67)).toBe('67%');
+    expect(formatPercent(66.7)).toBe('66.7%');
+    expect(formatPercent(33.25)).toBe('33.3%');
+    expect(formatPercent(0)).toBe('0%');
+    expect(formatPercent(100)).toBe('100%');
   });
 });
 

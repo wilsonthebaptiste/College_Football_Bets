@@ -20,6 +20,12 @@
   font-weight: 600;
 }
 
+.updated {
+  margin-left: auto;
+  color: var(--color-ink-muted);
+  font-size: var(--text-xs);
+}
+
 .board {
   display: grid;
   gap: 0.125rem;
