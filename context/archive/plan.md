@@ -20,14 +20,14 @@
   - live treatment with the score's own update time, and offseason and bye states.
 
   One contract addition: `TeamSnapshot.liveUpdatedAt`. The suite is now 473 tests. Every exit criterion was checked in headless Edge against real Workers (57 checks). Details are in [Phase 4 — Completion Notes](#phase-4--completion-notes).
-- [ ] **Phase 5 — Admin & Ship** — 🟢 **Built, verified, and deployed 2026-09-19. Not yet committed.** Live at <https://cfb-board-pfc.pages.dev> (API: <https://cfb-api.cfb-api.workers.dev>), on real ESPN data. What was built:
+- [ ] **Phase 5 — Admin & Ship** — 🟢 **Built, verified, and deployed 2026-09-19. Committed as `5dd38b3` on `main`.** Live at <https://cfb-board-pfc.pages.dev> (API: <https://cfb-api.cfb-api.workers.dev>), on real ESPN data. What was built:
   - the admin console (people: add, rename, delete; boards: search with logo and conference, add, remove with confirmation, reorder with Up/Down);
   - authorization proven route by route (131 API tests), verb by verb on real Postgres (44 PGlite tests), and against the live project (`verify:rls`, 44/44, run before and after the deploy);
   - a per-address read budget, cron warmers, API-sized logos, route code splitting, self-hosted fonts;
-  - deploy configuration (`[env.production]`, a gated CI deploy job), a smoke script, a bundle secret scan, and [docs/ops.md](../docs/ops.md).
+  - deploy configuration (`[env.production]`, a gated CI deploy job), a smoke script, a bundle secret scan, and [docs/ops.md](../../docs/ops.md).
 
   The suite is 704 tests in 31 files. Browser runs in headless Edge: 116/116 locally (console, keyboard only, real accounts, axe everywhere), 26/26 on real ESPN data, and 48/48 against the **deployed** site at phone width. The deploy found two things: ESPN refuses the default User-Agent from Cloudflare too (production sends the owner's curl-style fallback), and a live-overlay bug that marked live cards stale (fixed, with a test). Details: [Phase 5 — Completion Notes](#phase-5--completion-notes), "Deploy".
-  - *Left for the owner:* approve the commit message, 24 h of usage numbers (the one exit criterion that needs time), and a look on a real phone. The box gets its tick once the usage numbers are in.
+  - *Left for the owner:* 24 h of usage numbers (the one exit criterion that needs time), and a look on a real phone. The box gets its tick once the usage numbers are in.
 
 Phases are sequential; each ends at a verifiable state. Phase 3 depends on Phase 2's API contract but not its ESPN accuracy (mock mode covers that). Phase 5's admin UI is deliberately last — seeded data (Phase 1) makes boards real long before an admin screen exists.
 
@@ -411,7 +411,7 @@ Methods **throw** `ProviderError` on failure and return `null` for legitimate ab
 
 ### ESPN endpoints — ✅ confirmed in the Phase 1 spike (2026-09-18)
 
-> **Phase 1 note.** Every endpoint below responded, and real payloads are saved in `apps/api/test/fixtures/espn/`. **[docs/espn-notes.md](../docs/espn-notes.md) is now the authoritative reference** for URLs, field paths, and status vocabulary. It supersedes this table. Two additions the table lacks:
+> **Phase 1 note.** Every endpoint below responded, and real payloads are saved in `apps/api/test/fixtures/espn/`. **[docs/espn-notes.md](../../docs/espn-notes.md) is now the authoritative reference** for URLs, field paths, and status vocabulary. It supersedes this table. Two additions the table lacks:
 > - Conference *names* need two hops through the core API: `…/seasons/{year}/types/2/groups/{id}`.
 > - Upcoming games carry an inline `predictor` in the `summary` payload.
 >
@@ -433,7 +433,7 @@ ESPN's public JSON is undocumented, unversioned, and can change without notice. 
 > - The live slate is `scoreboard?dates={Eastern YYYYMMDD}&groups=80&limit=300`.
 > - The schedule's `requestedSeason` is checked, because its root `season` is always ESPN's current season.
 > - The predictor is read from the `summary` first. The core endpoint is the fallback, and there a 404 means "no prediction".
-> - ESPN's CDN refused the Worker's default User-Agent from local workerd, hence `ESPN_USER_AGENT` (see [docs/espn-notes.md](../docs/espn-notes.md) §1 and §11).
+> - ESPN's CDN refused the Worker's default User-Agent from local workerd, hence `ESPN_USER_AGENT` (see [docs/espn-notes.md](../../docs/espn-notes.md) §1 and §11).
 
 Rules for this directory:
 - Nothing outside `providers/espn/` may reference an ESPN field name, URL, or status code.
@@ -808,7 +808,7 @@ Every async region has four renders: skeleton, data, empty/unavailable, error. `
 
 #### ESPN spike findings Phase 2 must act on
 
-Full detail is in [docs/espn-notes.md](../docs/espn-notes.md). The ones that change code:
+Full detail is in [docs/espn-notes.md](../../docs/espn-notes.md). The ones that change code:
 
 - **Akamai returns a bare `403` under burst traffic.** It is throttling, not authorization. Treat it as retryable, surface it as `provider_unavailable`, and never as `forbidden`.
 - **A postponed game reports `state: "post"` with `completed: false` and a 0–0 score.** Decide finality from `status.type.completed`, never from `state`, or a postponed game renders as "Final 0–0", which is fabricated data (§4).
@@ -959,7 +959,7 @@ Route tests with `@cloudflare/vitest-pool-workers`: every read route returns 200
 
 #### ESPN findings from Phase 2
 
-Full detail is in [docs/espn-notes.md](../docs/espn-notes.md) §1 and §11.
+Full detail is in [docs/espn-notes.md](../../docs/espn-notes.md) §1 and §11.
 
 - **ESPN's CDN refused every request from local workerd with our User-Agent.** Node's `fetch` passes with any User-Agent. From workerd and curl, only User-Agents that *begin* with a known HTTP-library name pass (`curl/…`, `python-requests/…`, `okhttp/…`). This fits Akamai checking the User-Agent against the TLS fingerprint. **What deployed Workers get is unmeasured.** It needs measuring on the first deploy, together with the owner's decision on `ESPN_USER_AGENT`.
 - The inline predictor disappears once a game is live, but the core predictor endpoint still answers. The schedule's root `season` is ESPN's current season, and `requestedSeason` is the one to check. `timeValid: false` means the kickoff is TBD. `scoreboard?dates=` is a US Eastern day.
@@ -1464,13 +1464,13 @@ Walk §54's end-to-end flow as a user, and §55's principles as a reviewer. Conf
 
 ### Phase 5 — Completion Notes
 
-**Built and verified locally, then deployed and verified live, 2026-09-19. Not committed.** As with the earlier phases: where these notes and the plan above disagree, the code and these notes win. These notes are written so that another engineer, or another model, can pick the work up cold.
+**Built and verified locally, then deployed and verified live, 2026-09-19. Committed as `5dd38b3`.** As with the earlier phases: where these notes and the plan above disagree, the code and these notes win. These notes are written so that another engineer, or another model, can pick the work up cold.
 
 #### Handoff: where to pick up
 
 **State of the repository.**
 
-- Branch `main`. The last commit is `3ee11b8` (Phase 4). **All of Phase 5 is uncommitted in the working tree**: about 60 modified files and 30 new ones (`git status`). No GitHub remote exists yet.
+- Branch `main`. Phase 5 is commit `5dd38b3` (95 files), approved by the owner. Only these close-out notes changed after it. No GitHub remote exists yet.
 - `npm run verify` passes: typecheck, lint, 704 tests in 31 files, and the season check. `npm run format:check` passes.
 - Build outputs `apps/api/dist` and `apps/web/dist` are on disk, from the production deploy. Both are gitignored.
 - The live Supabase project is exactly as seeded: 9 users, 50 teams, 54 selections. Every probe row was removed (the deployed-site browser run cleans up through the API in a `finally`, and `verify:rls` cleans up its own). **No migration changed in Phase 5**, so the database needs nothing.
@@ -1480,7 +1480,7 @@ Walk §54's end-to-end flow as a user, and §55's principles as a reviewer. Conf
 | Piece | Where | Version |
 | --- | --- | --- |
 | Site | Pages project `cfb-board`, <https://cfb-board-pfc.pages.dev> | Built from this working tree with `VITE_API_BASE_URL=https://cfb-api.cfb-api.workers.dev` |
-| API | Worker `cfb-api` (`--env production`), <https://cfb-api.cfb-api.workers.dev> | Version `6b0ccb56-9d82-46f9-9eb2-aa969211334d`, including the live-overlay fix |
+| API | Worker `cfb-api` (`--env production`), <https://cfb-api.cfb-api.workers.dev> | Version `0e1cb20b-25b6-473c-b0d0-50c49bb71be7` (the same code as `5dd38b3`, redeployed with a full re-run of docs/ops.md steps 1–10 at about 21:00 UTC: smoke 15/15, browser 48/48, cron `ok`) |
 | Cache | KV `production-SPORTS_KV`, id `5777a3ec40164cc283c45de25f685ed3` | |
 | Secrets | `SUPABASE_URL`, `SUPABASE_ANON_KEY` on `cfb-api` (production) | Same values as `apps/api/.dev.vars` |
 
@@ -1490,7 +1490,7 @@ Cloudflare account `4bb72f432f1b9521a2310ba2bccf01eb`, signed in with `wrangler 
 
 **What is left, in order.**
 
-1. **Commit.** Draft a message, show it, and wait for approval. A suggested subject: `Phase 5: admin console, authorization, hardening, and deploy`.
+1. **Commit these notes** with the 24-hour numbers below, once the owner approves the message.
 2. **24 hours of usage** (from 2026-09-20): Workers requests, KV writes, and CPU time in the dashboard, into docs/ops.md "Recorded measurements". This is the only exit criterion still open. `wrangler`'s OAuth token has no analytics scope, so it has to be read in the dashboard.
 3. **The owner on a real phone:** README "Testing Phase 5", Level C. Phone width was checked in headless Edge, not on a device.
 4. **Optional.** Create the GitHub remote and set the CI deploy variables (docs/ops.md, "Continuous deployment"). With `SITE_ORIGIN=https://cfb-board-pfc.pages.dev` and `PAGES_PROJECT=cfb-board`. A real screen-reader pass of the live region, the schedule table, and the confirm dialog: only axe and accessible names were checked.
@@ -1685,7 +1685,7 @@ After the deploy, `npm run verify:rls` passed 44/44 against the same Supabase pr
 
 #### Housekeeping at close
 
-- **Not committed.** It waits for the owner's approval of the message (standing rule).
+- **Committed** as `5dd38b3`, with the message shown to and approved by the owner (standing rule). Not pushed: there is no remote.
 - **Test servers.** `wrangler dev` ran on 8795 (faults), 8796 (ESPN), and 8797 (mock), each with its own `--persist-to` folder in the scratchpad. `vite preview` ran on 5182 and 5183. All five were stopped by exact PID with `taskkill /T /F`, after checking each command line. The owner's servers on 8787 and 5173 were not touched.
 - **Deploy session.** The two `wrangler tail` captures were stopped after their windows (12 s and 11 min). No local servers were started. The scratchpad holds the browser, load, and CPU scripts and the tail logs; nothing in the repo refers to them.
 - **Probe data.** Each browser run created one probe person and deleted it, through the UI or through the API in the script's `finally` block. `verify:rls` removes its probe rows. After the deployed-site runs, the API reported 9 people and no probes.
@@ -1693,7 +1693,7 @@ After the deploy, `npm run verify:rls` passed 44/44 against the same Supabase pr
 
 #### Phase 5 owner follow-ups
 
-- [ ] Approve the Phase 5 commit.
+- [x] Approve the Phase 5 commit (`5dd38b3`, 2026-09-19).
 - [x] Decide `ESPN_USER_AGENT` for production. Try the default, fall back: the default was refused, so production sends `curl/8.9.1 college-football-bets/0.5` (2026-09-19).
 - [x] Deploy (docs/ops.md steps 1–10), and fill in its "Recorded measurements" table (2026-09-19, except the 24-hour row).
 - [ ] After 24 hours, check Workers requests, KV writes, and CPU time against the free tier (docs/ops.md, "Watching usage"), and fill in the last row.
@@ -1754,7 +1754,7 @@ All three are documented in `wrangler.toml` and `apps/api/.dev.vars.example`.
 - `VITE_API_BASE_URL` is optional. When it is unset, the app calls `/api` on its own origin, and in development Vite proxies that to the Worker. Set it for a deployed build, and add the site's origin to the Worker's `ALLOWED_ORIGINS`.
 - `API_PROXY_TARGET` is for the dev server only: where the `/api` proxy points (default `http://127.0.0.1:8787`).
 
-*Added in Phase 5* (the full reference is in [docs/ops.md](../docs/ops.md), "Configuration reference"):
+*Added in Phase 5* (the full reference is in [docs/ops.md](../../docs/ops.md), "Configuration reference"):
 - `READ_RATE_LIMIT_PER_MINUTE` (Worker, optional): public reads per address per minute, per isolate. Default 120; `off` disables it.
 - `wrangler.toml` `[env.production]` is the deployed Worker. It restates every var and binding, because environments inherit neither. Filled in at the deploy (2026-09-19): the KV namespace id, `ALLOWED_ORIGINS = "https://cfb-board-pfc.pages.dev"`, and `ESPN_USER_AGENT = "curl/8.9.1 college-football-bets/0.5"`.
 - CI deploy (off until the repository variable `DEPLOY_ENABLED` is `true`): secret `CLOUDFLARE_API_TOKEN`; variables `CLOUDFLARE_ACCOUNT_ID`, `VITE_API_BASE_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `PAGES_PROJECT`, `SITE_ORIGIN`.

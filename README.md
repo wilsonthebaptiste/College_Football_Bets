@@ -1,13 +1,16 @@
 # College Football Team Board
 
 A private, mobile-friendly dashboard for nine people and their six college
-football teams each. The spec is in [context/spec.md](context/spec.md) and the
-build plan is in [context/plan.md](context/plan.md).
+football teams each. **Start with
+[context/project-notes.md](context/project-notes.md)**: how it is built, what
+was learned, what is deployed, and what is left. The original specification and
+the phase-by-phase build plan are archived in
+[context/archive/](context/archive/).
 
 **Status: Phases 1–4 are complete. Phase 5 (admin and ship) is built and
 deployed: the site is live at <https://cfb-board-pfc.pages.dev>, on real ESPN
-data.** What remains is yours: 24 hours of usage numbers, your own test pass,
-and approving the commit (see
+data, and committed as `5dd38b3`.** What remains is yours: 24 hours of usage
+numbers, and a look on your own phone (see
 [Testing Phase 5](#testing-phase-5-on-your-machine) and
 [docs/ops.md](docs/ops.md)). The website has a home page listing every board,
 each person's board of six team cards, a full team page (rank, record, the
@@ -45,6 +48,8 @@ scripts/             ESPN fixture capture, RLS verifier, season-literal check,
                      bundle secret scan, smoke test for a running Worker
 docs/                espn-notes.md (API findings), supabase-setup.md (setup
                      guide), ops.md (deploying and running it)
+context/             project-notes.md (the whole project, distilled), and
+                     archive/ (the original spec and the build plan)
 ```
 
 ## Commands
@@ -582,7 +587,7 @@ non-admin. It also turned up two small sign-in issues, both left for Phase 5:
   message.
 
 The full results are in the Phase 3 completion notes in
-[context/plan.md](context/plan.md).
+[context/plan.md](context/archive/plan.md).
 
 ## Testing Phase 4 on your machine
 
@@ -693,7 +698,7 @@ afterwards**, or the site stays in the offseason.
 `wrangler dev` Workers (one in season, one with the offseason override), in
 light and dark mode, at 320, 768, and 1440 px, including an axe accessibility
 scan of the team page. Details are in the Phase 4 completion notes in
-[context/plan.md](context/plan.md).
+[context/plan.md](context/archive/plan.md).
 
 ---
 
@@ -710,7 +715,7 @@ changed the API's routes and the website's page loading.
 ### Where Phase 5 stands
 
 As of 2026-09-19. The full record is in
-[context/plan.md, "Phase 5 — Completion Notes"](context/plan.md#phase-5--completion-notes),
+[context/plan.md, "Phase 5 — Completion Notes"](context/archive/plan.md#phase-5--completion-notes),
 which starts with a handoff section for whoever picks this up next.
 
 **Done and verified on this machine:**
@@ -765,8 +770,8 @@ which starts with a handoff section for whoever picks this up next.
 
 **Not done, and waiting on you:**
 
-1. **The commit.** Nothing from Phase 5 is committed yet. A message will be
-   drafted for your approval first.
+1. **Done: the commit.** Phase 5 is `5dd38b3` on `main`. It isn't pushed
+   anywhere, because there's no GitHub remote yet.
 2. **Open the site on your own phone** (Level C below). It was checked at
    phone size in a desktop browser, not on a real phone.
 3. **After a day live:** the usage numbers
@@ -949,7 +954,7 @@ pages, and axe in both themes at 320 and 1440 px, plus 26 on real ESPN data.
 390 and 320 px. "Live 403s": before the User-Agent change, ESPN refused
 everything from the deployed Worker, and every board still answered 200 with
 labelled "unavailable" cards. Details are in the Phase 5 completion notes in
-[context/plan.md](context/plan.md).
+[context/plan.md](context/archive/plan.md).
 
 ---
 

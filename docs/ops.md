@@ -190,9 +190,9 @@ Every line should pass. Look at three things in particular:
 
 - **Every card has sports data.** If cards say `provider_unavailable`, ESPN is
   refusing the Worker: revisit step 4.
-- **`L2 inert` or `L2 working`.** On `workers.dev`, expect inert: the Cache API
-  stores nothing there, and the cache tiers carry on without it (plan §7). Write
-  down what you saw under [Recorded measurements](#recorded-measurements).
+- **`L2 inert` or `L2 working`.** The plan expected inert on `workers.dev`, but
+  the first deploy measured **working**. Either is fine: the cache tiers carry
+  on without it (plan §7). See [Recorded measurements](#recorded-measurements).
 - **The board's time.** A cold board takes a second or two; the next read is
   fast.
 
@@ -228,7 +228,7 @@ In `apps/api/wrangler.toml`, set `ALLOWED_ORIGINS` under
 
 ```powershell
 npm run deploy --workspace @cfb/api
-npm run smoke -- https://cfb-api.<subdomain>.workers.dev https://cfb-board.pages.dev
+npm run smoke -- https://cfb-api.<subdomain>.workers.dev https://cfb-board-pfc.pages.dev
 ```
 
 The last two smoke lines check CORS.
