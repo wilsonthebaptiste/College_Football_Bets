@@ -3,7 +3,6 @@ import type {
   RankingState,
   RankingsSnapshot,
   Season,
-  Team,
   TeamIdentity,
   TeamSnapshot,
 } from '@cfb/shared';
@@ -57,8 +56,16 @@ export function rankingOf(providerTeamId: string, rankings: RankingsSnapshot | n
     : { kind: 'ranked', rank: entry.rank, poll: rankings.poll, week: rankings.week };
 }
 
-/** Identity is application-owned (§45): it comes from Postgres, not the provider. */
-function identityOf(team: Team): TeamIdentity {
+/**
+ * Identity as the wire carries it (§45): from Postgres for a stored team, from
+ * the provider's team list for one nobody has selected.
+ *
+ * The explicit field copy is load-bearing, not ceremony. `team` is often a
+ * `Team`, which is a `TeamIdentity` plus our uuid; spreading it would put `id`
+ * inside `snapshot.identity` on every board card, and TypeScript cannot see
+ * that because excess properties survive at runtime.
+ */
+function identityOf(team: TeamIdentity): TeamIdentity {
   return {
     provider: team.provider,
     providerTeamId: team.providerTeamId,
@@ -74,7 +81,7 @@ function identityOf(team: Team): TeamIdentity {
 
 export async function buildSnapshot(
   services: Services,
-  team: Team,
+  team: TeamIdentity,
   season: Season,
   rankingsRead?: Promise<CacheRead<RankingsSnapshot | null>>,
 ): Promise<SnapshotResult> {

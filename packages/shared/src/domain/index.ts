@@ -1,4 +1,4 @@
-export type { Team, TeamIdentity, TeamRef } from './team';
+export type { PageTeam, Team, TeamIdentity, TeamRef } from './team';
 export type { ConferenceRecord, TeamRecord } from './record';
 export type { RankedTeam, RankingsSnapshot, RankingState } from './ranking';
 export type {

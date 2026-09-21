@@ -505,8 +505,196 @@ describe('team routes (§16, §17)', () => {
 
   it('404s an unknown team and a malformed id', async () => {
     stubWith();
+    // A uuid with no row, and a provider id the provider does not list. The
+    // second reads as "no such team" on both paths now, not "not a uuid".
     expect((await app.request(`/api/teams/${teamUuid('1')}`, {}, testEnv())).status).toBe(404);
     expect((await app.request('/api/teams/texas', {}, testEnv())).status).toBe(404);
+  });
+});
+
+// ─── A team page for any team (plan-search-engine, Phase 1) ──────────────────
+
+describe('GET /api/teams/:teamId takes a provider team id as well as our uuid', () => {
+  /**
+   * Nobody's board, and no `teams` row at all: this is a team the site could
+   * previously not show. `2` is Auburn in the mock roster.
+   */
+  const AUBURN = '2';
+
+  const noRows = (): SupabaseStub =>
+    installSupabaseStub({
+      appUsers: [],
+      teams: [],
+      external: (url) => espnResponse(url, {}),
+    });
+
+  it('serves a team with no row of ours: 200, id null, and a whole snapshot', async () => {
+    stub = noRows();
+    const { response, body } = await get<TeamDetailResponse>(`/api/teams/${AUBURN}`);
+
+    expect(response.status).toBe(200);
+    expect(body.team).toMatchObject({
+      id: null,
+      providerTeamId: AUBURN,
+      name: 'Auburn Tigers',
+      displayName: 'Auburn',
+      conference: 'SEC',
+    });
+    expect(body.season.week).toBe(6);
+
+    const snapshot = body.snapshot.data;
+    expect(body.snapshot.error).toBeNull();
+    expect(snapshot?.record?.summary).toMatch(/^\d+-\d+$/);
+    expect(snapshot?.previousGame?.status).toBe('final');
+    expect(['game', 'bye']).toContain(snapshot?.nextGame.kind);
+    expect(['ranked', 'unranked']).toContain(snapshot?.ranking.kind);
+  });
+
+  it('serves its schedule too, with the same id: null', async () => {
+    stub = noRows();
+    const { response, body } = await get<TeamScheduleResponse>(`/api/teams/${AUBURN}/schedule`);
+
+    expect(response.status).toBe(200);
+    expect(body.team).toMatchObject({ id: null, name: 'Auburn Tigers' });
+    const items = body.schedule.data!.items;
+    expect(items.length).toBeGreaterThan(8);
+    expect(items.some((item) => item.kind === 'game')).toBe(true);
+  });
+
+  it('touches Postgres not at all — no public path may create a `teams` row (§30, §31)', async () => {
+    stub = noRows();
+    await get(`/api/teams/${AUBURN}`);
+    await get(`/api/teams/${AUBURN}/schedule`);
+
+    // Not "no write": no request whatsoever. A row cannot be created by a
+    // client that was never built.
+    expect(stub.restRequests).toHaveLength(0);
+    expect(stub.jwksFetches).toBe(0);
+  });
+
+  it('answers the same sports facts either way: the id is the only difference', async () => {
+    stubWith();
+    const stored = await get<TeamDetailResponse>(`/api/teams/${teamUuid('61')}`);
+    const searched = await get<TeamDetailResponse>('/api/teams/61');
+
+    expect(stored.body.team.id).toBe(teamUuid('61'));
+    expect(searched.body.team.id).toBeNull();
+
+    // Deliberately not a deep-equal: the stored row says provider `espn` and
+    // carries a curated logo, while `listTeams()` in mock mode says `mock`
+    // (teamNamespace). Nothing renders either field. What must agree is the
+    // sports half, which is keyed by providerTeamId on both paths.
+    const facts = (detail: TeamDetailResponse) => ({
+      record: detail.snapshot.data?.record,
+      ranking: detail.snapshot.data?.ranking,
+      previousGame: detail.snapshot.data?.previousGame,
+      nextGame: detail.snapshot.data?.nextGame,
+    });
+    expect(facts(searched.body)).toEqual(facts(stored.body));
+    expect(searched.body.team.name).toBe(stored.body.team.name);
+  });
+
+  it('the uuid is resolved first and never falls through to the provider list', async () => {
+    // A uuid matches the provider-id pattern too. If a deleted row fell
+    // through, this would quietly become a 200 for "provider team
+    // 00000000-0000-4000-8000-000000000001".
+    stub = noRows();
+    const { response, body } = await get<ApiErrorBody>(`/api/teams/${teamUuid('1')}`);
+    expect(response.status).toBe(404);
+    expect(body.error.kind).toBe('not_found');
+    // It asked Postgres, and stopped there.
+    expect(stub.restRequests.map((request) => request.path.split('?')[0])).toEqual([
+      '/rest/v1/teams',
+    ]);
+  });
+
+  it('404s an unknown provider id, a malformed one, and an over-long one', async () => {
+    stub = noRows();
+    for (const id of ['999999', 'texas!', 'a'.repeat(41)]) {
+      const response = await app.request(`/api/teams/${id}`, {}, testEnv());
+      expect(response.status, id).toBe(404);
+      expect((await response.json<ApiErrorBody>()).error.kind, id).toBe('not_found');
+    }
+    // The two rejected on shape never reached the provider's list.
+    expect(stub.restRequests).toHaveLength(0);
+  });
+
+  it('is a clean error, not a blank page, when the team list cannot be read', async () => {
+    // The asymmetry this phase accepts: a board team's identity survives a
+    // provider outage because it is in Postgres, a searched team's does not.
+    stub = noRows();
+    const { response, body } = await get<ApiErrorBody>(
+      `/api/teams/${AUBURN}`,
+      testEnv({ SPORTS_PROVIDER_FAULT: 'teams' }),
+    );
+    expect(response.status).toBe(503);
+    expect(body.error.kind).toBe('provider_unavailable');
+    expect(body.error.requestId).toBe(response.headers.get('X-Request-Id'));
+    // `TeamPage` renders this string. It must not say a search failed.
+    expect(body.error.message).toBe('Team information is temporarily unavailable.');
+    expect(body.error.message).not.toMatch(/search/i);
+  });
+
+  it('still answers without a database: a searched team needs none', async () => {
+    stub = noRows();
+    const unconfigured = testEnv({ SUPABASE_URL: '', SUPABASE_ANON_KEY: '' });
+
+    expect((await app.request(`/api/teams/${AUBURN}`, {}, unconfigured)).status).toBe(200);
+    // And a malformed id is still a clean 404, not a configuration 500.
+    expect((await app.request('/api/teams/texas!', {}, unconfigured)).status).toBe(404);
+  });
+
+  it('never puts our uuid inside snapshot.identity, on any board card', async () => {
+    // `buildSnapshot` now takes a TeamIdentity, so a `Team` passed straight
+    // through would leak `id` onto the wire for all 54 cards. TypeScript
+    // cannot see that — excess properties survive at runtime — so assert it.
+    stubWith();
+    const { body } = await get<BoardResponse>(`/api/users/${WILSON_ID}/board`);
+    expect(body.teams).toHaveLength(6);
+    for (const { team, snapshot } of body.teams) {
+      expect(snapshot.data).not.toBeNull();
+      expect('id' in snapshot.data!.identity).toBe(false);
+      expect(team.id).toBe(teamUuid(team.providerTeamId));
+    }
+  });
+
+  describe('over real ESPN payloads', () => {
+    const espnEnv = (): Env => testEnv({ SPORTS_PROVIDER: 'espn' });
+
+    beforeEach(() => {
+      vi.setSystemTime(new Date(CAPTURED_AT));
+    });
+
+    it('shares every expensive read between the two URLs for one team', async () => {
+      stubWith();
+      const first = await get<TeamDetailResponse>(`/api/teams/${teamUuid('251')}`, espnEnv());
+      expect(first.response.headers.get('X-Cache')).toBe('miss');
+
+      const second = await get<TeamDetailResponse>('/api/teams/251', espnEnv());
+      expect(second.response.headers.get('X-Cache')).toBe('hit');
+
+      // Cache keys are provider-id based, so the second URL pays for none of it.
+      const schedules = stub.espnRequests.filter((request) =>
+        request.url.includes('/teams/251/schedule'),
+      );
+      expect(schedules).toHaveLength(1);
+      expect(second.body.snapshot.data?.record).toEqual(first.body.snapshot.data?.record);
+    });
+
+    it('invents nothing for a team outside the FBS conference map (§4, §46)', async () => {
+      // Abilene Christian is in ESPN's 762-team list and in no conference group.
+      stubWith();
+      const { response, body } = await get<TeamDetailResponse>('/api/teams/2000', espnEnv());
+
+      expect(response.status).toBe(200);
+      expect(body.team).toMatchObject({
+        id: null,
+        providerTeamId: '2000',
+        name: 'Abilene Christian Wildcats',
+        // Not guessed, not "FCS", not an empty string. The map is FBS-only.
+        conference: null,
+      });
+    });
   });
 });
 

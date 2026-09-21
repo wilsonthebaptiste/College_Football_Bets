@@ -2,6 +2,7 @@ import type { AppError, Envelope, Freshness, ProviderName } from '../envelope';
 import type { Season, SeasonSource } from '../season';
 import type {
   Game,
+  PageTeam,
   Prediction,
   ScheduleResult,
   Team,
@@ -97,16 +98,22 @@ export interface BoardResponse {
 
 // ─── GET /api/teams/:teamId ──────────────────────────────────────────────────
 
+/**
+ * `:teamId` is either our own uuid or the provider's team id, so any team the
+ * provider lists has a page. `team.id` is therefore our uuid only for a team we
+ * store — a team somebody has put on a board — and `null` for every other.
+ */
 export interface TeamDetailResponse {
-  team: Team;
+  team: PageTeam;
   season: Season;
   snapshot: Envelope<TeamSnapshot>;
 }
 
 // ─── GET /api/teams/:teamId/schedule ─────────────────────────────────────────
 
+/** `team.id`, as above: our uuid only for a team we store. */
 export interface TeamScheduleResponse {
-  team: Team;
+  team: PageTeam;
   schedule: Envelope<ScheduleResult>;
 }
 

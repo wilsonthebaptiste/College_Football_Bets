@@ -28,6 +28,19 @@ export interface Team extends TeamIdentity {
 }
 
 /**
+ * A team as a page shows it: the provider's identity, plus our own uuid when
+ * the team has a row (someone put it on a board) and `null` when it has not.
+ *
+ * Every team the provider lists has a page, whether or not it is on anybody's
+ * board (plan-search-engine §Phase 1), so the uuid cannot be assumed. `Team` is
+ * assignable to this, which is what keeps the two shapes interchangeable
+ * everywhere a stored team is what turns up.
+ */
+export interface PageTeam extends TeamIdentity {
+  id: string | null;
+}
+
+/**
  * The slice of a team needed to render an opponent. Opponents are not
  * necessarily rows in our `teams` table — only selected teams are — so this
  * deliberately has no `id`.

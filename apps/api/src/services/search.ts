@@ -70,10 +70,16 @@ export async function readTeamList(services: Services): Promise<TeamIdentity[]> 
   });
   const teams = read.envelope.data;
   if (teams === null) {
-    // Search has nothing to show without the list, so this one is a real error.
+    // Nothing downstream has anything to show without the list, so unlike most
+    // provider failures this one is a real error rather than an envelope.
+    //
+    // The wording is deliberately not "team search": since Phase 1 this also
+    // backs `/api/teams/:providerTeamId`, and the message reaches the viewer
+    // verbatim (`TeamPage` renders `error.message`). A team page must not
+    // announce that a search failed.
     throw new HttpError(
       read.envelope.error?.kind ?? 'provider_unavailable',
-      'Team search is temporarily unavailable.',
+      'Team information is temporarily unavailable.',
     );
   }
   return teams;

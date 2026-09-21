@@ -7,6 +7,7 @@ import type {
   FreshnessState,
   Game,
   NextGameSlot,
+  PageTeam,
   Prediction,
   PredictionResponse,
   RankingState,
@@ -186,8 +187,9 @@ export const PROVIDER_DOWN: AppError = {
 
 export const SEASON = { year: 2026, type: 'regular', week: 5 } as const;
 
+/** `PageTeam`, not `Team`: a team with no row of ours has a page too, with `id: null`. */
 export function teamDetail(
-  team: Team,
+  team: PageTeam,
   snapshot: Envelope<TeamSnapshot>,
   season: TeamDetailResponse['season'] = SEASON,
 ): TeamDetailResponse {
@@ -287,7 +289,7 @@ export function seasonItems(): ScheduleItem[] {
 }
 
 export function scheduleResponse(
-  team: Team,
+  team: PageTeam,
   items: ScheduleItem[] = seasonItems(),
   state: FreshnessState = 'fresh',
   error: AppError | null = null,

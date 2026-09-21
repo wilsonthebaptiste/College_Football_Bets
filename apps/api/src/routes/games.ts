@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import type { AppBindings } from '../env';
 import { setCacheHeaders } from '../http/cache-headers';
 import { invalidRequest, notFound } from '../http/errors';
+import { isProviderId } from '../providers/ids';
 import { servicesFor } from '../services/context';
 import { getGame, getPrediction } from '../services/games';
 
@@ -15,16 +16,13 @@ import { getGame, getPrediction } from '../services/games';
  */
 export const gameRoutes = new Hono<AppBindings>();
 
-const PROVIDER_ID = /^[A-Za-z0-9_-]{1,40}$/;
-
 gameRoutes.get('/:gameId', async (c) => {
   const gameId = c.req.param('gameId');
-  if (!PROVIDER_ID.test(gameId)) throw notFound('No such game.');
+  if (!isProviderId(gameId)) throw notFound('No such game.');
 
   // `?team=<providerTeamId>` picks whose side the score is told from.
   const team = c.req.query('team') ?? null;
-  if (team !== null && !PROVIDER_ID.test(team))
-    throw invalidRequest('team is not a valid team id.');
+  if (team !== null && !isProviderId(team)) throw invalidRequest('team is not a valid team id.');
 
   const services = servicesFor(c);
   const { envelope, cacheStatus } = await getGame(services, gameId, team);
@@ -35,7 +33,7 @@ gameRoutes.get('/:gameId', async (c) => {
 
 gameRoutes.get('/:gameId/prediction', async (c) => {
   const gameId = c.req.param('gameId');
-  if (!PROVIDER_ID.test(gameId)) throw notFound('No such game.');
+  if (!isProviderId(gameId)) throw notFound('No such game.');
 
   const services = servicesFor(c);
   const { envelope, cacheStatus } = await getPrediction(services, gameId);

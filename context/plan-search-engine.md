@@ -2,9 +2,9 @@
 
 ## Phase Checklist
 
-- [ ] **Phase 1 — A team page for any team.** The contract gains `PageTeam`, and
+- [x] **Phase 1 — A team page for any team.** The contract gains `PageTeam`, and
       `GET /api/teams/:teamId` accepts either our uuid or a provider team id, so
-      a team with no database row has a page.
+      a team with no database row has a page. *Done 2026-09-20; notes below.*
 - [ ] **Phase 2 — A public search endpoint.** `GET /api/search/teams?q=`, reusing
       the ranking and team list the admin console already uses.
 - [ ] **Phase 3 — The `/search` page.** A lazy page with debounced live results,
@@ -156,6 +156,134 @@ both on `BoardResponse`, which is unchanged. The `teamDetail` and
   loaded, the page is a clean error, whereas a board team still shows its
   identity from Postgres. Accept that asymmetry and record it; do not engineer it
   away.
+
+### Completion notes (2026-09-20)
+
+Built as planned, with one deliberate change of signature and one small repair
+found on the way (the error message below). `npm run verify` is green: 715 tests
+in 31 files, up from 704.
+
+**`resolveTeam` takes a database *factory*, not a client.** The plan's
+`resolveTeam(services, db: PostgrestClient, teamId)` reads fine, but the route
+has to build that client before calling it, and `supabasePublic()` is also what
+asserts Supabase is configured at all. Removing the `isUuid` guard from
+`routes/teams.ts` would therefore have turned `/api/teams/<garbage>` on an
+unconfigured Worker from a clean 404 into a 500 — precisely the regression
+`routes.test.ts` already pins for `/api/users/<garbage>` ("the id used to be
+validated only after the database client was built"). So the parameter is
+`DbFactory = () => PostgrestClient`, the route passes `() => supabasePublic(c.env)`,
+and the provider-id path never constructs one. A nice side effect: "no PostgREST
+request on the public path" is now true because no client exists to make one,
+not merely because nothing called it. A searched team page works with no
+database configured at all, which is tested.
+
+Everything else matched the reading. `buildSnapshot` widened to `TeamIdentity`
+with no other call site touched; `identityOf`'s explicit field copy was left
+alone. The `PROVIDER_ID` regex moved to `providers/ids.ts` unchanged, so the
+game routes behave identically. The two response types widened to `PageTeam`
+and nothing on the web side needed changing — the prediction that no one reads
+`team.id` off these two responses held, and only the two `apps/web/src/test/fixtures.ts`
+builders widened.
+
+**On the leak guard.** "On every board card, `'id' in snapshot.data.identity` is
+`false`" is now a test — and it was checked the only way worth checking it:
+`identityOf` was temporarily changed to spread its argument, the test failed,
+and it was changed back. A guard against an invisible bug is worth nothing until
+it has been seen to fail.
+
+Eleven tests were added, all in `apps/api/test/board.test.ts` beside the existing
+team-route tests: the provider-id page and its schedule; zero PostgREST requests
+on both; the two URLs agreeing on the sports half (compared field by field, not
+deep-equal, for the `teamNamespace` reason above); the uuid resolved first and
+not falling through; the three 404 shapes; the team list being down; the
+no-database case; the leak guard; and, over the real ESPN captures, one team
+fetched both ways sharing its schedule read (`X-Cache: hit`, one ESPN call) and
+an FCS team coming back with `conference: null` rather than a guess.
+
+Also checked by hand against `npm run dev` (mock provider) and, for the
+uuid path, against the live database: `/api/teams/2` answers 200 with `id: null`,
+a 1-2 record, a final previous game and a bye next; the second read is
+`X-Cache: hit`; `/api/teams/2/schedule` returns 12 items; `999999`, `texas!`, a
+41-character id and an unknown uuid are all 404; and Texas fetched as
+`/api/teams/0a974681-…` and as `/api/teams/251` gives the same name and the same
+2-1 record, differing only in `team.id`.
+
+### Findings
+
+**§45 now has an exception, and it should be written down.** "Identity is
+application-owned: it comes from Postgres, not the provider" was true of every
+path in the app until this phase. On `/api/teams/<providerTeamId>` it is false —
+identity comes from the provider's 24-hour team list. That is the whole point of
+the phase, but it is a load-bearing rule elsewhere in the codebase and the
+comment in `snapshot.ts` asserting it had to be rewritten. Two consequences fall
+out of it, both worth knowing before Phase 4 writes the docs:
+
+- **A hand-curated conference on a stored row will not show on the provider-id
+  URL.** The plan already lists this under Risks; it is now real rather than
+  predicted.
+- **The freshness envelope does not cover identity on this path.** The response's
+  `Cache-Control` was `max-age=899` — the 15-minute schedule TTL. Nothing in the
+  envelope says the team's *name* came from a list that may be a day old. That
+  is defensible (the name is not a sports fact that changes hourly) but it is a
+  gap between what §23 promises and what this path delivers, and it should be a
+  sentence in `docs/ops.md` rather than a surprise.
+
+**Widening who can reach a code path silently re-points its user-facing copy.**
+`readTeamList` threw `'Team search is temporarily unavailable.'` — accurate while
+only admin search and admin add-to-board could reach it. Phase 1 put it behind a
+public team page, and `TeamPage.tsx:71` renders `error.message` verbatim, so a
+visitor whose team page failed would have been told that a *search* was
+unavailable. Fixed here to `'Team information is temporarily unavailable.'`, with
+a test that pins the string and asserts it does not match `/search/i`. Worth
+generalising: when a function gains a caller, grep its user-facing strings, not
+just its types. The compiler cannot see this class of error at all.
+
+**A team with no logo is normal, not exceptional.** 671 of the 762 teams in
+ESPN's list carry a logo — **91 do not**, about 12%. And in mock mode
+`listTeams()` returns `logoUrl: null` for *every* team, while board cards get
+their logos from Postgres. So in local development every searched team page will
+be logo-less while every board card has one. Phase 3 should expect the initials
+fallback (§36) on the results list and the searched team hero as a routine state
+to design for, and nobody should file it as a bug when they see it locally.
+
+**`supabasePublic()` does two jobs, and where you call it changes the error.**
+It builds the client *and* asserts Supabase is configured. That coupling means
+the placement of the call decides what a malformed id returns — which is exactly
+why the `DbFactory` change above was needed, and it is the same trap
+`routes.test.ts` already pins for the user route. Anything future that removes an
+id guard from a route should check whether it also moved a configuration
+assertion earlier in the request.
+
+**An assertion about absence is worth nothing until it has been seen to fail.**
+This phase leans on several: no `id` in `snapshot.identity`, no PostgREST
+request, no JWKS fetch, no second ESPN call. Each of those passes just as
+happily against a route that is broken in some unrelated way. The `identityOf`
+guard was verified by temporarily making it spread its argument and watching the
+test go red. The others are paired with a positive assertion in the same or a
+neighbouring test (a 200, a non-null snapshot, a specific list of request paths)
+so that a wholesale failure cannot read as a pass.
+
+**The plan's untested claim, now tested.** "If that list cannot be loaded, the
+page is a clean error" was written under "Watch out for" but had no exit
+criterion. It does now: `SPORTS_PROVIDER_FAULT=teams` makes `/api/teams/2` a 503
+`provider_unavailable` carrying its request id. That is the asymmetry the phase
+accepted, pinned so a later refactor cannot quietly turn it into a 500.
+
+**`getTeamById` keeps its own `isUuid` guard**, so id-shape knowledge now sits in
+both `db/queries.ts` and `resolveTeam` rather than only the latter. Left as is:
+it is one cheap re-check on a function that is reachable from one place, and
+deleting it would make `getTeamById` unsafe for any future caller. Noted because
+the plan said the knowledge "moves into `resolveTeam`", and it is more accurate
+to say it was *added* there.
+
+**Environment, not code: a stale `workerd` was holding port 8787.** The readiness
+probe for the dev Worker passed against a process started on 2026-09-19 that had
+never exited, while the Worker actually running this phase's code bound 8788 and
+said so in its log. Everything would have "passed" against yesterday's build.
+Two lessons: `npm run dev` does not always land on the 8787 that
+`project-notes.md §11` documents, so read the "Ready on" line rather than
+assuming; and a readiness probe should ask for a fact only the new build can
+answer, not merely whether *something* answers.
 
 ---
 
