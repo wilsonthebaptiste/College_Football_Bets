@@ -12,6 +12,8 @@ Written at the close of Phase 5, 2026-09-19, when the application went live.
 - The build plan, phase by phase, with completion notes for each, is
   [archive/plan.md](archive/plan.md). It is the long history; this file is the
   distillation.
+- Work in progress: [plan-search-engine.md](plan-search-engine.md) — adding a
+  public team search, so any team can be looked up, not only the 54 on boards.
 - Operations — deploying, configuration, limits, troubleshooting — is
   [../docs/ops.md](../docs/ops.md).
 - ESPN's undocumented API, as observed: [../docs/espn-notes.md](../docs/espn-notes.md).
