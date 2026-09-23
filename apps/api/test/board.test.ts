@@ -16,6 +16,7 @@ import { resetInflight } from '../src/cache/swr';
 import { resetCacheTiers } from '../src/cache/tiers';
 import type { Env } from '../src/env';
 import { generateSeason } from '../src/providers/mock/generate';
+import { SEARCH_LIMIT, SEARCH_MAX_LENGTH } from '../src/services/search';
 import {
   ALL_TEAM_ROWS,
   JORDAN,
@@ -898,6 +899,167 @@ describe('GET /api/admin/teams/search (§43)', () => {
       Authorization: `Bearer ${await token()}`,
     });
     expect(response.status).toBe(400);
+  });
+});
+
+// ─── A public search endpoint (plan-search-engine, Phase 2) ──────────────────
+
+describe('GET /api/search/teams', () => {
+  const espnEnv = (overrides: Partial<Env> = {}): Env =>
+    testEnv({ SPORTS_PROVIDER: 'espn', ...overrides });
+
+  const adminToken = (): Promise<string> =>
+    signToken(signingKey, {
+      sub: 'admin-1',
+      iss: TEST_ISSUER,
+      aud: 'authenticated',
+      exp: nowSeconds() + 3600,
+    });
+
+  it('answers anyone, with no token and no JWT work at all (§11.1)', async () => {
+    stubWith({ jwks: true });
+    const { response, body } = await get<TeamSearchResponse>('/api/search/teams?q=tex');
+
+    expect(response.status).toBe(200);
+    expect(body.teams.map((team) => team.displayName)).toContain('Texas');
+    expect(response.headers.get('X-Request-Id')).toBeTruthy();
+    // Outside the admin branch: no key set was fetched and no token parsed.
+    expect(stub.jwksFetches).toBe(0);
+  });
+
+  it('is cacheable for five minutes, so backtracking over a prefix is free', async () => {
+    stubWith();
+    const { response } = await get<TeamSearchResponse>('/api/search/teams?q=tex');
+    expect(response.headers.get('Cache-Control')).toBe('public, max-age=300');
+  });
+
+  it('reads no database at all — searching cannot create a `teams` row (§30, §31)', async () => {
+    stub = installSupabaseStub({
+      appUsers: [],
+      teams: [],
+      external: (url) => espnResponse(url, {}),
+    });
+    const { response, body } = await get<TeamSearchResponse>('/api/search/teams?q=alabama');
+
+    // The positive half matters: with no 200 and no named team, "zero requests"
+    // would also be true of a route that had simply fallen over.
+    expect(response.status).toBe(200);
+    expect(body.teams[0]?.providerTeamId).toBe('333');
+    expect(stub.restRequests).toHaveLength(0);
+    expect(stub.jwksFetches).toBe(0);
+  });
+
+  it('ranks identically to the admin route: one implementation, two doors', async () => {
+    stubWith({ jwks: true, isAdmin: true });
+    const open = await get<TeamSearchResponse>('/api/search/teams?q=TEXAS');
+    const console_ = await get<TeamSearchResponse>('/api/admin/teams/search?q=TEXAS', testEnv(), {
+      Authorization: `Bearer ${await adminToken()}`,
+    });
+
+    expect(open.body.teams[0]?.displayName).toBe('Texas');
+    expect(open.body).toEqual(console_.body);
+    // The whole difference between them, in one pair of headers.
+    expect(open.response.headers.get('Cache-Control')).toBe('public, max-age=300');
+    expect(console_.response.headers.get('Cache-Control')).toBe('private, no-store');
+  });
+
+  it('folds accents and case: "san jose" finds San José State', async () => {
+    stubWith();
+    const { body } = await get<TeamSearchResponse>('/api/search/teams?q=san%20jose', espnEnv());
+    expect(body.teams.map((team) => team.name)).toContain('San José State Spartans');
+  });
+
+  it('caps the answer at twenty, whatever the caller asks for', async () => {
+    // SEARCH_LIMIT is the abuse ceiling, which is why there is no `limit`
+    // parameter to raise. 116 of the 762 teams match "state".
+    stubWith();
+    const { body } = await get<TeamSearchResponse>('/api/search/teams?q=state', espnEnv());
+    expect(body.teams).toHaveLength(SEARCH_LIMIT);
+
+    const asked = await get<TeamSearchResponse>('/api/search/teams?q=state&limit=500', espnEnv());
+    expect(asked.body.teams).toHaveLength(SEARCH_LIMIT);
+  });
+
+  it('400s a missing query, one too short, and one too long', async () => {
+    stubWith();
+    const paths = [
+      '/api/search/teams',
+      '/api/search/teams?q=a',
+      `/api/search/teams?q=${'a'.repeat(SEARCH_MAX_LENGTH + 1)}`,
+    ];
+    for (const path of paths) {
+      const { response, body } = await get<ApiErrorBody>(path);
+      expect(response.status, path).toBe(400);
+      expect(body.error.kind, path).toBe('invalid_request');
+    }
+  });
+
+  it('is a clean 503 with a reference number when the team list cannot be read', async () => {
+    stubWith();
+    const { response, body } = await get<ApiErrorBody>(
+      '/api/search/teams?q=texas',
+      testEnv({ SPORTS_PROVIDER_FAULT: 'teams' }),
+    );
+    expect(response.status).toBe(503);
+    expect(body.error.kind).toBe('provider_unavailable');
+    expect(body.error.requestId).toBe(response.headers.get('X-Request-Id'));
+    expect(body.error.message).toBe('Team information is temporarily unavailable.');
+  });
+
+  it('never lets a failure inherit the five-minute lifetime', async () => {
+    // `Cache-Control` is set after the await. Set before it, Hono would merge
+    // it into the error handler's response too, and a browser would hold on to
+    // a 503 for five minutes after the outage ended.
+    stubWith();
+    const short = await get<ApiErrorBody>('/api/search/teams?q=a');
+    const down = await get<ApiErrorBody>(
+      '/api/search/teams?q=texas',
+      testEnv({ SPORTS_PROVIDER_FAULT: 'teams' }),
+    );
+
+    expect(short.response.status).toBe(400);
+    expect(down.response.status).toBe(503);
+    for (const response of [short.response, down.response]) {
+      expect(response.headers.get('Cache-Control') ?? 'unset').not.toMatch(/max-age/);
+    }
+  });
+
+  it('ESPN: each result carries its conference and a sized logo', async () => {
+    stubWith();
+    const { body } = await get<TeamSearchResponse>('/api/search/teams?q=alabama', espnEnv());
+    expect(body.teams[0]).toMatchObject({
+      providerTeamId: '333',
+      name: 'Alabama Crimson Tide',
+      conference: 'SEC',
+      logoUrl: 'https://a.espncdn.com/combiner/i?img=/i/teamlogos/ncaa/500/333.png&w=144&h=144',
+    });
+  });
+
+  it('ESPN: with the conference map down it degrades, never fails', async () => {
+    // Its own test, not a second half of the one above: the tiers are reset per
+    // test, and a warm conference map would hide the fault entirely.
+    stubWith();
+    const { response, body } = await get<TeamSearchResponse>(
+      '/api/search/teams?q=alabama',
+      espnEnv({ SPORTS_PROVIDER_FAULT: 'conferences' }),
+    );
+    expect(response.status).toBe(200);
+    expect(body.teams[0]).toMatchObject({ providerTeamId: '333', conference: null });
+  });
+
+  it('spends no more of the KV budget the more it is searched', async () => {
+    // A keystroke-driven endpoint against ~1,000 KV writes a day (plan §7).
+    // Every query reads one list and one conference map, both written at most
+    // daily, so the tenth search costs nothing the first did not.
+    stubWith();
+    const kv = new FakeKv();
+    const env = espnEnv({ SPORTS_KV: kv.asNamespace() });
+    for (const q of ['al', 'ala', 'alab', 'alaba', 'alabam', 'alabama']) {
+      expect((await get(`/api/search/teams?q=${q}`, env)).response.status).toBe(200);
+    }
+
+    const categories = kv.writes.map((write) => write.key.split('|')[2]);
+    expect(categories.sort()).toEqual(['conferences', 'season_calendar', 'team_list']);
   });
 });
 

@@ -7,9 +7,14 @@ import { resolveSeason } from '../season/resolve';
 import type { Services } from './context';
 
 /**
- * Admin team search (§43): the provider's full team list, fetched once and
- * cached for 24 hours, filtered here. 762 teams is a list, not a search engine.
- * Each result carries its conference (plan §5.1), from a second cached read.
+ * Team search (§43): the provider's full team list, fetched once and cached for
+ * 24 hours, filtered here. 762 teams is a list, not a search engine. Each
+ * result carries its conference (plan §5.1), from a second cached read.
+ *
+ * Three callers now, and nothing here belongs to any one of them: the admin
+ * console's own search, the public `/api/search/teams`, and — through
+ * `findTeamIdentity` — a team page for a team nobody has put on a board. Any
+ * message that reaches a viewer is worded for all three (see `readTeamList`).
  */
 
 export const SEARCH_MIN_LENGTH = 2;

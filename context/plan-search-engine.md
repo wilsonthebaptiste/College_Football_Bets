@@ -5,8 +5,9 @@
 - [x] **Phase 1 — A team page for any team.** The contract gains `PageTeam`, and
       `GET /api/teams/:teamId` accepts either our uuid or a provider team id, so
       a team with no database row has a page. *Done 2026-09-20; notes below.*
-- [ ] **Phase 2 — A public search endpoint.** `GET /api/search/teams?q=`, reusing
-      the ranking and team list the admin console already uses.
+- [x] **Phase 2 — A public search endpoint.** `GET /api/search/teams?q=`, reusing
+      the ranking and team list the admin console already uses. *Done 2026-09-20;
+      notes below.*
 - [ ] **Phase 3 — The `/search` page.** A lazy page with debounced live results,
       a shareable URL, and rows that open the team page.
 - [ ] **Phase 4 — The header control, docs, and ship.** A search box on every
@@ -338,6 +339,130 @@ keystroke traffic free in the browser's cache.
 - `rankMatches` folds about 762 names per request. Sub-millisecond when warm, but
   it is on the request path, and the first deploy already measured a cold board
   at 44 ms against a documented 10 ms budget.
+
+### Completion notes (2026-09-20)
+
+Built as planned. `npm run verify` is green: **729 tests in 31 files**, up from
+715. The route is 12 lines of handler; everything it does was already there.
+
+One source file was added and four changed, and three of those four are
+comment-only — which is the honest summary of the phase. `routes/search.ts` is
+new, `app.ts` mounts it, and `services/search.ts`, `routes/admin.ts` and
+`packages/shared/src/api/requests.ts` had comments that Phase 2 made false.
+`services/search.ts` has **no code change**: the ranking, the 2–60 character
+bounds and the 20-result ceiling are the admin console's, unmodified, which is
+what the parity test pins. `scripts/smoke.mjs` gained the two checks the plan
+asked for, and two more that fell out of them — that the search answer is
+cacheable, and that the team page a result opens has a whole snapshot behind it.
+
+**Two departures from the plan's Scope, both comment-only.**
+
+- The plan says `routes/admin.ts` is unchanged. Its code is, but the doc comment
+  over `GET /api/admin/teams/search` said the route was admin-only "so that an
+  open search box is not one more public endpoint to crawl" — a reason this
+  phase deletes. It now says what is actually true of the pair: same ranking,
+  same list, different cache headers and different doors. This is the Phase 1
+  finding recurring ("when a function gains a caller, grep its user-facing
+  strings"), one level up: when a *route* gains a public twin, re-read the
+  comment explaining why it is private.
+- `TeamSearchResponse` lives in `packages/shared/src/api/requests.ts`, a file
+  whose header says it holds `/api/admin/*` bodies. It is now the odd one out,
+  and says so. Moving it would have churned imports on both sides of the wire
+  for no behavioural gain.
+
+**Fourteen tests were added**: twelve in `apps/api/test/board.test.ts` beside
+the admin-search block, two in `ops.test.ts` (the read budget, and the route
+added to the "every public read sets Cache-Control" list). They cover every
+exit criterion: public with no JWKS fetch; zero PostgREST requests; the
+five-minute lifetime; ranking parity asserted as `toEqual` against the admin
+route's body for the same query; accent folding; the 20-result cap with a
+`limit` parameter ignored; the three 400s; the 503 with its reference number;
+an error never inheriting the cache lifetime; ESPN conferences present, and
+absent when the map is down; the KV ledger unchanged by repeated searching; and
+the 429 with `Retry-After` while the admin route still answers 401 to the same
+exhausted address.
+
+**Three of those were watched to fail before being kept**, per the Phase 1 rule
+about assertions of absence. Moving `c.header('Cache-Control', …)` above the
+await turned the error-lifetime test red (`expected 'public, max-age=300' not to
+match /max-age/`); making the route read `app_users` turned the no-database test
+red; exempting `/api/search` in `rate-limit.ts` turned the budget test red. Each
+was reverted.
+
+Checked by hand against `wrangler dev` on the mock provider, and then against
+**real ESPN** with the production User-Agent (`SPORTS_PROVIDER:espn`, cold
+`--persist-to`). On live data: `q=mercer` returns one FCS team with
+`conference: null`; `q=san jose` finds San José State; `q=state` returns exactly
+20 of ~116 matches; `q=zzzzqq` is a 200 with `{"teams":[]}`, not an error;
+`/api/teams/2382` then serves Mercer with `id: null`, `{"kind":"unranked"}`,
+a real 2-2 record and a 13-row schedule. `npm run smoke` is 18/18 against that
+Worker, including the four new checks.
+
+### Findings
+
+**A search costs about 2 ms of the 10 ms CPU budget, and one KV write a day.**
+Both numbers were guesses in the plan and are now measured against real ESPN.
+Twenty warm round trips over loopback: `/api/health` (no provider work) 12.2 ms,
+`?q=zzzzqq` (0 matches) 14.5 ms, `?q=state` (116 matches, 20 returned) 14.1 ms.
+So the fold over 762 names plus two cache reads is **~2 ms**, and the number of
+matches does not move it — the sort runs over the matched subset, not the list.
+A dozen searches wrote KV **three times**: `season_calendar`, `team_list`,
+`conferences`, once each, exactly as the write intervals promise. Opening one
+searched team page then added two more (`rankings`, `schedule`). That is the
+shape of the crawler risk, stated precisely: **searching is nearly free; it is
+the team pages that searching leads to which spend the KV budget.** The counter
+to watch after the deploy is `schedule`, not `team_list`.
+
+**`wrangler dev` persists the Cache API between runs, so a fault drill can pass
+against a warm cache.** The first `SPORTS_PROVIDER_FAULT=teams` run returned a
+cheerful 200 with three Texas teams. The binding was set — the log listed it —
+but the previous dev Worker had written `team_list` into the local `caches.default`,
+which wrangler keeps in `.wrangler/state` across restarts, and a one-day TTL
+means no provider call was ever attempted. `--persist-to <fresh dir>` produced
+the real answer: 503, `provider_unavailable`, "Team information is temporarily
+unavailable.", with a request id and **no `Cache-Control` at all**. This is the
+Phase 1 stale-`workerd` lesson in a new costume: the drill must make the failure
+*reachable*, not merely configured. A cold persist directory is the cheap way.
+
+**ESPN puts North Dakota State in the Mountain West, and the app says so.**
+`q=north dakota` returns North Dakota (155) with `conference: null` and North
+Dakota State (2449) with `Mountain West`. That looked like a misattribution in
+`getConferences`, so it was checked at the source: ESPN's core API lists 2449
+among group 17's ten teams for the 2026 season, and group 17 is
+`Mountain West Conference`. It is the provider's own answer, passed through
+unaltered (§46). Worth writing down because the plan's phrasing — "an FCS team
+shows Conference unknown" — invites exactly the wrong conclusion when one does
+not: **the map is not a division filter.** A team carries a conference if ESPN's
+FBS groups list it, whatever division it looks like it belongs to, and nobody
+should "fix" that by inference.
+
+**The 429 and the 503 carry no `Cache-Control`, which is load-bearing and was
+nearly invisible.** Hono merges headers set on the context into whatever
+response finally leaves, including the error handler's. Set the five-minute
+lifetime before the await and a browser would hold a failed search for five
+minutes — on a page where the user's instinct is to retype, i.e. to produce the
+same URL and be served the same stale failure from their own cache. The plan
+called for setting it after the await; what was missing was any test that the
+ordering held, since both orderings look identical on the success path. There is
+one now, and it was watched to fail.
+
+**Rate limiting a keystroke endpoint is a Phase 3 constraint, not an API one.**
+The budget works — 200 parallel requests from one address in workerd gave 129
+allowed and 71 refused, with `Retry-After: 1`, and a second address was
+unaffected. But the default is 120 a minute and the bucket refills at two a
+second, so a sequential loop of 124 requests never trips it at all. A person
+typing cannot exhaust it; a person typing *without the debounce* very nearly
+could, and the failure would be a 429 on the one endpoint whose whole purpose is
+to feel instant. Phase 3's 250 ms debounce and normalized query key are what
+keep this true, so they are not polish — they are what makes the budget hold.
+
+**`/api/search/teams` sets no `X-Cache`, deliberately, and that is now a small
+inconsistency worth knowing.** It uses the flat `public, max-age=300` that
+`routes/users.ts` uses, not `setCacheHeaders`, because the response carries no
+`Freshness` of its own to derive a lifetime from. The cost is that the one
+header that would tell an operator whether a search was served from the team
+list's cache or from ESPN is absent. The KV ledger in `/api/health` answers the
+same question, which is why this was left alone rather than half-solved.
 
 ---
 

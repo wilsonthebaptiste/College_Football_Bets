@@ -366,9 +366,12 @@ adminRoutes.put('/users/:userId/selections/order', async (c) => {
 // ─── Team search (§43) ───────────────────────────────────────────────────────
 
 /**
- * Candidate team identities for a board. Admin-only because only the
- * administrator picks teams, and so that an open search box is not one more
- * public endpoint to crawl.
+ * Candidate team identities for a board. Kept here, beside the console that
+ * uses it, rather than pointed at the public `/api/search/teams`: this answer
+ * is what the administrator is about to act on, so it is sent `no-store`, while
+ * the public one is deliberately cacheable for five minutes. Same ranking, same
+ * list — `services/search.ts` — and the route matrix keeps enumerating this
+ * one, so the admin branch stays provably closed.
  */
 adminRoutes.get('/teams/search', async (c) => {
   const query = parseQuery(c.req.query('q'));

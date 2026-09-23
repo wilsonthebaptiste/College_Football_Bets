@@ -4,7 +4,7 @@
  *   npm run smoke -- https://cfb-api.<your-subdomain>.workers.dev
  *   npm run smoke -- http://127.0.0.1:8787
  *
- * Read-only. It makes about fifteen requests, well inside any rate limit, and
+ * Read-only. It makes about twenty requests, well inside any rate limit, and
  * writes nothing: the admin checks only prove that the door is shut.
  *
  * An optional second argument is the site's origin, to check CORS:
@@ -108,8 +108,46 @@ if (owner !== undefined) {
         p?.data ? p.data.sourceLabel : 'unavailable',
       );
     }
+
+    // ── Search, and the team page it links to ───────────────────────────────
+    // A board team is used as the query so this works against any provider and
+    // any set of real boards: whatever is on screen must be findable.
+    const query = (first.displayName ?? first.name).slice(0, 60);
+    const results = await get(`/api/search/teams?q=${encodeURIComponent(query)}`);
+    const hits = results.body?.teams ?? [];
+    check(
+      results.status === 200 && hits.some((t) => t.providerTeamId === first.providerTeamId),
+      `GET /api/search/teams?q=${query} finds it`,
+      `${hits.length} of at most 20, ${results.ms} ms`,
+    );
+    check(
+      /public, max-age=\d+/.test(results.headers.get('cache-control') ?? ''),
+      '  cacheable, so a keystroke is not a Worker request',
+      results.headers.get('cache-control') ?? '',
+    );
+
+    // The page a result opens: the same team by the provider's id, with no row
+    // of ours behind it (`team.id` is null) and the whole snapshot regardless.
+    const searched = await get(`/api/teams/${first.providerTeamId}`);
+    check(
+      searched.status === 200 && searched.body?.team?.id === null,
+      `GET team by provider id ${first.providerTeamId}`,
+      `${searched.ms} ms, id ${JSON.stringify(searched.body?.team?.id)}`,
+    );
+    check(
+      searched.body?.snapshot?.data !== null && searched.body?.snapshot?.data !== undefined,
+      '  a searched team page shows what a board team shows',
+      searched.body?.team?.name ?? '',
+    );
   }
 }
+
+const shortQuery = await get('/api/search/teams?q=a');
+check(
+  shortQuery.status === 400,
+  'GET /api/search/teams?q=a → 400 (the client must not ask below two)',
+  String(shortQuery.status),
+);
 
 // ── The admin door is shut ──────────────────────────────────────────────────
 const session = await get('/api/admin/session');

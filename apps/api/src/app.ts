@@ -8,6 +8,7 @@ import { adminRoutes } from './routes/admin';
 import { gameRoutes } from './routes/games';
 import { healthRoutes } from './routes/health';
 import { metaRoutes } from './routes/meta';
+import { searchRoutes } from './routes/search';
 import { teamRoutes } from './routes/teams';
 import { userRoutes } from './routes/users';
 
@@ -38,6 +39,9 @@ export function createApp(): Hono<AppBindings> {
   app.route('/api/users', userRoutes);
   app.route('/api/teams', teamRoutes);
   app.route('/api/games', gameRoutes);
+  // Mounted here, above the admin branch, so the read budget applies to it:
+  // it is the one public route a keystroke can call (plan-search-engine §2).
+  app.route('/api/search', searchRoutes);
 
   // Admin only — JWT verification + is_admin() live inside this branch.
   app.route('/api/admin', adminRoutes);

@@ -141,6 +141,30 @@ describe('public reads are rate limited per address (plan §5.3)', () => {
       expect(response.status).toBe(401);
     }
   });
+
+  /**
+   * The search engine's Phase 2 adds the first public route a keystroke can
+   * call. It is mounted above the admin branch precisely so it spends this
+   * budget; the console's own search, behind a token, still does not.
+   */
+  it('covers the public search, and still not the admin one', async () => {
+    stub = installSupabaseStub({ external: (url) => espnResponse(url, {}) });
+    const env = testEnv({ READ_RATE_LIMIT_PER_MINUTE: '2' });
+    const ask = (path: string) =>
+      app.request(path, { headers: { 'CF-Connecting-IP': '203.0.113.9' } }, env);
+
+    expect((await ask('/api/search/teams?q=tex')).status).toBe(200);
+    expect((await ask('/api/search/teams?q=texa')).status).toBe(200);
+
+    const refused = await ask('/api/search/teams?q=texas');
+    expect(refused.status).toBe(429);
+    expect(Number(refused.headers.get('Retry-After'))).toBeGreaterThanOrEqual(1);
+    expect((await refused.json<ApiErrorBody>()).error.kind).toBe('rate_limited');
+
+    // The same address, over its budget, still reaches the admin route — where
+    // it is refused for being unauthenticated, not for being noisy.
+    expect((await ask('/api/admin/teams/search?q=texas')).status).toBe(401);
+  });
 });
 
 describe('every public read route sets Cache-Control (plan §5.3)', () => {
@@ -149,6 +173,7 @@ describe('every public read route sets Cache-Control (plan §5.3)', () => {
     '/api/meta/season',
     '/api/users',
     '/api/users/00000000-0000-4000-8000-000000009001',
+    '/api/search/teams?q=tex',
   ])('%s', async (path) => {
     stub = installSupabaseStub({
       appUsers: [
@@ -158,6 +183,7 @@ describe('every public read route sets Cache-Control (plan §5.3)', () => {
           user_team_selections: [],
         },
       ],
+      external: (url) => espnResponse(url, {}),
     });
     const response = await app.request(path, {}, testEnv());
     expect(response.status).toBe(200);

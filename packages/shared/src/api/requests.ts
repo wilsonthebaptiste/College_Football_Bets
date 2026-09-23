@@ -103,7 +103,13 @@ export interface ReorderSelectionsRequest {
   orderedIds: string[];
 }
 
-// GET /api/admin/teams/search?q=
+/**
+ * GET /api/admin/teams/search?q= — and, since the search engine's Phase 2, the
+ * public GET /api/search/teams?q= as well. The two routes return exactly this,
+ * ranked by the same code; they differ only in who may ask and in whether the
+ * answer may be cached. The shape is the odd one out in this file, which is
+ * otherwise admin-only.
+ */
 export interface TeamSearchResponse {
   teams: TeamIdentity[];
 }
