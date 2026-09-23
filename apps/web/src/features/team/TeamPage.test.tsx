@@ -12,6 +12,8 @@ import {
   envelope,
   finalGame,
   liveGame,
+  makeBoard,
+  makeBoardTeam,
   makeGame,
   makePrediction,
   makeSnapshot,
@@ -342,6 +344,43 @@ describe('exit 5 — the offseason: no upcoming games, nothing breaks, "Season c
   it('renders no raw value anywhere', () => {
     expect(seen).not.toMatch(RAW_VALUE);
     expect(heard).not.toMatch(RAW_VALUE);
+  });
+});
+
+describe('a loaded board paints the team page instantly, by either id', () => {
+  /**
+   * `useTeam`'s placeholder. Since Phase 1 a team has two addresses — our uuid
+   * (what a board card links to) and the provider's id (what a search result
+   * links to) — and a board already holds everything the team route returns.
+   * Nothing is seeded under the team's own key here: whatever renders came
+   * from the board.
+   */
+  function renderFromBoard(teamId: string) {
+    const client = new QueryClient({ defaultOptions: { queries: { retryOnMount: false } } });
+    client.setQueryData(
+      queryKeys.board('u1'),
+      makeBoard([makeBoardTeam(envelope(makeSnapshot(team)), team)]),
+    );
+    return visibleText(renderAt(`/teams/${teamId}`, '/teams/:teamId', <TeamPage />, client));
+  }
+
+  it('paints from the board when opened by our uuid, as it always has', () => {
+    expectHeroAndPanels(renderFromBoard(team.id));
+  });
+
+  it('paints from the board when opened by the provider id, as search links do', () => {
+    expectHeroAndPanels(renderFromBoard(team.providerTeamId));
+  });
+
+  it('still shows the loading state for a team no loaded board holds', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retryOnMount: false } } });
+    client.setQueryData(
+      queryKeys.board('u1'),
+      makeBoard([makeBoardTeam(envelope(makeSnapshot(team)), team)]),
+    );
+    const markup = renderAt('/teams/2382', '/teams/:teamId', <TeamPage />, client);
+    expect(spokenText(markup)).toContain('Loading team data…');
+    expect(visibleText(markup)).not.toContain('Alabama');
   });
 });
 

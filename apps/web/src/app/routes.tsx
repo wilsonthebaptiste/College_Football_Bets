@@ -2,7 +2,7 @@ import { Outlet, type RouteObject } from 'react-router';
 import { RequireAdmin } from '../auth/RequireAdmin';
 import { HomePage } from '../features/home/HomePage';
 import { NotFoundPage } from './NotFoundPage';
-import { AdminPage, BoardEditorPage, BoardPage, LoginPage, TeamPage } from './pages';
+import { AdminPage, BoardEditorPage, BoardPage, LoginPage, SearchPage, TeamPage } from './pages';
 import { RootLayout } from './RootLayout';
 
 /**
@@ -16,6 +16,9 @@ export const routes: RouteObject[] = [
       { path: '/', element: <HomePage /> },
       { path: '/u/:userId', element: <BoardPage /> },
       { path: '/teams/:teamId', element: <TeamPage /> },
+      // The query lives in `?q=`, not the path: a search IS a URL, shareable
+      // and reloadable (plan-search-engine, Phase 3).
+      { path: '/search', element: <SearchPage /> },
       { path: '/login', element: <LoginPage /> },
       {
         path: '/admin',

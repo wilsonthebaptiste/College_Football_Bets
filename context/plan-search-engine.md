@@ -8,8 +8,9 @@
 - [x] **Phase 2 — A public search endpoint.** `GET /api/search/teams?q=`, reusing
       the ranking and team list the admin console already uses. *Done 2026-09-20;
       notes below.*
-- [ ] **Phase 3 — The `/search` page.** A lazy page with debounced live results,
-      a shareable URL, and rows that open the team page.
+- [x] **Phase 3 — The `/search` page.** A lazy page with debounced live results,
+      a shareable URL, and rows that open the team page. *Done 2026-09-22;
+      notes below.*
 - [ ] **Phase 4 — The header control, docs, and ship.** A search box on every
       page, the accessibility pass, the README and notes, and the deploy.
 
@@ -516,6 +517,197 @@ with the query intact.
   and the back button becomes useless.
 - Keep the page's minimum in step with the API's `SEARCH_MIN_LENGTH`. Below it,
   never call the API: a 400 per keystroke is the failure mode.
+
+### Completion notes (2026-09-22)
+
+Built as planned, with one addition to a shared test helper and one piece of
+machinery the plan did not call for but Phase 4 will need. `npm run verify` is
+green: **761 tests in 33 files**, up from 729. No API code was touched at all —
+`git status` shows seven changed files and two new ones, every one of them under
+`apps/web/`.
+
+**The page is `features/search/`: `SearchPage.tsx`, `SearchPage.module.css`,
+`useTeamSearch.ts`.** `MIN_QUERY` (2) and `DEBOUNCE_MS` (250) live in the hook
+rather than the page, because the hook's `enabled` is what actually keeps a
+short query from reaching the API; a constant that lives beside the thing it
+guards cannot drift away from it. The status line is a single always-rendered
+`role="status"` that says all three states ("Searching…" / "N teams found." /
+"No teams match “q”."), copied from `features/admin/TeamSearch.tsx`. An
+`EmptyState` for the no-match case was considered and dropped: it would have
+said "No teams match" twice on the same screen.
+
+**Two departures from the plan's Scope.**
+
+- **`renderAt` gained an optional fifth parameter, `state`.** The exit criterion
+  "a result opens that team's page … and 'Search' returns to the results" is
+  carried entirely in router state, which never reaches the markup the
+  string-based tests read. The first version of that test asserted
+  `encodeURIComponent('texas a&m') === 'texas%20a%26m'` — a tautology that would
+  pass against a page with no links at all. `renderAt(path, routePath, element,
+  client, state)` lets a test render `TeamPage` *as a search result opened it*,
+  and the criterion is now two real assertions: the back link reads "Search" and
+  points at `/search?q=mercer`. `searchFrom(query)` is exported from
+  `SearchPage.tsx` for the same reason, so the state can be round-tripped
+  through `readFromState`, which is its real consumer and the thing that would
+  reject a malformed path.
+- **The URL sync runs in both directions, not just page → URL.** The plan asked
+  for `setSearchParams(…, { replace: true })`. That alone is a Phase 4 bug
+  waiting to happen: the header's box navigates to `/search?q=…`, and from
+  `/search` that is a param change, not a remount, so the page would have shoved
+  its own stale text straight back into the URL. A `written` ref records what
+  this page last put in `?q=`; a value that differs from it came from somewhere
+  else — the header, or a history step — and wins. Eight lines, and it is why
+  Phase 4's `HeaderSearch` can be as simple as the plan describes.
+
+`useTeam`'s board placeholder now matches `team.id === teamId ||
+team.providerTeamId === teamId`, and `fixtures.ts` gained `makeIdentity`,
+`fcsIdentity` (Mercer: no conference, no logo) and `searchResponse`, with
+`makeSnapshot` widened from `Team` to `PageTeam`.
+
+**Thirty-two tests were added**: 24 in `SearchPage.test.tsx`, 3 in
+`TeamPage.test.tsx` (the board placeholder, by each id and by neither), and 5 in
+the new `lib/api.test.ts`. They cover every exit criterion — the seeded input,
+the plain list with no combobox attributes, the provider-id hrefs, the whole-row
+link with a decorative logo, "Conference unknown" and the initials fallback, the
+below-minimum hint with no request, no `?q=` at all, "Searching…", the empty
+state, the 503, the 429, a failure with no reference number, no autofocus, the
+input as the first focusable element, and one `h1` in every one of those states.
+
+**Six were watched to fail before being kept**, per the Phase 1 rule. Reverting
+`useTeam` to match the uuid only turned the provider-id placeholder test red;
+moving `queryKeys.search` under the `'admin'` prefix turned both key tests red
+(including the sign-out sweep); dropping `role="status"` from the live region,
+dropping `decorative` from the row's logo, and adding `autoFocus` to the input
+each turned their own test red. All five edits were reverted and the suite is
+green again.
+
+**Checked by hand in headless Edge** (`playwright-core` in the session
+scratchpad, as in Phase 5) against `npm run dev` on the mock provider:
+
+- `/search` cold: title `Search | CFB Board`, one `h1`, one `search` landmark,
+  focus on `<main>` and **not** on the input, and exactly one Tab to reach it.
+- Typing `tex`: one request (`/api/search/teams?q=tex`), 3 results, URL becomes
+  `/search?q=tex`. Backtracking `tex` → `te` → `tex` issued **one** request for
+  `te` and **zero** going back to `tex`.
+- `q=a`: zero requests, no results list, the hint showing, URL still in step.
+  `q=zzzzqq`: "No teams match “zzzzqq”."
+- `history.length` was 2 before typing and 2 after — `replace: true` holding.
+- Keyboard only: Tab, Tab, Enter opened `/teams/251`; the team page showed
+  "NR", 1-1, previous, next, prediction and the 12-row schedule under one `h1`;
+  the back link read "Search" and returned to `/search?q=texas` with the input
+  and the results intact.
+- `/teams/333` deep-linked (live game and all), `/search?q=texas` reloaded
+  directly, and an old `/teams/<uuid>` board link still worked, giving the same
+  team as `/teams/251` bar the logo.
+- 320 px, 375 px and 1280 px: **no sideways scroll at any width**, the input
+  44 px tall, each result row 68 px. A 70-character unbroken team name still
+  did not overflow at 320 px.
+- Failure drills: with the team list down, `/search?q=texas` is a `role="alert"`
+  reading "Team information is temporarily unavailable." plus its reference
+  number; a forced 429 shows the rate-limit message immediately. With
+  `SPORTS_PROVIDER_FAULT=schedule`, search still works and a searched team page
+  keeps its identity, conference and "Search" back link while both the snapshot
+  and the schedule degrade with reference numbers. No raw value, and no page
+  error, in any state.
+
+**The chunk criterion, checked at the build.** `npm run build:web` emits
+`SearchPage-*.js` at 2.99 kB (1.56 kB gzip) plus its own 1.68 kB stylesheet. It
+imports exactly three things — the index chunk, `TeamLogo`, `useDebouncedValue` —
+and the strings `supabase` and `gotrue` appear in it **zero** times; the 225 kB
+auth chunk stays behind its lazy boundary, referenced from the index chunk only
+as an import specifier. `npm run check:bundle` is clean. This is a build-time
+check like `check:bundle`, not a unit test, because the chunk graph only exists
+after a build.
+
+### Findings
+
+**A 503 takes about four seconds to reach the screen, and that is the retry
+policy, not a hang.** The first fault drill looked like a failure: with the team
+list down, `/search?q=texas` sat on "Searching…" and the team page on "Loading
+team data…". `lib/queryClient.ts` retries any 5xx twice with 1 s + 2 s backoff
+(`shouldRetry`), so at 1.2 s the query is genuinely still in flight. Past ~4 s
+both render their error with a reference number. A 429 appears **instantly**,
+because it is below 500 and never retried — the right asymmetry on a rate
+limiter, and worth knowing it is deliberate. Anyone drilling failure states on
+this app must wait past the retry budget or they will mistake retrying for
+hanging, and will "fix" something that is not broken.
+
+**`SPORTS_PROVIDER_FAULT` is a wrangler var, not a shell variable.** Running
+`SPORTS_PROVIDER_FAULT=teams npx wrangler dev` returned a cheerful 200 with
+three Texas teams — the *identical symptom* Phase 2 traced to a warm Cache API,
+from a completely unrelated cause. Phase 2's remedy (`--persist-to <fresh dir>`)
+was already in place and did nothing, because the fault had never reached the
+Worker at all. **The check is wrangler's own binding table in its startup
+output**: if `env.SPORTS_PROVIDER_FAULT` is not listed there, the drill is not
+armed, whatever the shell says. `--var SPORTS_PROVIDER_FAULT:teams` arms it.
+Generalising Phase 2's lesson: a fault drill needs the fault to be *reachable*
+(a cold cache) **and** *present* (a real binding), and both failure modes look
+exactly like success.
+
+**The plan's "an FCS team shows Conference unknown" is true of the results row
+and not of the team page.** `TeamPage`'s hero joins `[name, conference]` and
+drops the nulls, so Mercer's hero reads "Mercer Bears" with no conference line
+at all — Phase 4 behaviour, unchanged and correct. Only the search row
+substitutes the words "Conference unknown". Nothing to fix; but **Phase 4's docs
+must not promise "Conference unknown" on the team page**, because it is not
+there.
+
+**The board placeholder now carries a uuid onto a provider-id URL, briefly.**
+Matching `team.id === teamId || team.providerTeamId === teamId` means opening
+`/teams/251` for a team that is on a loaded board paints a placeholder whose
+`team.id` is our uuid, where the real response a moment later has `null`. It is
+harmless only because of Phase 1's finding that **nothing reads `team.id` off
+`TeamDetailResponse`** — and this is now the second thing leaning on that fact.
+If anything ever does start reading it, `useTeam.ts` and `resolveTeam` are the
+two places to fix, together.
+
+**Backtracking over a prefix is free, measured.** `tex` → `te` → `tex` cost one
+request and then zero. The Risks table predicted "a realistic search is two to
+four requests, and backtracking over a prefix costs none"; that is now observed
+rather than argued. The four things that produce it — the 250 ms debounce, the
+`trim().toLowerCase()` key, the five-minute `staleTime`, and the route's own
+`max-age=300` — are load-bearing together, and removing any one of them would
+turn a keystroke back into a Worker request.
+
+**A stale `workerd` does not die when you kill it.** Killing the process
+listening on a drill port left another listener there within a second: wrangler
+restarts its child. The parent must go too, or — much cheaper — use a port
+nothing has touched. This is the third appearance in three phases of the same
+family of problem (Phase 1's stale 8787, Phase 2's warm cache, this): **the dev
+environment lies in ways that read as success**, and every one of them was
+caught by asking for a fact only the new state could produce.
+
+**Two local-environment facts that are not regressions, and will recur.**
+
+- `npm run dev:web` reported "Port 5173 is in use" and landed on **5174**.
+  `project-notes.md §11` documents 5173. Read the "Local:" line, exactly as
+  Phase 1 said to read the "Ready on" line.
+- `npm run smoke` against the local Worker is **17/18**, failing "every card has
+  sports data — 3 of 6". California, Army and Central Michigan come back
+  `not_found`. This is the mock roster, which is by its own comment "the fifty
+  seeded in `supabase/seed.sql`", meeting the live database, which no longer
+  holds the seeded boards (project-notes §9: the real nine people replaced them
+  on 2026-09-19). Local dev against the live database will always show those
+  cards unavailable and smoke will always report 17/18 there. Nothing in Phase 3
+  touched the API; the same failure is there at `HEAD`.
+
+**In mock mode every searched team is logo-less and every board team is not,**
+now observed rather than predicted (Phase 1 called it). The same team fetched
+two ways proves it in one line: `/teams/<uuid>` rendered an `<img>` from
+Postgres, `/teams/251` rendered the initials fallback, because mock
+`listTeams()` returns `logoUrl: null` for all of them. On a result row the
+fallback prints the abbreviation, so a row reads "TEX Texas Longhorns SEC · TEX"
+locally and shows a real crest in production. Nobody should file that as a bug.
+
+**For Phase 4, three things this phase fixed in place:**
+
+- The page's landmark is `<form role="search" aria-label="Team search">`. The
+  header's must be labelled differently — the plan says "Site search" — or the
+  two landmarks are indistinguishable.
+- `prefetchViewerPages()` now loads three chunks, not two.
+- The page reads `?q=` as the source of truth and yields to any value it did not
+  write itself, so `HeaderSearch` can navigate to `/search?q=…` from `/search`
+  itself and simply clear its own box, exactly as the plan describes.
 
 ---
 

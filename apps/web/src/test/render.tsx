@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, parsePath, Route, Routes } from 'react-router';
 
 /**
  * Component tests render to static markup: the real components, real router,
@@ -14,11 +14,18 @@ export function renderAt(
   routePath: string,
   element: ReactNode,
   client?: QueryClient,
+  /**
+   * Router state the page was navigated with — what a link's `state` prop
+   * carries. A team page reached from a board or from search reads its back
+   * link out of this (`readFromState`), and it is not in the URL.
+   */
+  state?: unknown,
 ) {
   const queryClient = client ?? new QueryClient();
+  const entry = state === undefined ? path : { ...parsePath(path), state };
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[path]}>
+      <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route path={routePath} element={element} />
         </Routes>

@@ -7,6 +7,11 @@ import { pollIntervalFor, POLL } from '../../lib/poll';
  * A board card already holds this team's identity and snapshot, in exactly the
  * shape the team route returns. Showing it while the team request is in flight
  * makes board → team instant; the real response replaces it a moment later.
+ *
+ * Either id matches, because since Phase 1 a team page has two addresses: our
+ * uuid (what a board card links to) and the provider's id (what a search
+ * result links to). A team that happens to be on a loaded board paints
+ * instantly whichever door it was opened through.
  */
 function fromLoadedBoards(
   queryClient: QueryClient,
@@ -15,7 +20,9 @@ function fromLoadedBoards(
   for (const [, board] of queryClient.getQueriesData<BoardResponse>({
     queryKey: queryKeys.boards,
   })) {
-    const entry = board?.teams.find((candidate) => candidate.team.id === teamId);
+    const entry = board?.teams.find(
+      (candidate) => candidate.team.id === teamId || candidate.team.providerTeamId === teamId,
+    );
     if (board !== undefined && entry !== undefined) {
       return { team: entry.team, season: board.season, snapshot: entry.snapshot };
     }

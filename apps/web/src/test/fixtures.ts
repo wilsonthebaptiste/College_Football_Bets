@@ -14,8 +14,10 @@ import type {
   ScheduleItem,
   Team,
   TeamDetailResponse,
+  TeamIdentity,
   TeamRecord,
   TeamScheduleResponse,
+  TeamSearchResponse,
   TeamSnapshot,
 } from '@cfb/shared';
 
@@ -116,7 +118,8 @@ export const RECORD: TeamRecord = {
 
 export const RANKED: RankingState = { kind: 'ranked', rank: 4, poll: 'AP Top 25', week: 5 };
 
-export function makeSnapshot(team: Team, overrides: Partial<TeamSnapshot> = {}): TeamSnapshot {
+/** `PageTeam`, so a team with no row of ours (`id: null`) has a snapshot too. */
+export function makeSnapshot(team: PageTeam, overrides: Partial<TeamSnapshot> = {}): TeamSnapshot {
   const { id: _id, ...identity } = team;
   const nextGame: NextGameSlot = { kind: 'game', game: makeGame() };
   return {
@@ -302,6 +305,42 @@ export function scheduleResponse(
       error,
     },
   };
+}
+
+// ─── Search (plan-search-engine, Phase 3) ───────────────────────────────────
+
+/**
+ * A team as the SEARCH route returns it: the provider's identity, with no uuid
+ * of ours at all. Most of the country is this, not a board team — 762 teams
+ * are listed and 54 sit on boards.
+ */
+export function makeIdentity(overrides: Partial<TeamIdentity> = {}): TeamIdentity {
+  const { id: _id, ...identity } = makeTeam();
+  return { ...identity, ...overrides };
+}
+
+/**
+ * Mercer, and what an FCS school genuinely looks like coming back from the
+ * provider: no conference (the map is FBS-only) and, for 12% of the list, no
+ * logo either. Both render as existing vocabulary, never as an invention (§4).
+ */
+export function fcsIdentity(overrides: Partial<TeamIdentity> = {}): TeamIdentity {
+  return makeIdentity({
+    provider: 'espn',
+    providerTeamId: '2382',
+    name: 'Mercer Bears',
+    displayName: 'Mercer',
+    abbreviation: 'MER',
+    logoUrl: null,
+    conference: null,
+    primaryColor: null,
+    altColor: null,
+    ...overrides,
+  });
+}
+
+export function searchResponse(teams: TeamIdentity[]): TeamSearchResponse {
+  return { teams };
 }
 
 export function makePrediction(overrides: Partial<Prediction> = {}): Prediction {

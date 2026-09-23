@@ -1,0 +1,112 @@
+.page {
+  display: grid;
+  gap: var(--space-4);
+  /* The results list is the page's whole width at 320 px; nothing scrolls sideways. */
+  max-width: 48rem;
+}
+
+.title {
+  font-size: var(--text-display);
+  letter-spacing: -0.01em;
+}
+
+.form {
+  display: grid;
+}
+
+.field {
+  display: grid;
+  gap: var(--space-1);
+  font-weight: 600;
+}
+
+.field input {
+  /* 44 px: a touch target, not a text box that happens to be tappable. */
+  min-height: 44px;
+  min-width: 0;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: var(--text-lg);
+  font-weight: 400;
+}
+
+.field input:focus-visible {
+  outline-offset: 0;
+}
+
+.hint {
+  max-width: 44ch;
+  margin: 0;
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+}
+
+/* Reserves its line, so results appearing never shift the list under a finger. */
+.status {
+  min-height: 1.5em;
+  color: var(--color-ink-secondary);
+  font-size: var(--text-sm);
+}
+
+.problem {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-stale-soft);
+  color: var(--color-loss);
+  font-weight: 600;
+}
+
+.results {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The whole row is the link, so the tap target is the row, not the name. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  text-decoration: none;
+}
+
+.row:hover {
+  border-color: var(--color-accent);
+}
+
+.row:hover .rowName {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.12em;
+}
+
+.rowText {
+  display: grid;
+  /* Without this a long team name pushes the row wider than the page. */
+  min-width: 0;
+}
+
+.rowName {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  line-height: var(--leading-tight);
+  overflow-wrap: anywhere;
+}
+
+.rowMeta {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}

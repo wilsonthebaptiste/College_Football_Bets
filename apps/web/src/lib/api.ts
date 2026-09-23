@@ -34,6 +34,14 @@ export const api = {
     getPublic<PredictionResponse>(`/api/games/${id(providerGameId)}/prediction`, signal),
 
   /**
+   * Public team search (plan-search-engine, Phase 2). The same ranking the
+   * admin console's own search uses, through the public door: no token, and a
+   * five-minute `Cache-Control`, so backtracking over a prefix costs nothing.
+   */
+  searchTeams: (query: string, signal?: AbortSignal) =>
+    getPublic<TeamSearchResponse>(`/api/search/teams?q=${encodeURIComponent(query)}`, signal),
+
+  /**
    * "Is this session an administrator?" Asked by `RequireAdmin` and by the
    * header's Admin link. A dead session is cleared without a redirect: the
    * guard sends the admin to sign in by itself, and the header must not.
@@ -119,6 +127,13 @@ export const queryKeys = {
   team: (teamId: string) => ['team', teamId] as const,
   schedule: (teamId: string) => ['team', teamId, 'schedule'] as const,
   prediction: (providerGameId: string) => ['prediction', providerGameId] as const,
+  /**
+   * The public search. Deliberately NOT under the `'admin'` prefix: signing out
+   * clears that prefix, and a viewer's search results are not the admin's.
+   * `query` is already normalized by the caller (`trim().toLowerCase()`), so
+   * "Texas" and "texas" are one entry and one request, not two.
+   */
+  search: (query: string) => ['search', query] as const,
   adminSession: ['admin', 'session'] as const,
   adminUsers: ['admin', 'users'] as const,
   adminBoard: (userId: string) => ['admin', 'board', userId] as const,
