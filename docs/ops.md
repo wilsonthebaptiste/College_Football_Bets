@@ -342,13 +342,21 @@ same origin, same KV namespace, same `ESPN_USER_AGENT` — so it was steps 5 and
 | The browser, against the deployed site        | 54 of 54 checks in headless Edge, plus 6 axe scans clean in light and dark at 390 px, and no sideways scroll at 320 px                                                                                         |
 | Requests and KV writes over 24 hours          | _Owner: read after 24 hours ([Watching usage](#watching-usage)). Watch `schedule`, not `team_list`_                                                                                                            |
 
-### The "who has this team" release (pending)
+### The "who has this team" release (2026-09-25)
 
-The third deploy: one new public route, `GET /api/selections`, and the line it
-feeds on the search results and in the team page's hero. **Nothing in the
-configuration changes** — same origin, same KV namespace, same
-`ESPN_USER_AGENT`, no new secret and no new binding — so it is steps 5 and 7
+The third deploy: Worker version `4365c923-a39f-4405-9c90-5a180e13bf6d`, and a
+Pages deployment to the same project. One new public route,
+`GET /api/selections`, and the line it feeds on the search results and in the
+team page's hero. **Nothing in the configuration changed** — same origin, same
+KV namespace, same `ESPN_USER_AGENT`, no new secret and no new binding, which
+wrangler's own binding table confirmed at the dry run — so it was steps 5 and 7
 only, with no step 8.
+
+This is also the first release pushed to a git remote: `main` went to
+<https://github.com/wilsonthebaptiste/College_Football_Bets> carrying Phases 1–7
+at once, seven commits. The CI `deploy` job did **not** run and this deploy was
+by hand, because `DEPLOY_ENABLED` is still unset (see
+[Continuous deployment](#continuous-deployment)).
 
 Verified before deploying, so that "it works" afterwards cannot be a false
 positive:
@@ -363,15 +371,17 @@ positive:
 | The index blocked in the browser             | Team page and search results both whole, no owner line, **no alert**, no reference number, no raw value — the designed silence, drilled rather than trusted                                              |
 | Postgres blocked                             | `/api/selections` is a clean 500 with a reference number and **no** `Cache-Control`; `/api/search/teams` still answers 200, so typing survives a database outage                                         |
 
-To fill in after the deploy:
+And afterwards, on real ESPN data:
 
-| Question                                     | Answer                                                                                 |
-| -------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Worker version                               | _after step 5_                                                                         |
-| Did the new public path arrive?              | _`/api/selections` should be 404 on the live Worker before and 200 after_              |
-| `npm run smoke` against the API and the site | _expect every line, including the four the index added_                                |
-| `npm run verify:rls` after the release       | _expect 44 passed, 0 failed — worth repeating on any release that adds a public route_ |
-| Requests and KV writes over 24 hours         | _read after 24 hours ([Watching usage](#watching-usage))_                              |
+| Question                                     | Answer                                                                                                                                                                                                                                                    |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Did the new public path arrive?              | Yes. `/api/selections` was **404 on the live Worker before** the deploy and **200 after**, returning 54 teams picked by the nine real people, `public, max-age=300`, in ~205 ms                                                                           |
+| `npm run smoke` against the API and the site | **24 passed, 0 failed** — every line, including the four the index added and both CORS checks, with 6 of 6 cards on the sampled board carrying sports data                                                                                                |
+| `npm run verify:rls` after the release       | **44 passed, 0 failed, 0 skipped**, probe rows cleaned up. Worth repeating on any release that adds a public route, which is exactly what this was                                                                                                        |
+| The browser, against the **deployed** site   | **42 of 42** in headless Edge, plus 6 axe scans clean in light and dark at 320, 390 and 1280 px. The 43rd, the live-game ordering check, was skipped and said so: no game was in progress                                                                 |
+| Real data, end to end                        | Texas reads **"Picked by Axel"** and the name opens Axel's board; `?q=texas` returns 12 matches against the mock's 3; Mercer — a real FCS team nobody picked — shows **NR**, a 2-2 record, and **no line at all**                                         |
+| KV writes from this feature                  | **None, confirmed in production.** That isolate's ledger read `{schedule 11, prediction 5}` and was unchanged by a dozen live searches. Zero from `team_list`, `conferences` or `season_calendar` — the cron had already warmed them. **No new category** |
+| Requests and KV writes over 24 hours         | _Owner: read after 24 hours ([Watching usage](#watching-usage)). Watch `schedule`, as with the search release_                                                                                                                                            |
 
 ---
 

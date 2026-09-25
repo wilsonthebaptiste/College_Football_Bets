@@ -37,7 +37,7 @@ team and open them; only the administrator can change the boards.
 | API | <https://cfb-api.cfb-api.workers.dev> (Worker `cfb-api`, `--env production`) |
 | Database | Supabase Postgres: 9 people, 54 selections, 65 team rows (11 no longer on any board) |
 | Cost | Nothing. Every service is on a free tier, with no card on file |
-| Source | Branch `main`. Phase 5 is commit `5dd38b3`. **There is no git remote yet** |
+| Source | Branch `main`, pushed to <https://github.com/wilsonthebaptiste/College_Football_Bets> since 2026-09-25 |
 | Tests | 821, in 37 files. `npm run verify` runs typecheck, lint, tests, and the season check |
 
 Built in five phases: foundation and contracts, the sports data layer, the
@@ -405,7 +405,10 @@ network. The test that now covers it reproduces the race directly.
   shared-team path (§27) and a team nobody selected. The live boards were
   replaced with the real nine people and their teams on 2026-09-19, through the
   admin API.
-- **No git remote**, so CI has never run and the deploy job is untested.
+- **The CI deploy job is still untested.** A remote now exists and `main` was
+  pushed to it on 2026-09-25, so the `verify` job runs; the `deploy` job is
+  gated on a `DEPLOY_ENABLED` repository variable that is not set, and every
+  deploy so far has been by hand.
 
 ## 10. What is left
 
@@ -420,8 +423,17 @@ network. The test that now covers it reproduces the race directly.
    searching is nearly free, and the team pages it leads to are what write.
    [ops.md, "The team search release"](../docs/ops.md#the-team-search-release-2026-09-24)
    records what it looked like on the day.
-3. **Optional:** create the GitHub remote, push `main`, and turn on the CI deploy
-   job (docs/ops.md, "Continuous deployment"); a screen-reader pass.
+3. **Read the KV write counter** the day after the "who has this team" release
+   (2026-09-25) as well. It should look like the search release's: `schedule`
+   doing the work, and nothing from the pick index, which makes no provider call
+   and writes no KV at all.
+   [ops.md, "The 'who has this team' release"](../docs/ops.md#the-who-has-this-team-release-2026-09-25)
+   records what it looked like on the day.
+4. **Open the live site on a phone** and check the **Picked by** line: search a
+   team that is on a board and press the name under it.
+5. **Optional:** turn on the CI deploy job — the remote exists and `main` is
+   pushed, so all that is left is the token, the variables, and
+   `DEPLOY_ENABLED` (docs/ops.md, "Continuous deployment"); a screen-reader pass.
 
 ## 11. Commands worth remembering
 

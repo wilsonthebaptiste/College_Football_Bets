@@ -1241,6 +1241,9 @@ are independent: the database can be down and the search still answers.
 
 ### Level C — The live site
 
+Deployed 2026-09-25. Smoke is 24/24, `verify:rls` is 44/44, and 42 browser
+checks pass against the deployed site; what is left here is your own phone.
+
 1. **Search on your phone.** Open <https://cfb-board-pfc.pages.dev>, search a
    team you know is on a board, and press the name under it. It should open
    that board.
@@ -1265,23 +1268,25 @@ are independent: the database can be down and the search still answers.
 
 ### Part Two exit criteria and how each is checked
 
-| Exit criterion (plan-search-engine, Part Two)                                 | Checked by           | Status                                    |
-| ----------------------------------------------------------------------------- | -------------------- | ----------------------------------------- |
-| One public read gives every board's picks, with no token and no provider call | Level A              | ✅ automated                              |
-| A search result names the boards that hold the team, each name a link         | Level A, Level B 1   | ✅ automated browser run · ⏳ you         |
-| The same line on the team page, by **both** of its addresses                  | Level A, Level B 2–3 | ✅ automated browser run · ⏳ you         |
-| A team nobody picked shows nothing at all                                     | Level A, Level B 4   | ✅ automated browser run · ⏳ you         |
-| No link nested inside another; the team link's name unchanged                 | Level A              | ✅ automated                              |
-| A slow or broken index costs the page nothing, and says nothing               | Level A, Level B2    | ✅ automated browser run · ⏳ you         |
-| One index request per document, never one per keystroke                       | Level A, Level B 6–7 | ✅ automated browser run · ⏳ you         |
-| 32 px targets, no sideways scroll at 320 px, axe clean, keyboard reachable    | Level B 5, 8         | ✅ automated browser run · ⏳ you         |
-| No new KV category: this feature makes no provider call                       | Level A (by hand)    | ✅ ledger unchanged over a dozen searches |
-| Deployed, smoke green, `verify:rls` 44/44                                     | Level C              | ⏳ the deploy                             |
+| Exit criterion (plan-search-engine, Part Two)                                 | Checked by           | Status                                                               |
+| ----------------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------- |
+| One public read gives every board's picks, with no token and no provider call | Level A              | ✅ automated                                                         |
+| A search result names the boards that hold the team, each name a link         | Level A, Level B 1   | ✅ automated browser run · ⏳ you                                    |
+| The same line on the team page, by **both** of its addresses                  | Level A, Level B 2–3 | ✅ automated browser run · ⏳ you                                    |
+| A team nobody picked shows nothing at all                                     | Level A, Level B 4   | ✅ automated browser run · ⏳ you                                    |
+| No link nested inside another; the team link's name unchanged                 | Level A              | ✅ automated                                                         |
+| A slow or broken index costs the page nothing, and says nothing               | Level A, Level B2    | ✅ automated browser run · ⏳ you                                    |
+| One index request per document, never one per keystroke                       | Level A, Level B 6–7 | ✅ automated browser run · ⏳ you                                    |
+| 32 px targets, no sideways scroll at 320 px, axe clean, keyboard reachable    | Level B 5, 8         | ✅ automated browser run · ⏳ you                                    |
+| No new KV category: this feature makes no provider call                       | Level A (by hand)    | ✅ ledger unchanged over a dozen searches, locally and in production |
+| Deployed, smoke green, `verify:rls` 44/44                                     | Level C              | ✅ deployed 2026-09-25 · ⏳ your phone                               |
 
 "Automated browser run" means 43 checks in headless Edge against a real
 `wrangler dev` Worker and the **production build** served by `vite preview`,
-including 6 axe scans in light and dark at 320, 390 and 1280 px. Details are in
-the Phase 7 completion notes in
+including 6 axe scans in light and dark at 320, 390 and 1280 px — and then 42
+of the same checks again against the **deployed** site on real ESPN data, the
+43rd skipped because no game was in progress. Details are in the Phase 7
+completion notes in
 [context/plan-search-engine.md](context/plan-search-engine.md).
 
 ---

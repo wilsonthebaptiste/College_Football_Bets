@@ -1794,7 +1794,47 @@ team, and the boards sharing no teams); `docs/ops.md` gains a "What 'who has
 this team' costs" section and a release record carrying the pre-deploy numbers
 above, with blanks for the deploy itself.
 
-**Still open:** the deploy, and `verify:rls` against the live project after it.
+### The deploy (2026-09-25)
+
+Worker version `4365c923-a39f-4405-9c90-5a180e13bf6d`, and a Pages deployment to
+the same project. **No configuration changed** — wrangler's own binding table at
+the dry run listed the same KV namespace, the same origin and the same
+`ESPN_USER_AGENT` — so it was `docs/ops.md` steps 5 and 7 only, with no step 8.
+Numbers are recorded in
+[ops.md, "The 'who has this team' release"](../docs/ops.md#the-who-has-this-team-release-2026-09-25).
+
+Checked before deploying, so that "it works" could not be a false positive:
+`/api/selections` was **404 on the live Worker** beforehand and 200 after.
+
+Afterwards, on real ESPN data:
+
+- `npm run smoke` against both URLs: **24 passed, 0 failed**, including the four
+  index checks and both CORS checks, with 6 of 6 cards filled on the board it
+  samples.
+- `npm run verify:rls`: **44 passed, 0 failed, 0 skipped**, probe rows cleaned
+  up — the check this plan calls for on any release that adds a public route.
+- The same browser pass as locally, against the **deployed** site: **42 of 42**,
+  plus 6 axe scans clean in light and dark. The 43rd check was the live-game
+  ordering one, and it was **skipped rather than passed**, because no game was
+  in progress; the script says so instead of reporting a green it did not earn.
+- Texas reads **"Picked by Axel"**, and the chip opens Axel's board whose `h1`
+  is Axel. `?q=texas` returns 12 matches on real data against the mock's 3.
+  Mercer — a real FCS team nobody picked — shows **NR**, a 2-2 record and **no
+  line at all**, which is the ordinary case for most of the ~762 teams.
+- **The KV criterion, confirmed in production.** That isolate's ledger read
+  `{schedule 11, prediction 5}` and was **unchanged** by a dozen live searches.
+  Zero from `team_list`, `conferences` or `season_calendar`, because the cron
+  had already warmed them. No new category, exactly as Phase 5 predicted from
+  the local measurement.
+
+**This release was also the first push to a git remote.** One now exists
+(<https://github.com/wilsonthebaptiste/College_Football_Bets>), and `main` went
+to it carrying Phases 1–7 in seven commits. CI's `deploy` job did not run —
+`DEPLOY_ENABLED` is still unset — so the deploy was by hand, as every one so far
+has been.
+
+**Still open, and the owner's:** the site on their own phone, and the 24-hour
+usage numbers ([Watching usage](../docs/ops.md#watching-usage)).
 
 ### Findings
 
