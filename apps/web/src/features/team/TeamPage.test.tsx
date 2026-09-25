@@ -1,6 +1,8 @@
 import type {
+  PageTeam,
   PredictionResponse,
   TeamDetailResponse,
+  TeamOwnersResponse,
   TeamScheduleResponse,
   TeamSnapshot,
 } from '@cfb/shared';
@@ -15,9 +17,11 @@ import {
   makeBoard,
   makeBoardTeam,
   makeGame,
+  makeOwner,
   makePrediction,
   makeSnapshot,
   makeTeam,
+  ownersResponse,
   predictionResponse,
   PROVIDER_DOWN,
   scheduleResponse,
@@ -25,6 +29,7 @@ import {
   teamDetail,
 } from '../../test/fixtures';
 import { RAW_VALUE, renderAt, spokenText, visibleText } from '../../test/render';
+import { SearchPage } from '../search/SearchPage';
 import { TeamPage } from './TeamPage';
 
 /**
@@ -424,5 +429,179 @@ describe('the team page’s other states', () => {
   it('shows a loading state, not a blank page, while the team is on its way', () => {
     const { heard } = renderTeam({});
     expect(heard).toContain('Loading team data…');
+  });
+});
+
+// ─── Phase 7 — "Picked by" in the hero ──────────────────────────────────────
+
+const WILSON = makeOwner('Wilson', '11111111-1111-4111-8111-111111111111');
+const JORDAN = makeOwner('Jordan', '22222222-2222-4222-8222-222222222222');
+
+/**
+ * The same team at its other address. A search result opens `/teams/333`, and
+ * the response for that URL carries no uuid of ours at all (Phase 1) — which
+ * is why the index is keyed on the provider's id and never on `team.id`.
+ */
+const searched: PageTeam = { ...team, id: null };
+
+/** The pick index: an answer, a failure, or still on its way. */
+type Index = TeamOwnersResponse | ApiError | undefined;
+
+/** Renders the page at one of a team's two addresses, with the index seeded. */
+function renderByUrl(teamId: string, subject: PageTeam, index: Index, live = false) {
+  const client = new QueryClient({ defaultOptions: { queries: { retryOnMount: false } } });
+  const snapshot = makeSnapshot(subject, live ? { liveGame: liveGame() } : {});
+  client.setQueryData(queryKeys.team(teamId), teamDetail(subject, envelope(snapshot)));
+  client.setQueryData(queryKeys.schedule(teamId), scheduleResponse(subject));
+  if (index instanceof ApiError) seedError(client, queryKeys.owners, index);
+  else if (index !== undefined) client.setQueryData(queryKeys.owners, index);
+
+  const markup = renderAt(`/teams/${teamId}`, '/teams/:teamId', <TeamPage />, client);
+  return { markup, seen: visibleText(markup), heard: spokenText(markup), client };
+}
+
+describe('exit 1 — the hero names the boards that hold this team, by both of its addresses', () => {
+  const ONE_BOARD = ownersResponse({ '333': [WILSON] });
+
+  it('by our uuid, which is the address a board card links to', () => {
+    const { markup, seen } = renderByUrl(team.id, team, ONE_BOARD);
+    expect(seen).toContain('Picked by Wilson');
+    expect(markup).toContain(`href="/u/${WILSON.userId}"`);
+    expectHeroAndPanels(seen);
+  });
+
+  it('by the provider’s id, which is the address a search result links to', () => {
+    const { markup, seen } = renderByUrl(searched.providerTeamId, searched, ONE_BOARD);
+    expect(seen).toContain('Picked by Wilson');
+    expect(markup).toContain(`href="/u/${WILSON.userId}"`);
+    expectHeroAndPanels(seen);
+  });
+
+  /**
+   * The counterfactual for the criterion above: keyed on `team.id`, the uuid
+   * page would find this entry and the searched page would look up `null`.
+   * Keyed on the provider's id, neither does.
+   */
+  it('reads the index by the provider’s id, never by our uuid', () => {
+    const byUuid = ownersResponse({ [team.id]: [WILSON] });
+    expect(renderByUrl(team.id, team, byUuid).seen).not.toContain('Picked by');
+    expect(renderByUrl(searched.providerTeamId, searched, byUuid).seen).not.toContain('Picked by');
+  });
+
+  it('names both boards when two have it, in the order the index gives', () => {
+    const { seen } = renderByUrl(team.id, team, ownersResponse({ '333': [JORDAN, WILSON] }));
+    expect(seen).toContain('Picked by Jordan Wilson');
+  });
+
+  /**
+   * Stated as an identity rather than as an absence: the hero of a team nobody
+   * picked is the same markup the page produced before this phase. Most of the
+   * ~762 teams are this case, so it is the ordinary page, not a degraded one.
+   */
+  it('leaves the hero exactly as Phase 4 left it for a team nobody has picked', () => {
+    const others = renderByUrl(team.id, team, ownersResponse({ '2641': [WILSON] }));
+    const noIndexAtAll = renderByUrl(team.id, team, undefined);
+    expect(others.markup).toBe(noIndexAtAll.markup);
+    expect(others.seen).not.toContain('Picked by');
+    expectHeroAndPanels(others.seen);
+    expect(others.seen).not.toMatch(RAW_VALUE);
+  });
+});
+
+describe('exit 2 — the line sits in the identity card, and moves nothing else', () => {
+  const { markup, seen } = renderByUrl(team.id, team, ownersResponse({ '333': [WILSON] }), true);
+
+  it('follows the team’s name and precedes the card’s own footer', () => {
+    expect(seen.indexOf('Alabama Crimson Tide, SEC')).toBeLessThan(seen.indexOf('Picked by'));
+    expect(seen.indexOf('Picked by')).toBeLessThan(seen.indexOf('2026 season, week 5'));
+  });
+
+  it('leaves a game in progress ahead of everything below the card (§11, §51)', () => {
+    expect(seen.indexOf('2026 season, week 5')).toBeLessThan(seen.indexOf('LIVE'));
+    expect(seen.indexOf('LIVE')).toBeLessThan(seen.indexOf('Previous game'));
+  });
+
+  it('adds no second heading and no raw value', () => {
+    expect(headings(markup)).toEqual([
+      'h1:Alabama',
+      'h2:Previous game',
+      'h2:Next game',
+      'h2:Matchup prediction',
+      'h2:2026 schedule',
+    ]);
+    expect(seen).not.toMatch(RAW_VALUE);
+    expect(spokenText(markup)).not.toMatch(RAW_VALUE);
+  });
+});
+
+describe('exit 3 — the index is garnish here too: it degrades, it never fails (§38, §42)', () => {
+  const DB_DOWN = new ApiError(
+    {
+      kind: 'internal',
+      message: 'The application database is temporarily unreachable.',
+      requestId: 'req-db',
+    },
+    500,
+  );
+
+  /**
+   * The symptom of a broken index is the absence of a line, which is exactly
+   * what "nobody has this team" looks like. That is the design, and the reason
+   * it is drilled here rather than trusted.
+   */
+  it('renders the whole page with the index failed, and says nothing about it', () => {
+    const { markup, seen } = renderByUrl(team.id, team, DB_DOWN);
+    expectHeroAndPanels(seen);
+    expect(seen).toContain('W 34–17');
+    expect(seen).not.toContain('Picked by');
+    expect(markup).not.toContain('role="alert"');
+    expect(seen).not.toContain('temporarily unreachable');
+    expect(seen).not.toContain('req-db');
+    expect(headings(markup)).toHaveLength(5);
+    expect(seen).not.toMatch(RAW_VALUE);
+  });
+
+  it('renders the whole page with the index still on its way', () => {
+    const { markup, seen, heard } = renderByUrl(team.id, team, undefined);
+    expectHeroAndPanels(seen);
+    expect(seen).not.toContain('Picked by');
+    expect(markup).not.toContain('role="alert"');
+    // Nothing waits for it, so nothing announces waiting for it either.
+    expect(heard).not.toMatch(/loading.*(board|picked|owner)/i);
+  });
+});
+
+describe('exit 4 — one index request per document, whatever it is read for', () => {
+  function ownerKeys(client: QueryClient): readonly (readonly unknown[])[] {
+    return client
+      .getQueryCache()
+      .getAll()
+      .map((query) => query.queryKey)
+      .filter((key) => key[0] === 'owners');
+  }
+
+  it('asks under one key however many team pages a document opens', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retryOnMount: false } } });
+    for (const teamId of ['333', '251', '2641']) {
+      const subject = makeTeam({ providerTeamId: teamId });
+      client.setQueryData(
+        queryKeys.team(teamId),
+        teamDetail(subject, envelope(makeSnapshot(subject))),
+      );
+      renderAt(`/teams/${teamId}`, '/teams/:teamId', <TeamPage />, client);
+    }
+    expect(ownerKeys(client)).toEqual([queryKeys.owners]);
+  });
+
+  /**
+   * The two callers share one request: the key is a constant in `lib/`, not a
+   * page's own. Arriving at a team page from a search costs no extra read.
+   */
+  it('asks under that same key from the search page and the team page alike', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retryOnMount: false } } });
+    renderAt('/search?q=texas', '/search', <SearchPage />, client);
+    client.setQueryData(queryKeys.team('333'), teamDetail(team, envelope(makeSnapshot(team))));
+    renderAt('/teams/333', '/teams/:teamId', <TeamPage />, client);
+    expect(ownerKeys(client)).toEqual([queryKeys.owners]);
   });
 });

@@ -995,7 +995,10 @@ not a promise.
 npm run verify
 ```
 
-The result should be 35 test files and 777 tests. The search added 73 to
+At the search release this was 35 files and 777 tests, which is what the four
+phases below add up to. Part Two — who has each team — has since taken the
+suite to 37 files and 821 tests; see
+[Testing who has a team](#testing-who-has-a-team). The search added 73 to
 Phase 5's 704, in four phases:
 
 - **The team page for any team** (11). `/api/teams/<providerTeamId>` and its
@@ -1129,28 +1132,184 @@ and dark. Details are in the Phase 4 completion notes in
 
 ---
 
+## Testing who has a team
+
+A search result and a team page now say **who has this team**: the boards that
+hold it, each name a link to that board. It needs nothing new — the same
+Supabase setup, the same mock season. One endpoint was added,
+`GET /api/selections`, which inverts every board's picks into "provider team id
+→ who has it", and the browser joins it onto whatever is on screen.
+
+**Restart both servers first** (`npm run dev`, `npm run dev:web`), and read the
+terminal for the ports they actually take.
+
+**Worth knowing before you test:**
+
+- **Most teams show no line at all, and that is correct.** 54 of the ~762 teams
+  are on somebody's board. A team nobody picked shows nothing — no label, no
+  "nobody has this team". That would be noise on almost every row.
+- **Every line on real data is one name long.** The nine real boards share no
+  teams at all, so "Picked by" never names two people on the live site today.
+  The two-name case is real and covered by tests, but you cannot see it by hand.
+- **A broken index looks exactly like "nobody picked this team".** That is the
+  design: the names are garnish, and nothing on the page waits for them or
+  complains about them. It also means the site will never tell you the index is
+  down — `/api/health` and the Worker's logs will.
+- **In local development the names are the live database's real nine people**,
+  not the nine placeholders in `supabase/seed.sql`. Unfamiliar names are not a
+  bug.
+
+### Level A — Automated checks
+
+```powershell
+npm run verify
+```
+
+The result should be 37 test files and 821 tests. Part Two added 44 to the
+search's 777, in three phases:
+
+- **The pick index** (11). `GET /api/selections` with no token: exactly one
+  database request, no `Authorization` on it, and no ESPN request at all — it
+  answers 200 even with the provider forced down. A team on two boards lists
+  both alphabetically, a team on none is absent rather than empty, an empty
+  database is `{"owners":{}}` at 200, and a row from another provider or with a
+  broken join is dropped while the rest survive. A database failure is a clean
+  5xx with a reference number and **no** cache lifetime.
+- **"Picked by" on the search results** (21). The line and its `/u/:userId`
+  links, two names in the index's order, no line and no empty element for an
+  unpicked team, **no link nested inside another**, the team link's accessible
+  name unchanged, a failed or still-loading index leaving the results complete
+  and silent, one index request per page rather than one per keystroke, and the
+  admin refresh after a board change.
+- **The team page** (12). The same line in the hero by **both** of a team's
+  addresses — our uuid and the provider's id — read by the provider's id and
+  never by the uuid; both boards named when two have it; the hero byte-for-byte
+  unchanged for a team nobody picked; the line inside the identity card and
+  above its footer, with a game in progress still ahead of everything below the
+  card; a failed and a still-loading index each leaving the page whole and
+  silent; and one index request per document however many team pages it opens.
+
+Then the build and the key scan:
+
+```powershell
+npm run build:web
+npm run check:bundle
+```
+
+`PickedBy` and the index hook build as a shared 0.71 kB chunk that `/search`
+and the team page both pull in — not part of the 377 kB index chunk, so a
+visitor who only opens the home page never downloads it.
+
+### Level B — The website
+
+Open <http://localhost:5173>.
+
+1. **A search result names the board.** Search `texas`. Under the team's line
+   there is **Picked by** and a name. Press the name: it opens that person's
+   board, and their board's heading is their name.
+2. **The team page says the same.** Go back, and press the team's own line
+   instead. The same **Picked by** line is in the hero, under the team's name
+   and above the season line.
+3. **Both addresses agree.** Open a board, press a card, and note the
+   `/teams/<uuid>` URL. It shows the same names as the `/teams/<providerTeamId>`
+   URL a search result opens. (Identity comes from a different place on each —
+   the logo differs in mock mode — but the names do not.)
+4. **A team nobody picked.** Search `mercer` and open it. No **Picked by** line
+   on the row and none on the page, and nothing where one would have been.
+5. **Keyboard only.** From the page's search box: Tab reaches the team's line,
+   Tab again reaches the owner's name, Enter opens that board. Browser Back
+   returns to your results with the query still in the box.
+6. **It is asked for once.** With the Network tab open, load `/search?q=texas`
+   and type three more letters. There is **one** `/api/selections` request, not
+   one per keystroke. Press a result: still one. (A full page reload is a new
+   document and does ask again — that is a fresh query cache, not a leak.)
+7. **The home page asks for nothing.** Load `/` with the Network tab open: no
+   `/api/selections` request at all. Only the pages that show the names ask.
+8. **Phone width.** At 320 px, nothing scrolls sideways and each name is at
+   least 32 px tall.
+
+### Level B2 — Failure states
+
+| Do this                                                                                                                 | What you should see                                                                                                                                                             |
+| ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| In DevTools, block the request URL `*/api/selections`, then reload `/search?q=texas`                                    | After about four seconds (two retries), the results are **complete and silent**: every team listed, no owner lines, no error, no reference number, and the count line unchanged |
+| With it still blocked, open a team page                                                                                 | The whole page — hero, games, prediction, schedule — with no owner line and no error. Indistinguishable from a team nobody picked, which is the design                          |
+| Stop `npm run dev`, restart it with `npx wrangler dev --var SUPABASE_URL:http://127.0.0.1:9` in `apps/api`, then search | Searching still works and still lists teams: the search route never touches Postgres. `/api/selections` alone is a 500 with a reference number and **no** `Cache-Control`       |
+
+That last drill is the one worth doing deliberately. It proves the two halves
+are independent: the database can be down and the search still answers.
+
+### Level C — The live site
+
+1. **Search on your phone.** Open <https://cfb-board-pfc.pages.dev>, search a
+   team you know is on a board, and press the name under it. It should open
+   that board.
+2. **Smoke.**
+
+   ```powershell
+   npm run smoke -- https://cfb-api.cfb-api.workers.dev https://cfb-board-pfc.pages.dev
+   ```
+
+   Every line should pass, including the four the index added: that
+   `/api/selections` answers, that it is cacheable, that every name in it is a
+   board that exists, and that every team on the board the script samples
+   appears in the index under that board's owner.
+
+3. **`verify:rls`**, because this release adds a public route:
+
+   ```powershell
+   npm run verify:rls
+   ```
+
+   44 of 44, with the probe rows cleaned up.
+
+### Part Two exit criteria and how each is checked
+
+| Exit criterion (plan-search-engine, Part Two)                                 | Checked by           | Status                                    |
+| ----------------------------------------------------------------------------- | -------------------- | ----------------------------------------- |
+| One public read gives every board's picks, with no token and no provider call | Level A              | ✅ automated                              |
+| A search result names the boards that hold the team, each name a link         | Level A, Level B 1   | ✅ automated browser run · ⏳ you         |
+| The same line on the team page, by **both** of its addresses                  | Level A, Level B 2–3 | ✅ automated browser run · ⏳ you         |
+| A team nobody picked shows nothing at all                                     | Level A, Level B 4   | ✅ automated browser run · ⏳ you         |
+| No link nested inside another; the team link's name unchanged                 | Level A              | ✅ automated                              |
+| A slow or broken index costs the page nothing, and says nothing               | Level A, Level B2    | ✅ automated browser run · ⏳ you         |
+| One index request per document, never one per keystroke                       | Level A, Level B 6–7 | ✅ automated browser run · ⏳ you         |
+| 32 px targets, no sideways scroll at 320 px, axe clean, keyboard reachable    | Level B 5, 8         | ✅ automated browser run · ⏳ you         |
+| No new KV category: this feature makes no provider call                       | Level A (by hand)    | ✅ ledger unchanged over a dozen searches |
+| Deployed, smoke green, `verify:rls` 44/44                                     | Level C              | ⏳ the deploy                             |
+
+"Automated browser run" means 43 checks in headless Edge against a real
+`wrangler dev` Worker and the **production build** served by `vite preview`,
+including 6 axe scans in light and dark at 320, 390 and 1280 px. Details are in
+the Phase 7 completion notes in
+[context/plan-search-engine.md](context/plan-search-engine.md).
+
+---
+
 ## Troubleshooting
 
-| Problem                                                        | Fix                                                                                                                                                                                                                                                                                            |
-| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run dev` says port 8787 is in use                         | An old server is still running. Close that terminal, or run `npx wrangler dev --port 8788` in `apps/api`                                                                                                                                                                                       |
-| `/api/users` returns 500 after setup                           | Check `apps/api/.dev.vars`, then restart `npm run dev`, which reads the file only at startup                                                                                                                                                                                                   |
-| Admin calls always return 401                                  | See step 3 of `docs/supabase-setup.md`. The project may have no public signing key                                                                                                                                                                                                             |
-| Things worked last week and nothing does now                   | Free Supabase projects pause after about 7 days idle. Press Restore in the dashboard                                                                                                                                                                                                           |
-| `verify:rls` says "Could not read any app_users"               | The seed has not been run, or the root `.env` points at a different project                                                                                                                                                                                                                    |
-| The website says "Unable to load boards"                       | The API isn't running. Start `npm run dev` in another terminal, then press **Try again**                                                                                                                                                                                                       |
-| The website runs on 5174, not 5173                             | Something else holds 5173. Either port works: the dev server forwards `/api` to 8787 regardless                                                                                                                                                                                                |
-| `/login` says "Admin sign-in isn't set up"                     | `apps/web/.env` is missing or incomplete (Level C). Restart `npm run dev:web` after editing it                                                                                                                                                                                                 |
-| The team page says "Schedule unavailable"                      | The schedule is its own request. Press **Try again**. If it keeps failing, check that DevTools isn't blocking it (Phase 4, Level B2) and that `npm run dev` is running                                                                                                                         |
-| Every card says "Season complete" in September                 | `SEASON_OVERRIDE` is still in `apps/api/.dev.vars` from the offseason drill (Phase 4, Level B3). Remove the line and restart `npm run dev`                                                                                                                                                     |
-| A test account gets "Email or password is incorrect."          | The account isn't in this Supabase project, its password doesn't match `.env`, or its email was never confirmed. Recreate it in **Authentication → Users** with **Auto Confirm User** ticked. Keep the non-admin out of `admins`                                                               |
-| The console says "That team is already on this board."         | It is. The database refuses a team twice on one board (§3); the search marks such teams **On this board**                                                                                                                                                                                      |
-| The console says "This board changed since it was loaded."     | Another tab or device changed the board. Reload the page and try again                                                                                                                                                                                                                         |
-| A changed board still shows the old order elsewhere            | Other people's pages catch up within about a minute (the board's cache). Your own admin browser sees it at once                                                                                                                                                                                |
-| The API answers 429 "Too many requests."                       | More than 120 reads a minute from one address. Wait a few seconds. For a load test, set `READ_RATE_LIMIT_PER_MINUTE=off` in `apps/api/.dev.vars`                                                                                                                                               |
-| No searched team has a logo, but board cards do                | Expected in mock mode: the mock provider reports no logo for any team, and board cards get theirs from the database. Not a bug, and not true on the live site                                                                                                                                  |
-| A fault drill "passes" — search still works with the fault set | Two ways to arm it wrong. Set it with `npx wrangler dev --var SPORTS_PROVIDER_FAULT:teams`, not as a shell variable, and check wrangler's startup binding list names it; then delete `apps\api\.wrangler\state`, or the day-old cached team list answers without the provider ever being asked |
-| Anything about deploying                                       | See the troubleshooting table at the end of [docs/ops.md](docs/ops.md#troubleshooting-a-deployment)                                                                                                                                                                                            |
+| Problem                                                         | Fix                                                                                                                                                                                                                                                                                            |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev` says port 8787 is in use                          | An old server is still running. Close that terminal, or run `npx wrangler dev --port 8788` in `apps/api`                                                                                                                                                                                       |
+| `/api/users` returns 500 after setup                            | Check `apps/api/.dev.vars`, then restart `npm run dev`, which reads the file only at startup                                                                                                                                                                                                   |
+| Admin calls always return 401                                   | See step 3 of `docs/supabase-setup.md`. The project may have no public signing key                                                                                                                                                                                                             |
+| Things worked last week and nothing does now                    | Free Supabase projects pause after about 7 days idle. Press Restore in the dashboard                                                                                                                                                                                                           |
+| `verify:rls` says "Could not read any app_users"                | The seed has not been run, or the root `.env` points at a different project                                                                                                                                                                                                                    |
+| The website says "Unable to load boards"                        | The API isn't running. Start `npm run dev` in another terminal, then press **Try again**                                                                                                                                                                                                       |
+| The website runs on 5174, not 5173                              | Something else holds 5173. Either port works: the dev server forwards `/api` to 8787 regardless                                                                                                                                                                                                |
+| `/login` says "Admin sign-in isn't set up"                      | `apps/web/.env` is missing or incomplete (Level C). Restart `npm run dev:web` after editing it                                                                                                                                                                                                 |
+| The team page says "Schedule unavailable"                       | The schedule is its own request. Press **Try again**. If it keeps failing, check that DevTools isn't blocking it (Phase 4, Level B2) and that `npm run dev` is running                                                                                                                         |
+| Every card says "Season complete" in September                  | `SEASON_OVERRIDE` is still in `apps/api/.dev.vars` from the offseason drill (Phase 4, Level B3). Remove the line and restart `npm run dev`                                                                                                                                                     |
+| A test account gets "Email or password is incorrect."           | The account isn't in this Supabase project, its password doesn't match `.env`, or its email was never confirmed. Recreate it in **Authentication → Users** with **Auto Confirm User** ticked. Keep the non-admin out of `admins`                                                               |
+| The console says "That team is already on this board."          | It is. The database refuses a team twice on one board (§3); the search marks such teams **On this board**                                                                                                                                                                                      |
+| The console says "This board changed since it was loaded."      | Another tab or device changed the board. Reload the page and try again                                                                                                                                                                                                                         |
+| A changed board still shows the old order elsewhere             | Other people's pages catch up within about a minute (the board's cache). Your own admin browser sees it at once                                                                                                                                                                                |
+| The API answers 429 "Too many requests."                        | More than 120 reads a minute from one address. Wait a few seconds. For a load test, set `READ_RATE_LIMIT_PER_MINUTE=off` in `apps/api/.dev.vars`                                                                                                                                               |
+| No searched team has a logo, but board cards do                 | Expected in mock mode: the mock provider reports no logo for any team, and board cards get theirs from the database. Not a bug, and not true on the live site                                                                                                                                  |
+| No **Picked by** line on a team you expected one on             | Most of the ~762 teams are on nobody's board. Check `/api/selections` directly: if the team's provider id is not a key in it, nobody has it. If the whole answer is `{"owners":{}}`, the database is empty or every row is in another provider's namespace                                     |
+| The names under a search result are people you do not recognise | Local development runs against the **live** database, whose nine boards are the real people — not the nine placeholders in `supabase/seed.sql`. Not a bug                                                                                                                                      |
+| A fault drill "passes" — search still works with the fault set  | Two ways to arm it wrong. Set it with `npx wrangler dev --var SPORTS_PROVIDER_FAULT:teams`, not as a shell variable, and check wrangler's startup binding list names it; then delete `apps\api\.wrangler\state`, or the day-old cached team list answers without the provider ever being asked |
+| Anything about deploying                                        | See the troubleshooting table at the end of [docs/ops.md](docs/ops.md#troubleshooting-a-deployment)                                                                                                                                                                                            |
 
 For database-side problems, the full table is at the bottom of
 [docs/supabase-setup.md](docs/supabase-setup.md).

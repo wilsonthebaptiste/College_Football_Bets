@@ -5,6 +5,7 @@ import { Card } from '../../components/Card';
 import { FreshnessLabel } from '../../components/FreshnessLabel';
 import { GameFacts, NextGameLine, PreviousGameLine } from '../../components/GameLine';
 import { LiveScore } from '../../components/LiveScore';
+import { PickedBy } from '../../components/PickedBy';
 import { Skeleton } from '../../components/Skeleton';
 import { ErrorState } from '../../components/States';
 import { RankBadge, RecordBadge } from '../../components/Standing';
@@ -14,6 +15,7 @@ import { formatSeason, teamLabel } from '../../lib/format';
 import { predictionTarget } from '../../lib/prediction';
 import { teamAccent } from '../../lib/teamColor';
 import { useDocumentTitle } from '../../lib/useDocumentTitle';
+import { useTeamOwners } from '../../lib/useTeamOwners';
 import { unavailableMessage } from '../board/TeamCard';
 import { Panel } from './Panel';
 import { PredictionPanel } from './PredictionPanel';
@@ -31,6 +33,13 @@ import { useTeam } from './useTeam';
  * alongside it (§27: never with the board), and the prediction follows once
  * the snapshot names the game. Any one of them can fail, and the others still
  * render.
+ *
+ * The pick index is a fourth, and deliberately not counted among them: it has
+ * no state on this page at all. It says who has this team, renders nothing
+ * when nobody does — which is the ordinary case, most of the ~762 teams — and
+ * nothing when it is slow or broken either (plan-search-engine, Part Two).
+ * Arriving from a search costs no request, because the index is already in the
+ * query cache; a deep link costs one small Postgres read.
  */
 export function TeamPage() {
   const { teamId = '' } = useParams();
@@ -38,6 +47,7 @@ export function TeamPage() {
   const from = readFromState(location.state);
   const team = useTeam(teamId);
   const schedule = useSchedule(teamId);
+  const ownersOf = useTeamOwners();
   const detail = team.data;
   useDocumentTitle(detail === undefined ? null : teamLabel(detail.team));
 
@@ -119,6 +129,13 @@ export function TeamPage() {
             </div>
           )}
         </div>
+        {/*
+          Identity, so it belongs in the identity card — not above the live
+          score, which §11 and §51 put before everything else. Keyed on the
+          provider's id, never on `team.id`, which is null for a team nobody
+          has selected.
+        */}
+        <PickedBy owners={ownersOf(identity.providerTeamId)} />
         <div className={styles.heroFooter}>
           <span>
             {formatSeason(detail.season)}

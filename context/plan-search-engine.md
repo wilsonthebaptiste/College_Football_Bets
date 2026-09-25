@@ -26,13 +26,14 @@ boards. These three phases make it say so, and make the name a way in.
       component under each result row, each name a link to that board. The
       result row's whole-row link had to shrink for it. *Done 2026-09-25;
       notes below.*
-- [ ] **Phase 7 — The team page, docs, and ship.** The same line in the team
+- [x] **Phase 7 — The team page, docs, and ship.** The same line in the team
       page's hero, the accessibility pass, the documents, and the deploy.
+      *Built 2026-09-25; notes below. The deploy is the one step left.*
 
 Phases are sequential. Each ends at a verifiable state, and `npm run verify`
-must be green before the next one starts. Part Two starts from **777 tests in
-35 files**, Phase 6 started from **788 in 35**, and Phase 7 starts from
-**809 in 37**.
+must be green before the next one starts. Part Two started from **777 tests in
+35 files**, Phase 6 from **788 in 35**, and Phase 7 from **809 in 37**, ending
+at **821 in 37**.
 
 This plan is written against [project-notes.md](project-notes.md) (how the
 application is built) and the archived [spec](archive/spec.md) — `§n` references
@@ -1682,6 +1683,166 @@ const owners = useTeamOwners();          // (providerTeamId) => readonly TeamOwn
   absence of a line, not a spinner — which is correct, and is also why a broken
   index is easy to miss. Drill it deliberately (`restFailure` in tests, and the
   database blocked in the browser pass).
+
+### Completion notes (2026-09-25)
+
+Built as planned. `npm run verify` is green: **821 tests in 37 files**, up from
+809. The code is what the plan said it would be — two lines in `TeamPage.tsx`,
+an import each for `PickedBy` and `useTeamOwners`, and nothing else. **No CSS
+was written**: the hero card is already a grid with a `--space-4` gap, so the
+line spaces itself, and the measurements below confirm that rather than assume
+it. `git diff --stat` before the documents was two files, both under
+`apps/web/`, +196 lines — 17 of them the page, 179 the tests.
+
+**Twelve tests were added**, all in `TeamPage.test.tsx`, in four `describe`s
+matching the exit criteria: the line by both addresses and read by the
+provider's id rather than the uuid; two boards named in the index's order; the
+hero of an unpicked team asserted as an *identity* against the same page
+rendered with no index at all; the placement inside the identity card with a
+game in progress still ahead of everything below the card; a failed and a
+still-loading index each leaving the page whole and silent; and one `['owners']`
+entry however many team pages a document opens, shared with the search page.
+
+**Four were watched to fail before being kept**, per the Phase 1 rule, and the
+counterfactuals are recorded because Phase 6 found that which edit proves which
+test is not obvious:
+
+| The edit | What went red |
+| --- | --- |
+| `PickedBy` keyed on `identity.id ?? ''` instead of `providerTeamId` | 5 — both address tests, the uuid-keying test, the two-board test, and the placement test |
+| `PickedBy` moved out of the `Card`, above the live score | 1 — the placement test, and only that |
+| `useTeamOwners` invents an owner for an empty answer | 4 — **both** exit-3 silence tests, the uuid-keying test, and the Phase-4 hero identity |
+| `useTeamOwners` removed from the page | 5 — the address and two-board tests, placement, and the one-key-per-document test |
+
+The third of those is the one that matters: removing the feature leaves the
+silence tests green, so only an edit that makes something *appear* proves them.
+The fourth row's other test — the search page and the team page sharing one key
+— deliberately stayed green under it, because `SearchPage` registers the key on
+its own; the first test in that describe is what pins the team page asking at all.
+
+**The plan's chunk prediction was wrong, and the real answer is better.** The
+criterion says `useTeamOwners` and `PickedBy` "land in the index chunk, because
+two pages use them". They do not: Rollup gives a module shared by two *lazy*
+chunks its own shared chunk, because the entry chunk never imports it. Measured
+the way Phase 4 measured the header box, building once without the team page's
+use and once with:
+
+| | without (Phase 6) | with (Phase 7) |
+| --- | --- | --- |
+| Index chunk | 377.57 kB (120.34 gzip) | **377.65 kB** (120.37 gzip) |
+| `SearchPage` chunk | 3.69 kB (1.84 gzip) | **3.19 kB** (1.63 gzip) |
+| `SearchPage` stylesheet | 2.28 kB | **1.73 kB** |
+| `TeamPage` chunk | 16.58 kB | **16.68 kB** |
+| Shared `useTeamOwners` chunk | — | **0.71 kB** (0.47 gzip) + 0.55 kB CSS |
+
+So the index chunk grew 0.08 kB, not by the size of the component, and a
+visitor who opens only the home page or a board downloads none of it. `/search`
+costs 3.19 + 0.71 = 3.90 kB against 3.69 kB before — 0.21 kB for the module
+boundary. `supabase` and `gotrue` appear **zero** times in all three of
+`SearchPage`, `TeamPage` and the new shared chunk, and `npm run check:bundle`
+lists only the publishable key.
+
+**Checked in headless Edge** (`playwright-core` from an earlier session's
+scratchpad) against the **production build** served by `vite preview`, proxying
+to a `wrangler dev` Worker on the mock provider and the live database, on a port
+nothing had touched with a cold `--persist-to`. **43 checks, all green:**
+
+- `/teams/251` (the provider id a search result opens) and
+  `/teams/0a974681-…` (the uuid a board card links to) both read **"Picked by
+  Axel"**, with `href="/u/41fc1d7f-…"`, `aria-label="Axel's board"` containing
+  the visible text, a 32 px chip, one `h1`, zero `a a`, and no raw value.
+- `/teams/9` (Arizona State, on nobody's board): **no line, and no empty
+  element** in the hero. The hero is what Phase 4 left.
+- The line is inside the hero card and precedes its footer, which still reads
+  "2026 season, week 6 · Last updated: …"; and on a team with a game in
+  progress the live block still starts below the whole card (hero bottom 369,
+  live top 389), so §11 and §51 are untouched.
+- 320 px: no sideways scroll (320 = 320). With **three names and a
+  58-character team name injected into the live DOM** — Phase 5's finding that
+  the real boards share no teams, so this case has to be manufactured — still
+  no sideways scroll, all three chips 32 px, the card 473 px tall, and the line
+  reading "Picked by Axel Bartholomew Christabel" as a sentence.
+- Requests: a cold deep-linked team page asks for the index **once**; within one
+  document, `/search?q=texas` → clicking Texas asks **once**, not twice.
+- Keyboard only: from the page's box, Tab reaches the team's line and a second
+  Tab reaches "Axel's board" — the chip follows its own team in reading order —
+  Enter opens `/u/41fc1d7f-…` whose `h1` is Axel, and Back returns to
+  `/search?q=texas` with `texas` in the page's box, the header's box empty, and
+  the three results still listed.
+- `/api/selections` aborted and left past the retry budget: the team page whole,
+  **0 owner lines, 0 alerts**, nothing naming the failure, no raw value.
+- axe (WCAG 2.0/2.1 A and AA) clean on a team page and on `/search`, at 1280 px
+  and 320 px in light and at 390 px in **dark** — six scans.
+
+**The KV criterion, measured.** The ledger read
+`{season_calendar 1, team_list 1, conferences 1, rankings 1, schedule 9,
+prediction 3}` — 16 writes, all from the browser pass's team pages — and was
+**identical** after a dozen searches and a dozen index reads. No new category,
+and no write at all from this feature.
+
+`npm run smoke` against that Worker is **21 passed, 1 failed**: the recorded
+local-only mismatch ("every card has sports data — 3 of 6", the repo's mock
+roster meeting the live database's real boards). It is there at `HEAD`, and no
+API code changed in this phase.
+
+**The documents.** A "Testing who has a team" section in the README on the
+existing convention (Levels A, B, B2, C, and an exit-criteria table), plus two
+troubleshooting rows; `context/project-notes.md` gains the route in §2, the
+one-read-per-document note in §4, and four entries in §9 (the invisible
+failure, the five-minute staleness, the names now appearing beside any searched
+team, and the boards sharing no teams); `docs/ops.md` gains a "What 'who has
+this team' costs" section and a release record carrying the pre-deploy numbers
+above, with blanks for the deploy itself.
+
+**Still open:** the deploy, and `verify:rls` against the live project after it.
+
+### Findings
+
+**A test's selector can quietly address the wrong one of two things, and the
+failure reads as a bug in the app.** The browser pass reported that Back from a
+board returned to `/search?q=texas` with an **empty** search box — apparently a
+real regression in a Phase 3 behaviour. It was not: `/search` has *two*
+`input[type="search"]`, the header's "Site search" and the page's "Team
+search", and `document.querySelector` returns the header's, which Phase 4 made
+deliberately always empty. The fix was to address the page's box through its
+form's `aria-label`. Two distinctly-labelled landmarks were built precisely so
+a person could tell them apart; a selector that ignores the label cannot.
+**Anything asserting about "the search box" on this site has to say which one.**
+
+**An assertion of absence has to be scoped to the thing that could produce it.**
+"A team nobody picked leaves no empty element behind" was first written as
+"there is no empty `<p>` on the page", and it failed — on a zero-height
+`notice` paragraph inside a game panel, present on a *picked* team's page and on
+board pages too, and nothing to do with this feature. A page-wide check for
+absence picks up every pre-existing absence on the page and blames the newest
+change. Scoped to the hero card, it passes and it means something.
+
+**Pressing Enter after reading the tab order is not the same as pressing Enter
+on the thing you read.** The keyboard check tabbed four times to record the
+order, then pressed Enter — from the *fourth* stop, which is the second team's
+owner chip, and opened the wrong board. The test then failed against entirely
+correct behaviour. Walking the order and then walking it again to stop *on* the
+chip is what a person does, and is what the test now does. Reading a sequence
+and acting on it are different acts, and a script that conflates them measures
+neither.
+
+**Rollup's chunking answered a design question the plan had answered by
+reasoning.** "Two importers put a module in the index chunk" is a sensible
+belief and is wrong for a code-split app: the entry does not import it, so the
+module becomes its own shared chunk that only the two lazy pages pull in. That
+is strictly better than the plan's prediction — the home page and a board pay
+nothing — and it was settled by two builds and a diff, exactly as Phase 4's
+header-box measurement settled the layout. **A bundling claim is cheap to
+measure and expensive to assume.**
+
+**The dev environment behaved, for once, because every earlier lesson was
+applied up front.** A port nothing had touched, a cold `--persist-to`, the
+Worker's readiness confirmed by asking `/api/health` for its provider and its
+ledger rather than trusting "Ready on", and the production build rather than the
+dev server for anything about focus or timing. Four phases of findings
+compressed into four precautions, none of which cost more than a minute. This is
+the first phase in this plan with nothing to report under this heading, which is
+itself the finding.
 
 ---
 

@@ -4,7 +4,7 @@ How to deploy, run, and change the College Football Team Board. Written for
 the owner. Everything here is on free tiers; nothing needs a card on file.
 
 - [What runs where](#what-runs-where)
-- [Free-tier limits](#free-tier-limits) · [What team search costs](#what-team-search-costs)
+- [Free-tier limits](#free-tier-limits) · [What team search costs](#what-team-search-costs) · [What "who has this team" costs](#what-who-has-this-team-costs)
 - [Configuration reference](#configuration-reference)
 - [Deploying (the first time)](#deploying-the-first-time)
 - [Continuous deployment](#continuous-deployment)
@@ -87,6 +87,26 @@ budget. Nothing is expected to go wrong; **check the KV write counter the day
 after the search is deployed** (below), and watch the `schedule` category
 rather than `team_list`. If it does climb, `READ_RATE_LIMIT_PER_MINUTE` is
 configuration, not code.
+
+### What "who has this team" costs
+
+`GET /api/selections` returns every board's picks, inverted to provider team id
+→ who has that team. It is public like every other read.
+
+|                                   |                                                                                                                                                                                                                                             |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A read                            | One ~54-row Postgres `select`, `public, max-age=300`. No provider call, and **no KV write of any kind** — measured: a dozen searches and a dozen index reads left the ledger unchanged                                                      |
+| How often it is asked for         | Once per document, not once per keystroke, and only by the pages that show the names. The home page and a board ask for nothing; a search and a team page in one document share one request                                                 |
+| What a deep-linked team page adds | One of these reads where before it made none. Arriving from a search adds nothing, because the answer is already in the browser's query cache                                                                                               |
+| Server-side cache                 | **None, deliberately.** App-owned data carries no freshness envelope (§45), and KV is for provider data. If this becomes the constraint, the pattern is an L1 entry plus `evictL1` on the admin write, as the board composite does — not KV |
+| Row ceiling                       | No pagination: nine boards of six is 54 rows, and the schema's ceiling is 24 a board. Past roughly 150 boards this route needs a limit                                                                                                      |
+
+**It fails silently, and that is the design.** A broken index renders no names,
+which is indistinguishable from "nobody picked this team" — the names are
+garnish, so no page waits for them or reports them failing. Nothing on the site
+will ever tell you the index is down. The signals are the Worker's logs and
+`/api/health`; if somebody reports that the names have vanished, check
+`/api/selections` directly before looking anywhere else.
 
 **One thing the freshness envelope does not cover.** On `/teams/<uuid>` the
 team's name, logo, and conference come from Postgres; on
@@ -321,6 +341,37 @@ same origin, same KV namespace, same `ESPN_USER_AGENT` — so it was steps 5 and
 | Real FCS data                                 | Mercer: `Conference unknown · MER`, **NR**, a real 2-2 record and a full schedule. North Dakota State: **Mountain West**, because ESPN's FBS groups list it there — the provider's own answer, unaltered (§46) |
 | The browser, against the deployed site        | 54 of 54 checks in headless Edge, plus 6 axe scans clean in light and dark at 390 px, and no sideways scroll at 320 px                                                                                         |
 | Requests and KV writes over 24 hours          | _Owner: read after 24 hours ([Watching usage](#watching-usage)). Watch `schedule`, not `team_list`_                                                                                                            |
+
+### The "who has this team" release (pending)
+
+The third deploy: one new public route, `GET /api/selections`, and the line it
+feeds on the search results and in the team page's hero. **Nothing in the
+configuration changes** — same origin, same KV namespace, same
+`ESPN_USER_AGENT`, no new secret and no new binding — so it is steps 5 and 7
+only, with no step 8.
+
+Verified before deploying, so that "it works" afterwards cannot be a false
+positive:
+
+| Question                                     | Answer                                                                                                                                                                                                   |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run verify`                             | **821 tests in 37 files**, green                                                                                                                                                                         |
+| `npm run build:web` + `npm run check:bundle` | Clean; only the publishable key, public by design                                                                                                                                                        |
+| The browser, against the production build    | **43 of 43** checks in headless Edge against a local Worker, including 6 axe scans (WCAG 2.0/2.1 A and AA) clean in light and dark at 320, 390 and 1280 px                                               |
+| `npm run smoke` against the local Worker     | 21 passed, 1 failed — the recorded local-only mismatch ("every card has sports data — 3 of 6": the repo's mock roster meeting the live database's real boards), present at `HEAD`                        |
+| KV writes from this feature                  | **None.** The ledger read `{season_calendar 1, team_list 1, conferences 1, rankings 1, schedule 9, prediction 3}` before and after a dozen searches and a dozen index reads — identical. No new category |
+| The index blocked in the browser             | Team page and search results both whole, no owner line, **no alert**, no reference number, no raw value — the designed silence, drilled rather than trusted                                              |
+| Postgres blocked                             | `/api/selections` is a clean 500 with a reference number and **no** `Cache-Control`; `/api/search/teams` still answers 200, so typing survives a database outage                                         |
+
+To fill in after the deploy:
+
+| Question                                     | Answer                                                                                 |
+| -------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Worker version                               | _after step 5_                                                                         |
+| Did the new public path arrive?              | _`/api/selections` should be 404 on the live Worker before and 200 after_              |
+| `npm run smoke` against the API and the site | _expect every line, including the four the index added_                                |
+| `npm run verify:rls` after the release       | _expect 44 passed, 0 failed — worth repeating on any release that adds a public route_ |
+| Requests and KV writes over 24 hours         | _read after 24 hours ([Watching usage](#watching-usage))_                              |
 
 ---
 

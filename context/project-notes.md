@@ -27,9 +27,9 @@ Updated 2026-09-24, when team search was deployed.
 ## 1. What it is, and where it is
 
 A private dashboard for nine people, each with a board of six college football
-teams. Anyone with the link can read every board, and can look up any of the
-~762 teams the provider lists, on or off a board; only the administrator can
-change the boards.
+teams. Anyone with the link can read every board, can look up any of the ~762
+teams the provider lists, on or off a board, and can see which boards hold a
+team and open them; only the administrator can change the boards.
 
 | | |
 | --- | --- |
@@ -38,7 +38,7 @@ change the boards.
 | Database | Supabase Postgres: 9 people, 54 selections, 65 team rows (11 no longer on any board) |
 | Cost | Nothing. Every service is on a free tier, with no card on file |
 | Source | Branch `main`. Phase 5 is commit `5dd38b3`. **There is no git remote yet** |
-| Tests | 777, in 35 files. `npm run verify` runs typecheck, lint, tests, and the season check |
+| Tests | 821, in 37 files. `npm run verify` runs typecheck, lint, tests, and the season check |
 
 Built in five phases: foundation and contracts, the sports data layer, the
 website, the team page, then admin, hardening, and the deploy. Each phase's
@@ -64,8 +64,9 @@ board), `/teams/:teamId` (a team, by our uuid **or** the provider's team id),
 the administrator. API: `/api/health`, `/api/meta/season`, `/api/users`,
 `/api/users/:id`, `/api/users/:id/board`, `/api/teams/:teamId`,
 `/api/teams/:teamId/schedule`, `/api/games/:id`, `/api/games/:id/prediction`,
-`/api/search/teams?q=` — all public, no token — and `/api/admin/*`, which is
-the only branch that verifies a JWT.
+`/api/search/teams?q=`, `/api/selections` (every board's picks, inverted to
+provider team id → who has that team) — all public, no token — and
+`/api/admin/*`, which is the only branch that verifies a JWT.
 
 Three rules hold the structure together, and everything else follows from them:
 
@@ -94,7 +95,7 @@ apps/api/            The Worker
   src/db/            PostgREST client, queries, row mapping
   src/middleware/    CORS, rate limit; auth lives in src/auth/
   src/cron/          The warmers
-  test/              777 tests live here and beside the web sources;
+  test/              821 tests live here and beside the web sources;
                      test/fixtures/espn/ holds 20 real ESPN payloads
 apps/web/            The site (React + Vite, strict TS)
   src/features/      home, board, team, search, admin
@@ -208,6 +209,21 @@ holding together rather than one: a 250 ms debounce, a query key normalized
 with `trim().toLowerCase()`, a five-minute client `staleTime`, and the route's
 own `public, max-age=300`. Backtracking over a prefix costs no request at all
 (measured). Remove any one of them and a keystroke becomes a Worker request.
+
+**The pick index costs one read per document, not one per keystroke.**
+`GET /api/selections` is a single ~54-row Postgres query with no provider call
+and **no KV write of any kind** — measured: a dozen searches and a dozen index
+reads left the write ledger byte-for-byte unchanged. It is deliberately not a
+field on the search response, which would have put a Postgres read in front of
+every keystroke and made typing depend on a database the search route
+otherwise never touches. Its key is a constant (`['owners']`), so the search
+page and the team page share one request; only pages that show the names ask
+for it, so the home page and a board ask for nothing. A full page load is a new
+document and therefore a new query cache, so it asks again — that is the
+measurement's unit, not a leak. There is no server-side cache: app-owned data
+carries no freshness envelope (§45) and KV is for provider data. If this ever
+becomes the constraint, the pattern is an L1 entry plus `evictL1` on the admin
+write, as the board composite does.
 
 ## 5. What we learned about ESPN
 
@@ -355,6 +371,26 @@ network. The test that now covers it reproduces the race directly.
 - **A searched team page depends on the 24-hour team list.** If that list
   cannot be loaded the page is a clean 503, whereas a board team still shows
   its identity from Postgres. The asymmetry is accepted and tested.
+- **A broken pick index is invisible on the site.** "Who has this team" renders
+  nothing when nobody has the team, when the index is still loading, and when
+  it has failed — the same answer on purpose, so a slow or broken index costs
+  the pages that use it nothing (§38, §42). The cost is accepted and real:
+  nothing on screen will ever say the index is down, and the only signals are
+  the Worker's logs and `/api/health`. It is drilled rather than trusted.
+- **Board membership can be up to five minutes stale in a viewer's browser** —
+  the same lifetime `/api/users` has had, for data that changes only when the
+  administrator changes it. The admin's own browser is primed after every write
+  (`/api/selections` is in `PUBLIC_INDEX_PATHS` and `queryKeys.owners` is
+  invalidated), and a board change already takes about a minute to reach other
+  screens.
+- **Nine display names now appear beside any team a visitor searches.** No new
+  exposure — every board is already public at `/u/:userId` and every name is
+  already on the home page — but it is the first time a person's name appears
+  on a page reached without navigating to a board.
+- **The nine real boards share no teams at all.** 54 picks, 54 distinct teams,
+  every line one name long. The two-name case is real, sorted, and tested, but
+  it cannot be seen by hand on production data; anyone checking the wrapping or
+  the multi-name CSS has to inject extra names into the live DOM.
 - **Nothing deletes a `teams` row.** Removed teams stay as harmless cached
   identity: replacing the seeded boards with the real ones left 11 such rows.
 - **The console's interactions are covered only by the browser runs**, which are
@@ -391,7 +427,7 @@ network. The test that now covers it reproduces the race directly.
 
 | Command | What it does |
 | --- | --- |
-| `npm run verify` | Typecheck, lint, 777 tests, season check. The one to run |
+| `npm run verify` | Typecheck, lint, 821 tests, season check. The one to run |
 | `npm run dev` / `npm run dev:web` | The API on 8787 (mock data) and the site on 5173 |
 | `npm run verify:rls` | Attacks the live database directly, as `anon` and as a non-admin |
 | `npm run smoke -- <api> [site]` | Read-only checks against a running Worker, local or live |
