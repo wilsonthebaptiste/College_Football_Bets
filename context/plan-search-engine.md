@@ -1827,11 +1827,14 @@ Afterwards, on real ESPN data:
   had already warmed them. No new category, exactly as Phase 5 predicted from
   the local measurement.
 
-**This release was also the first push to a git remote.** One now exists
-(<https://github.com/wilsonthebaptiste/College_Football_Bets>), and `main` went
-to it carrying Phases 1–7 in seven commits. CI's `deploy` job did not run —
-`DEPLOY_ENABLED` is still unset — so the deploy was by hand, as every one so far
-has been.
+**This is the first release deployed from a pushed tree, and the whole search
+feature went up at once.** The remote
+(<https://github.com/wilsonthebaptiste/College_Football_Bets>) has existed since
+2026-09-20 — the notes saying there was none were stale by five days — but
+nothing had been pushed to it since, so `main` was **seven commits ahead**:
+Phases 1–7 together. CI's `verify` job passed on them. The `deploy` job did not
+run, because `DEPLOY_ENABLED` is still unset, so this deploy was by hand like
+every one before it.
 
 **Still open, and the owner's:** the site on their own phone, and the 24-hour
 usage numbers ([Watching usage](../docs/ops.md#watching-usage)).

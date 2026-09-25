@@ -37,7 +37,7 @@ team and open them; only the administrator can change the boards.
 | API | <https://cfb-api.cfb-api.workers.dev> (Worker `cfb-api`, `--env production`) |
 | Database | Supabase Postgres: 9 people, 54 selections, 65 team rows (11 no longer on any board) |
 | Cost | Nothing. Every service is on a free tier, with no card on file |
-| Source | Branch `main`, pushed to <https://github.com/wilsonthebaptiste/College_Football_Bets> since 2026-09-25 |
+| Source | Branch `main`, on <https://github.com/wilsonthebaptiste/College_Football_Bets> (remote created 2026-09-20; Phases 1–7 pushed 2026-09-25) |
 | Tests | 821, in 37 files. `npm run verify` runs typecheck, lint, tests, and the season check |
 
 Built in five phases: foundation and contracts, the sports data layer, the
@@ -405,10 +405,13 @@ network. The test that now covers it reproduces the race directly.
   shared-team path (§27) and a team nobody selected. The live boards were
   replaced with the real nine people and their teams on 2026-09-19, through the
   admin API.
-- **The CI deploy job is still untested.** A remote now exists and `main` was
-  pushed to it on 2026-09-25, so the `verify` job runs; the `deploy` job is
+- **The CI deploy job is still untested.** The remote has existed since
+  2026-09-20 and the `verify` job passes on every push; the `deploy` job is
   gated on a `DEPLOY_ENABLED` repository variable that is not set, and every
-  deploy so far has been by hand.
+  deploy so far has been by hand. Worth knowing: between 2026-09-20 and
+  2026-09-25 the whole search feature sat committed but **unpushed**, seven
+  commits ahead of the remote, so CI had never seen any of it. A local `main`
+  that is green proves nothing about what the remote has verified.
 
 ## 10. What is left
 

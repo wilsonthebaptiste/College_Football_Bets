@@ -352,10 +352,12 @@ KV namespace, same `ESPN_USER_AGENT`, no new secret and no new binding, which
 wrangler's own binding table confirmed at the dry run — so it was steps 5 and 7
 only, with no step 8.
 
-This is also the first release pushed to a git remote: `main` went to
-<https://github.com/wilsonthebaptiste/College_Football_Bets> carrying Phases 1–7
-at once, seven commits. The CI `deploy` job did **not** run and this deploy was
-by hand, because `DEPLOY_ENABLED` is still unset (see
+It is the first release deployed from a pushed tree. The remote
+(<https://github.com/wilsonthebaptiste/College_Football_Bets>) has existed since
+2026-09-20, but the whole search feature had been sitting unpushed: `main` was
+seven commits ahead, Phases 1–7, and all seven went up together. CI's `verify`
+job passed on them. The `deploy` job did **not** run and this deploy was by
+hand, because `DEPLOY_ENABLED` is still unset (see
 [Continuous deployment](#continuous-deployment)).
 
 Verified before deploying, so that "it works" afterwards cannot be a false
