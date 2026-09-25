@@ -165,6 +165,26 @@ describe('public reads are rate limited per address (plan §5.3)', () => {
     // it is refused for being unauthenticated, not for being noisy.
     expect((await ask('/api/admin/teams/search?q=texas')).status).toBe(401);
   });
+
+  /**
+   * The pick index is one request per page session rather than one per
+   * keystroke, but it is under `/api/*` and spends the budget like every other
+   * public read. Nothing exempts it.
+   */
+  it('covers the pick index', async () => {
+    stub = installSupabaseStub({ selections: [] });
+    const env = testEnv({ READ_RATE_LIMIT_PER_MINUTE: '2' });
+    const ask = () =>
+      app.request('/api/selections', { headers: { 'CF-Connecting-IP': '203.0.113.9' } }, env);
+
+    for (let i = 0; i < 2; i += 1) expect((await ask()).status).toBe(200);
+
+    const refused = await ask();
+    expect(refused.status).toBe(429);
+    expect(Number(refused.headers.get('Retry-After'))).toBeGreaterThanOrEqual(1);
+    // Refused before any work: two reads reached Postgres, not three.
+    expect(stub.restRequests).toHaveLength(2);
+  });
 });
 
 describe('every public read route sets Cache-Control (plan §5.3)', () => {
@@ -174,6 +194,7 @@ describe('every public read route sets Cache-Control (plan §5.3)', () => {
     '/api/users',
     '/api/users/00000000-0000-4000-8000-000000009001',
     '/api/search/teams?q=tex',
+    '/api/selections',
   ])('%s', async (path) => {
     stub = installSupabaseStub({
       appUsers: [

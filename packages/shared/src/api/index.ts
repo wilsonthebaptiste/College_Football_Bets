@@ -8,6 +8,8 @@ export type {
   PredictionResponse,
   SeasonMetaResponse,
   TeamDetailResponse,
+  TeamOwner,
+  TeamOwnersResponse,
   TeamScheduleResponse,
   UserDetailResponse,
   UsersResponse,

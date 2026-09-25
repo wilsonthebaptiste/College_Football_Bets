@@ -1,11 +1,20 @@
-import type { ProviderName, Team, TeamIdentity, UserSummary, UserTeamSelection } from '@cfb/shared';
+import type {
+  ProviderName,
+  Team,
+  TeamIdentity,
+  TeamOwner,
+  UserSummary,
+  UserTeamSelection,
+} from '@cfb/shared';
 import { notFound } from '../http/errors';
 import type { PostgrestClient } from './postgrest';
 import {
   countOf,
   toSelections,
   toTeam,
+  toTeamOwners,
   type AppUserRow,
+  type OwnerSelectionRow,
   type SelectionIdRow,
   type TeamRow,
   type UserSummaryRow,
@@ -66,6 +75,27 @@ export async function getUserWithSelections(
     user: { id: row.id, displayName: row.display_name },
     selections: toSelections(row.user_team_selections ?? []),
   };
+}
+
+/**
+ * Who has each team, across every board (plan Part Two, Phase 5).
+ *
+ * One `select` with no filters: nine boards of six is 54 rows, and the schema's
+ * ceiling of 24 per board puts these nine at 216 — well inside any PostgREST
+ * row cap. Past roughly 150 boards this would need a limit, and that is a
+ * different plan.
+ *
+ * Identity only (§45), and no `order` parameter: the sort is an embedded
+ * column, which `toTeamOwners` does in memory for the reason recorded there.
+ */
+export async function listTeamOwners(
+  db: PostgrestClient,
+  namespace: ProviderName,
+): Promise<Record<string, TeamOwner[]>> {
+  const rows = await db.select<OwnerSelectionRow>('user_team_selections', {
+    select: 'app_users(id,display_name),teams(provider,provider_team_id)',
+  });
+  return toTeamOwners(rows, namespace);
 }
 
 /**

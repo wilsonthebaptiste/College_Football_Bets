@@ -9,6 +9,7 @@ import { gameRoutes } from './routes/games';
 import { healthRoutes } from './routes/health';
 import { metaRoutes } from './routes/meta';
 import { searchRoutes } from './routes/search';
+import { selectionRoutes } from './routes/selections';
 import { teamRoutes } from './routes/teams';
 import { userRoutes } from './routes/users';
 
@@ -37,6 +38,9 @@ export function createApp(): Hono<AppBindings> {
   app.route('/api/health', healthRoutes);
   app.route('/api/meta', metaRoutes);
   app.route('/api/users', userRoutes);
+  // Beside the boards it inverts: the same Postgres tables, read from the other
+  // end (plan-search-engine, Part Two).
+  app.route('/api/selections', selectionRoutes);
   app.route('/api/teams', teamRoutes);
   app.route('/api/games', gameRoutes);
   // Mounted here, above the admin branch, so the read budget applies to it:

@@ -66,6 +66,30 @@ check(
 );
 check(/public, max-age=\d+/.test(users.headers.get('cache-control') ?? ''), '  cacheable');
 
+// ── The pick index ──────────────────────────────────────────────────────────
+// Self-consistent whatever boards the project holds: every name it gives is a
+// board that exists. It reads only our own Postgres, so it must answer even
+// when the sports provider cannot.
+const index = await get('/api/selections');
+const owners = index.body?.owners ?? {};
+const ids = new Set(list.map((user) => user.id));
+const named = Object.values(owners).flat();
+check(
+  index.status === 200 && typeof owners === 'object',
+  'GET /api/selections with no token',
+  `${Object.keys(owners).length} teams picked, ${index.ms} ms`,
+);
+check(
+  /public, max-age=\d+/.test(index.headers.get('cache-control') ?? ''),
+  '  cacheable',
+  index.headers.get('cache-control') ?? '',
+);
+check(
+  named.length > 0 && named.every((person) => ids.has(person.userId)),
+  '  every name in it is a board that exists',
+  `${named.length} picks by ${String(new Set(named.map((p) => p.userId)).size)} people`,
+);
+
 const owner = list.find((user) => user.teamCount > 0) ?? list[0];
 if (owner !== undefined) {
   const board = await get(`/api/users/${owner.id}/board`);
@@ -84,6 +108,18 @@ if (owner !== undefined) {
   );
   console.log(
     `      X-Cache ${board.headers.get('x-cache')}, provider ${board.body?.freshness?.provider}`,
+  );
+
+  // The index and the board are two readings of the same rows. Every team on
+  // screen must be findable in the index, with this board's owner among the
+  // names, or a search for it would say nobody has it.
+  const listed = teams.filter((entry) =>
+    (owners[entry.team?.providerTeamId] ?? []).some((person) => person.userId === owner.id),
+  ).length;
+  check(
+    teams.length > 0 && listed === teams.length,
+    `  every team on this board is in the index, under ${owner.displayName}`,
+    `${listed} of ${teams.length}`,
   );
 
   const first = teams[0]?.team;

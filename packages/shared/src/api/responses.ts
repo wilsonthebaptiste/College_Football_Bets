@@ -96,6 +96,24 @@ export interface BoardResponse {
   teams: BoardTeam[];
 }
 
+// ─── GET /api/selections ─────────────────────────────────────────────────────
+
+/** Someone whose board holds a team. `userId` addresses `/u/:userId`. */
+export interface TeamOwner {
+  userId: string;
+  displayName: string;
+}
+
+/**
+ * Every board's picks, inverted: PROVIDER team id → who has that team, sorted
+ * by display name. Keyed by the provider's id because that is the id a search
+ * result carries and the one id both team-page addresses share; our uuid exists
+ * only for a team we store. A team nobody picked is absent, not an empty array.
+ */
+export interface TeamOwnersResponse {
+  owners: Record<string, TeamOwner[]>;
+}
+
 // ─── GET /api/teams/:teamId ──────────────────────────────────────────────────
 
 /**

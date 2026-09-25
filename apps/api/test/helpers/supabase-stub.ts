@@ -59,6 +59,17 @@ export interface StubOptions {
   appUsers?: unknown[];
   /** Rows returned for `GET /rest/v1/teams`, filtered by `id=eq.`. */
   teams?: unknown[];
+  /**
+   * Rows returned for `GET /rest/v1/user_team_selections` — the pick index's
+   * own query (plan-search-engine, Part Two, Phase 5).
+   *
+   * Its own option rather than a `select`-aware `appUsers`: this stub answers
+   * `appUsers` for ANY `GET /rest/v1/app_users` whatever the `select` asked
+   * for, so an owner-index row shape and a `/api/users` row shape would collide
+   * in any test that needed both. Reading the selections table from its own end
+   * keeps the two apart.
+   */
+  selections?: unknown[];
   /** Extra routes, checked before the built-ins. */
   routes?: StubRoute[];
   /** Force every PostgREST call to fail with this status. */
@@ -160,6 +171,10 @@ export function installSupabaseStub(options: StubOptions = {}): SupabaseStub {
 
       if (url.pathname === '/rest/v1/teams' && method === 'GET') {
         return json(200, filterById(options.teams ?? [], url));
+      }
+
+      if (url.pathname === '/rest/v1/user_team_selections' && method === 'GET') {
+        return json(200, options.selections ?? []);
       }
 
       const external = options.external?.(url);

@@ -11,11 +11,26 @@
 - [x] **Phase 3 — The `/search` page.** A lazy page with debounced live results,
       a shareable URL, and rows that open the team page. *Done 2026-09-22;
       notes below.*
-- [ ] **Phase 4 — The header control, docs, and ship.** A search box on every
+- [x] **Phase 4 — The header control, docs, and ship.** A search box on every
       page, the accessibility pass, the README and notes, and the deploy.
+      *Built 2026-09-23, **deployed 2026-09-24**; notes below.*
+
+**Part Two — who has this team.** A search result says nothing about the nine
+boards. These three phases make it say so, and make the name a way in.
+
+- [x] **Phase 5 — The pick index.** `GET /api/selections`: every board's picks,
+      inverted to provider team id → who has that team. One Postgres read, no
+      provider call. *Done 2026-09-24; notes below.* See
+      [Part Two](#part-two--who-has-this-team-phases-57).
+- [ ] **Phase 6 — "Picked by" on the search results.** A shared `PickedBy`
+      component under each result row, each name a link to that board. The
+      result row's whole-row link has to shrink for it.
+- [ ] **Phase 7 — The team page, docs, and ship.** The same line in the team
+      page's hero, the accessibility pass, the documents, and the deploy.
 
 Phases are sequential. Each ends at a verifiable state, and `npm run verify`
-must be green before the next one starts.
+must be green before the next one starts. Part Two starts from **777 tests in
+35 files**, and Phase 6 starts from **788 in 35**.
 
 This plan is written against [project-notes.md](project-notes.md) (how the
 application is built) and the archived [spec](archive/spec.md) — `§n` references
@@ -745,6 +760,706 @@ locally and shows a real crest in production. Nobody should file that as a bug.
   back returns with the query intact.
 - Deployed, smoke-tested including the two new checks, and opened on a phone.
 
+### Completion notes (2026-09-23)
+
+Built as planned, with **one departure that moves the box**, and one piece of
+accessibility work the plan asked for in a sentence and that turned out to
+touch five files. `npm run verify` is green: **777 tests in 35 files**, up from
+761. No API code was touched in this phase either — every changed file is under
+`apps/web/`, plus the four documents.
+
+**The box is after the nav, not between the wordmark and the nav.** The plan
+asks for it between them. Built that way, at 320 px it costs a *third* header
+row: the box cannot fit beside the wordmark, so it breaks onto line two, and
+the nav — which comes after it in the markup — is pushed onto line three. The
+only ways to avoid that are to squeeze the input to about 100 px, or to reorder
+the row in CSS so that Tab stops visiting things in the order they appear (§48,
+and a thing this codebase has been careful about). Putting it last instead
+gives, measured in headless Edge:
+
+| | between (as planned) | after the nav (built) |
+| --- | --- | --- |
+| Header at 320 px and 375 px | 165 px, three rows | **113 px, two rows** |
+| One row from | 768 px | **480 px** |
+| The input at 320 px | full width | full width |
+| Markup order vs visual order | the same | the same |
+
+On a wide screen this reads `CFB Board … Boards [Search teams] [Search]`, with
+the nav and the box together at the right; on a phone, the wordmark and nav on
+one line and the box across the whole of the next. The admin's extra nav link
+adds no row at any width (measured by cloning the link into the live DOM and
+re-measuring). The consequence for the plan's other instruction: the two
+exact-text assertions are `'CFB Board Boards Search'` and
+`'CFB Board Boards Admin Search'`, not the order the plan predicted.
+
+**The submit button carries visible text, and that is what the plan's expected
+strings were telling us.** An icon-only button with a visually-hidden label
+would have been more compact, but `visibleText` strips visually-hidden spans,
+so `'CFB Board Search Boards'` can only be produced by a button that visibly
+says "Search". Reading the expected string as a specification rather than as a
+detail to update saved a design decision from being made by accident.
+
+**`searchPath(text)` is exported from `HeaderSearch.tsx`,** for the same reason
+Phase 3 exported `searchFrom`: navigation never reaches the markup the
+string-based tests read. Trimming, encoding and the empty case are asserted
+directly, and then one test renders `SearchPage` at `searchPath('texas a&m')`
+and checks its input comes back seeded — the header's half and the page's half
+of the round trip, joined.
+
+**The accessibility pass found one real gap, outside this feature.** "One `h1`
+per page, including loading and error states" was already true of every page
+that renders data, and of every page-level `ErrorState` (it defaults to
+`headingLevel: 1`). It was **not** true of four page-level waits, all of which
+rendered `LoadingNote` alone: `RootLayout`'s Suspense fallback while a page's
+chunk downloads, `RequireAdmin`'s two session checks, `LoginPage`'s, and
+`BoardEditorPage`'s. `LoadingNote` gained `isPage`, which renders its text as
+the page's `h1` inside a `role="status"` wrapper — the wrapper, because
+`role="status"` on the `<h1>` would *replace* its heading role rather than add
+to it, leaving the page heading-less with nothing to show for the change. The
+chunk-download case is the one this feature made reachable from everywhere: the
+header links to `/search` from every page.
+
+**Sixteen tests were added**, in three files:
+
+- `AppHeader.test.tsx` (4 → 12): the two exact-text assertions; the `search`
+  landmark labelled "Site search" and explicitly *not* "Team search"; a plain
+  box and a submit button with no combobox attributes anywhere; the accessible
+  name; no autofocus; the box empty whatever the URL says; and the four
+  `searchPath` cases including the round trip through `SearchPage`.
+- `routes.test.tsx` (new, 3): every page is a child of the one layout route
+  that carries the header. This is where "a search box on every page" can
+  actually fail — it is structure, not repetition, and a page added outside
+  `RootLayout` would have no header and no component test would notice.
+- `States.test.tsx` (new, 5): a page-level wait has exactly one `h1` and keeps
+  it a heading; an inline wait adds no second one; a page-level failure is an
+  alert with an `h1`, and a sectional one steps down to `h3`.
+
+**Four were watched to fail before being kept**, per the Phase 1 rule.
+Relabelling the header landmark "Team search" turned the distinct-label test
+red; removing the box from `AppHeader` turned six red; moving `role="status"`
+onto the `<h1>` turned the live-region test red; moving `/search` out of the
+layout route turned two route tests red. All four edits were reverted.
+
+**Checked in headless Edge** (`playwright-core` in the session scratchpad),
+against a `wrangler dev` Worker on the mock provider, and then **again against
+the production build** served by `vite preview`. **54 checks, both times:**
+
+- The box is present exactly once, and there is exactly one `h1`, on home, a
+  board, a board team's page, a searched team's page, `/search`, `/login`,
+  `/admin` (turned away), and a URL that does not exist.
+- On `/search` there are two `search` landmarks and they carry different
+  labels: "Site search" and "Team search".
+- Keyboard only: from the skip link, Tab reaches the wordmark, the nav, the box,
+  then its button; typing `texas` and pressing Enter opens `/search?q=texas`;
+  the header box empties itself and the page's box holds the query; history
+  grows by exactly one, so Back returns to the page you searched from; one Tab
+  from the page's box lands on the first result and Enter opens it (Texas); the
+  back link reads "Search" and returns with `texas` still in the box.
+- From `/search` itself: submitting `mercer` in the header box moves the page's
+  box, the URL and the results, and the header box empties. An empty submit
+  opens `/search` with no `?q=`.
+- At 320, 375, 768 and 1280 px: no sideways scroll; the header input and its
+  button are 44 px tall and each result row 67.7 px. Header height 113 px on a
+  phone, 61 px from 480 px up, unchanged by the Admin link.
+- axe (WCAG 2.0/2.1 A and AA): clean on `/search` at 320 and 1280 px, on home,
+  a board, a searched team page and the not-found page at 390 px, and on three
+  of those again in **dark** mode.
+
+**A forced outage, drilled separately** (`--var SPORTS_PROVIDER_FAULT:teams`,
+cold `--persist-to`, binding confirmed in wrangler's startup list): 10 more
+checks. Submitting from the header during the outage still navigates; after the
+retry budget the page shows "Team information is temporarily unavailable." with
+a reference number, under one `h1`, with the query still in the box to edit and
+no raw value anywhere; a searched team page fails the same way with a **Try
+again**; and the header box is still there to try with.
+
+**At the build.** `npm run build:web` is clean and `npm run check:bundle` lists
+only the publishable key. `SearchPage` is still its own 2.99 kB chunk with zero
+occurrences of `supabase` or `gotrue`. The header box lands in the index chunk,
+as it must — it is on every page — and costs **0.86 kB** there (0.32 kB
+gzipped), measured by building once without it (376.62 kB) and once with
+(377.48 kB).
+
+`npm run smoke` against the local Worker is **17/18**, failing only "every card
+has sports data — 3 of 6". That is Phase 3's recorded local-only mismatch (the
+repo's mock roster meeting the live database's real boards), it is there at
+`HEAD` too, and no API code changed in this phase.
+
+### The deploy (2026-09-24)
+
+Worker version `051f9871-5347-4127-a82b-33647958e06e`, and a Pages deployment
+to the same project. **No configuration changed** — same origin, same KV
+namespace, same `ESPN_USER_AGENT` — so it was `docs/ops.md` steps 5 and 7 only,
+with no step 8. Numbers are recorded in
+[ops.md, "The team search release"](../docs/ops.md#the-team-search-release-2026-09-24).
+
+Checked before deploying, so that "it works" could not be a false positive:
+`/api/search/teams?q=texas` and `/api/teams/251` were **404 on the live Worker**
+beforehand and 200 after. Phases 1–3 were committed but had never been
+deployed, so this release carried all four phases at once.
+
+Afterwards, on real ESPN data:
+
+- `npm run smoke` against both URLs: **20 passed, 0 failed**, including the four
+  search checks and both CORS checks, with 6 of 6 cards filled on the board it
+  samples.
+- `npm run verify:rls`: **44 passed, 0 failed, 0 skipped**, probe rows cleaned
+  up. Worth repeating on a release that adds a public route, which is exactly
+  what this was.
+- The same 54-check browser pass as locally, against the **deployed** site:
+  54/54, plus 6 axe scans clean in light and dark at 390 px. `?q=texas` returns
+  12 matches on real data rather than the mock's 3, and the header is still
+  113 px at 320 px.
+- Mercer, end to end: `Conference unknown · MER` on the row, **NR** and a real
+  2-2 record and schedule on the page. North Dakota State comes back **Mountain
+  West** — Phase 2's finding, still true, still the provider's own answer.
+- A warm search from a browser's distance: **~110–120 ms** for `?q=texas` and
+  `?q=state` including the network, and the match count does not move it.
+
+**The KV shape Phase 2 predicted, confirmed in production.** Across the whole
+verification run — dozens of searches and a good many team pages — that
+isolate's ledger read **9 writes: `schedule` 7, `rankings` 1, `prediction` 1,
+and zero from `team_list` or `conferences`**, because the cron had already
+warmed those. Searching wrote nothing at all; the team pages searching leads to
+did all of it. `schedule` is the counter to watch tomorrow.
+
+**Still open, and the owner's:** the site on their own phone, and the 24-hour
+usage numbers ([Watching usage](../docs/ops.md#watching-usage)).
+
+### Findings
+
+**A layout constraint can only be settled by measuring it, and it moved the
+plan.** "A search box between the wordmark and the nav; the row wraps to a
+second line below about 30rem" was written from reasoning and is wrong in one
+respect: with the box in the middle of the markup, the row wraps to a *third*
+line, because flex packs items onto lines in order and the nav cannot climb
+back past the box. Every way of getting two rows with the box in the middle
+costs something real — a 100 px input, or a CSS `order` that separates Tab
+order from reading order. Moving it after the nav costs only the plan's own
+phrasing. Two screenshots and two numbers (165 px, 113 px) decided this in a
+couple of minutes; no amount of further reasoning would have.
+
+**The expected string in a test was a design decision in disguise.** The plan
+said the header assertions become `'CFB Board Search Boards'`. Taken as a
+specification, that sentence rules out an icon-only submit button, because
+`visibleText` strips visually-hidden text — the word "Search" can only be there
+if the button visibly says it. It would have been very easy to build the icon
+button, see the test fail, and "update the expectation". A test the plan writes
+in advance is worth reading for what it implies, not only for what it asserts.
+
+**`role="status"` on a heading takes the heading away.** The obvious way to give
+a loading page its `h1` is `<h1 role="status">Loading…</h1>`. ARIA roles
+replace the implicit role rather than adding to it, so that page has a live
+region and *no* heading — the exact thing the change was made to fix, now
+invisible because the text looks right on screen and reads right in the markup.
+The wrapper (`<div role="status"><h1>…</h1></div>`) is the whole fix, and the
+test that pins it was watched to fail against the wrong version.
+
+**An accessibility rule is only checked where it is hardest to reach.** "One
+`h1` per page" held on every page that renders data — the states everyone
+looks at. The four that failed it were all page-level *waits*: a chunk still
+downloading, a session still being checked. They are hard to catch by eye
+because they last a few hundred milliseconds, and no test rendered them,
+because tests render the interesting states. The pass that finds them is the
+one that enumerates page states rather than pages.
+
+**A structural promise needs a structural test.** "The search box is present on
+every page" cannot be proved by rendering pages: it is true because every route
+is a child of one layout, and it would stop being true the moment someone adds
+a route beside that layout rather than inside it. `routes.test.tsx` asserts the
+route table's shape, and it was watched to fail by moving `/search` out. Eight
+component tests rendering eight pages would have cost more and proved less.
+
+**The dev server measures StrictMode, not what ships.** Checking the tab order
+from the top of the home page failed at first: the first Tab landed on a board
+card, three focusable elements too far in. `RootLayout` deliberately leaves the
+*first* page load alone and focuses `<main>` only after a navigation — but
+React's StrictMode double-invokes effects in development, so the first run
+clears the `firstRender` guard and the second run focuses `<main>` anyway. The
+same script against `vite preview` of the production build reports focus on
+`<body>`, which is the documented behaviour. **Anything measured about focus,
+effects or timing against `npm run dev:web` should be re-measured against the
+build before it is believed.** Both runs are 54/54; only this one line differed.
+
+**`2>&1 | Out-File` on `wrangler dev` produces a Worker that starts and never
+answers.** The first attempt at a local Worker printed its whole banner
+including `Ready on http://127.0.0.1:8793`, bound the port, and then timed out
+on every request — `/api/health`, the search route, everything, via two
+different clients. The port was listening and the process was alive. Piping a
+native command's merged output through PowerShell 5.1 (which wraps every stderr
+line in an ErrorRecord) is what did it; run under the harness's own capture, the
+identical command serves immediately. This is the **fourth** appearance in four
+phases of the same family — a stale 8787, a warm Cache API, a wrangler that
+restarts its child, and now a blocked stdout pipe — and it has the same shape
+every time: **the dev environment fails in ways that read as success.** "Ready
+on" is not readiness; the only proof is a fact only the running thing can
+produce.
+
+**And its cousin, again: a killed `wrangler dev` comes back.** Killing the
+workerd holding the port left another listener there within a second, twice.
+`taskkill /PID <the node that started it> /T /F` is what actually ends it —
+or, as Phase 3 said and this phase then re-learned, use a port nothing has
+touched.
+
+**The header box costs 0.86 kB in the chunk every page already downloads**, and
+that is the right place for it. Worth stating because the instinct on a
+code-split app is to keep things out of the index chunk: a control that is on
+every page belongs there, and the number is small enough to end the argument.
+`/search` itself stays lazy, its chunk is unchanged at 2.99 kB, and the 225 kB
+auth chunk is still behind its own boundary.
+
+---
+
+## Part Two — who has this team (Phases 5–7)
+
+### Context
+
+A search result is identity and nothing else: name, conference, abbreviation.
+Search a team that three of the nine boards hold and the results say nothing
+about it, and there is no way from a result to a board that holds it.
+
+**What the owner asked for (2026-09-24):** searching a team that somebody has
+picked shows who has it, and their name opens their board.
+
+The data is already public and already stored: `user_team_selections` joins
+`app_users` to `teams`, all three readable by `anon` (§4 `read_sel`). Nothing new
+goes in the database and no migration is needed. The work is one read, one
+projection, and one small component used in two places.
+
+### Decisions taken
+
+| Question | Answer |
+| --- | --- |
+| Where the owners come from | **One endpoint, not the search response.** `GET /api/selections` returns the whole index once; the browser joins it onto results by `providerTeamId` |
+| Why not put them on `/api/search/teams` | That route is one keystroke away. Phase 2 pins "no PostgREST request at all" on it, which is what keeps typing free of Postgres latency and of a Postgres outage. The index is one request per page session instead of one per keystroke — and the team page needs the same answer anyway, so a search-only field would be read twice |
+| Key | The **provider's** team id. A search result has no uuid, and `PageTeam.providerTeamId` is present on both team-page addresses |
+| Naming | The route is named for the table it reads (`/api/selections`); everything downstream is named for the answer it gives (`TeamOwnersResponse`, `api.teamOwners`, `useTeamOwners`, `PickedBy`) |
+| Sort order | Display name, ascending — the same order the home page lists people in |
+| Board position ("#3 on Wilson's board") | Not shown, and not in the response. Nothing asked for it, and the board itself says it |
+| A team nobody picked | Absent from the index, and the row shows no line at all. Most of the ~762 teams are on nobody's board; "Nobody has this team" on every row is noise |
+| The admin console's own search | Unchanged. It is for editing boards, and the editor already shows what a board holds |
+
+### The rules this must not break
+
+- **Still no public path writes.** `/api/selections` reads as `anon` through the
+  existing read policy. The Phase 1–2 assertion that no PostgREST request is
+  recorded at all stays pinned where it was — on `/api/search/teams` and on
+  `/api/teams/:providerTeamId` — and must not be relaxed to accommodate this.
+- **Owners are garnish (§38, §42).** A search must list teams when the index is
+  slow, broken, or not yet loaded. This is the conference map's precedent: it
+  degrades, it never fails.
+- **Nothing invented.** A name shown next to a team is a row that exists. No
+  "probably on someone's board", no counts derived from anything but the index.
+
+---
+
+## Phase 5 — The pick index
+
+**Goal:** `GET /api/selections` answers, for every team on any board, who has it.
+
+### Scope
+
+| File | Change |
+| --- | --- |
+| `packages/shared/src/api/responses.ts` | Add `TeamOwner` and `TeamOwnersResponse` (below) |
+| `apps/api/src/db/rows.ts` | `OwnerSelectionRow`, and `toTeamOwners(rows, namespace)` |
+| `apps/api/src/db/queries.ts` | `listTeamOwners(db, namespace)` — one `select`, no filters |
+| `apps/api/src/routes/selections.ts` **(new, ~20 lines)** | `GET /`, `public, max-age=300` set **after** the await |
+| `apps/api/src/app.ts` | `app.route('/api/selections', selectionRoutes)`, after `/api/users` |
+| `apps/api/test/helpers/supabase-stub.ts` | `selections?: unknown[]`, answering `GET /rest/v1/user_team_selections` |
+| `scripts/smoke.mjs` | Two checks (below) |
+
+```ts
+// packages/shared/src/api/responses.ts
+/** Someone whose board holds a team. `userId` addresses `/u/:userId`. */
+export interface TeamOwner {
+  userId: string;
+  displayName: string;
+}
+
+/**
+ * Every board's picks, inverted: PROVIDER team id → who has that team, sorted
+ * by display name. Keyed by the provider's id because that is the id a search
+ * result carries and the one id both team-page addresses share; our uuid exists
+ * only for a team we store. A team nobody picked is absent, not an empty array.
+ */
+export interface TeamOwnersResponse {
+  owners: Record<string, TeamOwner[]>;
+}
+```
+
+```ts
+// db/queries.ts — identity only (§45). No order param: see "Watch out for".
+export async function listTeamOwners(
+  db: PostgrestClient,
+  namespace: ProviderName,
+): Promise<Record<string, TeamOwner[]>> {
+  const rows = await db.select<OwnerSelectionRow>('user_team_selections', {
+    select: 'app_users(id,display_name),teams(provider,provider_team_id)',
+  });
+  return toTeamOwners(rows, namespace);
+}
+```
+
+`toTeamOwners` drops a row whose embed is `null`, exactly as `toSelections` does
+(an orphan should be impossible under `on delete restrict`, and half an owner is
+worse than none), drops a row whose `teams.provider` is not `namespace`, and
+sorts each list by `displayName` then `userId`. No de-duplication: `unique
+(user_id, team_id)` means one row per person per team.
+
+The route takes the namespace from `servicesFor(c).provider.teamNamespace`, as
+`routes/admin.ts` already does for `storedTeam`.
+
+### Exit criteria
+
+- 200 with no token: no JWKS fetch, **exactly one** PostgREST request, its
+  `authorization` null, and `Cache-Control: public, max-age=300`.
+- **No ESPN request at all**, and `SPORTS_PROVIDER_FAULT=teams` still answers
+  200. This route is app-owned data and must not depend on the provider.
+- A team on two boards lists both, alphabetically. A team on no board is absent
+  from `owners`. An empty database is `{"owners":{}}` at 200, not a 404.
+- A row from another provider's namespace is dropped; a row with a null
+  `app_users` or `teams` embed is dropped and the others survive.
+- Database unreachable → a clean 5xx with a request id and **no**
+  `Cache-Control`. Same for a Worker with no database configured.
+- `/api/selections` spends the per-address read budget and 429s with
+  `Retry-After` (it is under `/api/*`).
+- Added to `ops.test.ts`'s "every public read sets Cache-Control" list.
+
+### Watch out for
+
+- **Set the header after the await.** Phase 2's finding: a lifetime set on the
+  context is merged into the error handler's response too, so setting it up
+  front pins a 503 in every browser for five minutes. There is a test for the
+  ordering on the search route; write the same one here.
+- **No server-side cache, deliberately.** `/api/users` has none either: app-owned
+  data carries no freshness envelope (§45) and KV is for provider data. If this
+  ever becomes the constraint, the pattern is an L1 entry plus `tiers.evictL1`
+  on the admin write, as the board composite does — not KV.
+- **Do not order by an embedded column** (`order=app_users(display_name).asc`).
+  PostgREST's support for it varies by version; sort in `toTeamOwners`, as
+  `toSelections` already sorts defensively.
+- **No pagination.** Nine boards of six is 54 rows, and the schema's ceiling is
+  24 per board, so 216 for these nine — well inside any row cap PostgREST is
+  configured with (Supabase's is 1,000 where it is set at all; check
+  `/api/selections` against the live project rather than assuming). Past roughly
+  150 boards this route needs a limit, and that is a different plan.
+- The stub returns `options.appUsers` for *any* `GET /rest/v1/app_users`
+  regardless of the `select`, which is why this query reads the selections table
+  instead: a new stub path, so an owner-index test and a `/api/users` test can
+  share one stub without their row shapes colliding.
+- **`refreshPublic` is Phase 6's job.** Until then an administrator's own
+  browser can hold a five-minute-stale index after a board change.
+
+### Smoke checks
+
+- `/api/selections` is 200, `public, max-age=300`, and every `userId` in it
+  appears in `/api/users` (self-consistent whatever data the project holds).
+- The board the script already samples: every team on it appears in the index
+  with that board's owner among its names.
+
+### Completion notes (2026-09-24)
+
+Built exactly as planned — every file in the Scope table, no additions and no
+departures. `npm run verify` is green: **788 tests in 35 files**, up from 777.
+The route is 12 lines of handler and the projection is 20 lines; everything
+else it needs was already there.
+
+**Eleven tests were added**: ten in `apps/api/test/board.test.ts` beside the
+public-search block, one in `ops.test.ts` (the read budget), plus
+`/api/selections` on `ops.test.ts`'s "every public read sets Cache-Control"
+list. They cover every exit criterion — one anonymous PostgREST request and no
+JWKS fetch; the five-minute lifetime; no provider call at all and a 200 with
+`SPORTS_PROVIDER_FAULT=teams`; a shared team listing both names alphabetically;
+an unpicked team absent rather than empty; an empty database as
+`{"owners":{}}` at 200; a foreign namespace and a broken embed dropped while
+the rest survives; a Postgres failure as a clean 5xx with a reference number
+and no `Cache-Control`; the unconfigured Worker saying so and still not
+caching it; and zero KV writes however often the index is read.
+
+**Five were watched to fail before being kept**, per the Phase 1 rule. Moving
+`c.header('Cache-Control', …)` above the await turned *both* error-lifetime
+tests red (`expected 'public, max-age=300' not to match /max-age/`); deleting
+the namespace filter in `toTeamOwners` turned the dropped-row test red;
+deleting its sort turned the alphabetical test red (Wilson before Jordan, the
+order the rows arrive in); adding a `provider.listTeams()` call to the route
+turned the provider-down test red (503, not 200); exempting `/api/selections`
+in `rate-limit.ts` turned the budget test red. All five edits were reverted.
+
+**The stub's new `selections` option, and why it is not `appUsers`.** The
+plan's reasoning held in practice: `installSupabaseStub` answers `appUsers` for
+*any* `GET /rest/v1/app_users` whatever the `select` asked for, so an
+owner-index row shape and a `/api/users` row shape would collide in any test
+that used both — and the `ops.test.ts` Cache-Control table is exactly such a
+test. Reading `user_team_selections` from its own end keeps them apart.
+`test/helpers/boards.ts` gained `ownerRow` and `ownerRows`, which build the
+embedded shape from the same seeded boards the rest of the suite uses.
+
+**Checked by hand against `wrangler dev`** on the mock provider and the live
+database, on a port nothing had touched and a cold `--persist-to`:
+
+- `/api/selections` is 200, `public, max-age=300`, 54 teams picked, ~136 ms
+  cold. Nine boards of six: the 54 picks sum exactly to the nine `teamCount`s
+  that `/api/users` reports, and every `userId` in it is one of those nine.
+- **Every one of the 54 board picks appears in the index under the right
+  name** — checked board by board, 54 of 54, which is the smoke check's
+  assertion run over all nine rather than one.
+- A searched team and its board twin share the index key: `/teams/<uuid>` and
+  `/teams/251` give `providerTeamId: '251'` with `team.id` a uuid and `null`
+  respectively, and `'251'` is the key the index uses.
+- Three mock teams (Arizona State, Michigan State, NC State) are on nobody's
+  board and are absent from `owners`, so Phase 6's no-line case is reachable
+  locally.
+- **Twelve index reads wrote nothing to KV** — the ledger read
+  `{season_calendar:1, rankings:1, schedule:39, conferences:1, team_list:1}`
+  before and after, unchanged. That is Phase 7's "no new category" criterion,
+  already true.
+- The read budget: a parallel burst of 200 from one address gave 126 allowed
+  and 74 refused with `Retry-After: 1` and no `Cache-Control`; a second address
+  was unaffected.
+
+**Two fault drills, each on its own Worker with the binding confirmed in
+wrangler's startup table** (the Phase 3 rule — a fault that is not in that
+table is not armed):
+
+- `--var SPORTS_PROVIDER_FAULT:teams` — `/api/selections` answers **200 with
+  all 54 teams** while `/api/search/teams` and `/api/teams/251` are both 503
+  "Team information is temporarily unavailable.". App-owned data does not
+  depend on the provider, demonstrated rather than asserted.
+- `--var SUPABASE_URL:http://127.0.0.1:9` — `/api/selections` is a 500,
+  `internal`, "The application database is temporarily unreachable.", its
+  `requestId` equal to `X-Request-Id`, and **no `Cache-Control` at all**.
+  `/api/search/teams` answers 200 in the same breath: Phase 2's "no PostgREST
+  request" guarantee is still what keeps typing alive through a Postgres
+  outage.
+
+`npm run smoke` against that Worker is **21 passed, 1 failed** — all four new
+checks green, and the one failure is Phase 3's recorded local-only mismatch
+("every card has sports data — 3 of 6": the repo's 50-team mock roster meeting
+the live database's real boards). It is there at `HEAD` too, and no code on the
+board path changed in this phase.
+
+### Findings
+
+**The nine real boards share no teams at all.** 54 picks, 54 distinct teams,
+every list in the index exactly one name long. The plan's worked example
+("a team three of the nine boards hold") does not exist in production, and the
+shared-team case — the one that needs sorting, and the only one where `Picked
+by` names more than one person — **cannot be seen by hand on this data**. It is
+covered by the test that pins Alabama on both seeded boards, which is now the
+only place it is exercised. Two consequences for Phase 6: do not expect to
+verify the alphabetical order in a browser, and do not let the multi-name CSS
+go unstyled because every screen shows one chip.
+
+**A five-minute cache on a public route is a decision about outages, not about
+load.** The lifetime itself is uncontroversial (`/api/users` has had it since
+Phase 5 of the original plan). What is load-bearing is that the header is set
+*after* the await, and the reason is the same on this route as on the search
+route: Hono merges a header set on the context into the error handler's
+response too, so the ordering decides whether a browser pins a failed read for
+five minutes on a page whose only recovery is a reload. Writing the second
+instance of this made the shape clear — **any route that sets a lifetime and
+can fail needs the ordering test, and the success path cannot distinguish
+them.** There are now two such routes and two such tests.
+
+**`toProviderName` was already the right filter, and using it avoided a bug the
+plan did not flag.** The `teams.provider` column is `text`, so a row could say
+anything; `toTeamOwners` compares `toProviderName(row.provider)` rather than
+the raw string, which is the same normalisation `toTeam` applies. Comparing
+raw strings would have dropped nothing today (the live rows all say `espn`) and
+would have quietly diverged from the rest of the codebase the first time a row
+said something else.
+
+**The mock provider's `teamNamespace` is what makes this work locally at all.**
+It reports `espn`, because its roster borrows ESPN's ids, so a mock-mode Worker
+reading the live database's `espn` rows keeps all 54. Had it reported `mock`,
+the namespace filter would have emptied the index in local development and the
+route would have looked broken while being exactly right. Worth knowing before
+anyone "fixes" the filter after seeing `{"owners":{}}`.
+
+**The dev environment lied again, in its established way, and the established
+remedy worked.** Killing the three drill Workers left all three ports listening
+within seconds, under new pids — wrangler restarting its child, for the third
+time across five phases. `taskkill /PID <the node running wrangler-dist/cli.js>
+/T /F` is what actually ends it; killing the `workerd` alone never does. The
+ports were confirmed free with `netstat` afterwards rather than assumed.
+
+---
+
+## Phase 6 — "Picked by" on the search results
+
+**Goal:** a result for a picked team names the boards that hold it, and each
+name opens that board.
+
+### Scope
+
+| File | Purpose |
+| --- | --- |
+| `apps/web/src/lib/api.ts` | `api.teamOwners(signal)`; `queryKeys.owners = ['owners']` — **not** under the `'admin'` prefix; `/api/selections` added to `publicPathsFor` **and** to the `userId === null` path list in `useAdminWrite.ts` |
+| `apps/web/src/lib/useTeamOwners.ts` **(new)** | The query, and a lookup: `(providerTeamId) => readonly TeamOwner[]`. In `lib/` because Phase 7 uses it from a second feature |
+| `apps/web/src/components/PickedBy.tsx` + `.module.css` **(new)** | The line itself. Renders `null` for an empty list |
+| `apps/web/src/features/search/SearchPage.tsx` + `.module.css` | `ResultRow` restructured around the nested-link problem; `PickedBy` under the top line |
+| `apps/web/src/features/admin/useAdminWrite.ts` | Also invalidate `queryKeys.owners` after a write |
+| `apps/web/src/test/fixtures.ts` | `ownersResponse(...)` builder |
+
+```ts
+// lib/useTeamOwners.ts
+const NONE: readonly TeamOwner[] = [];
+
+/**
+ * Who has each team, by provider team id. Loading and "nobody has it" are the
+ * same answer on purpose: both render nothing, so a slow or failed index costs
+ * the page nothing (plan Part Two, "owners are garnish").
+ */
+export function useTeamOwners(): (providerTeamId: string) => readonly TeamOwner[] {
+  const { data } = useQuery({
+    queryKey: queryKeys.owners,
+    queryFn: ({ signal }) => api.teamOwners(signal),
+    staleTime: 5 * 60_000,
+  });
+  return (providerTeamId) => data?.owners[providerTeamId] ?? NONE;
+}
+```
+
+**The copy, exactly** — it is the same string in both phases, and the tests
+assert it: the label is `Picked by`, each chip's text is the display name, and
+each chip's `aria-label` is `` `${displayName}'s board` ``. Names are separated
+by CSS, not by a character in the markup.
+
+```tsx
+// components/PickedBy.tsx
+<p className={styles.pickedBy}>
+  <span className={styles.label}>Picked by</span>
+  {owners.map((owner) => (
+    <Link
+      key={owner.userId}
+      to={`/u/${owner.userId}`}
+      className={styles.chip}
+      aria-label={`${owner.displayName}'s board`}
+    >
+      {owner.displayName}
+    </Link>
+  ))}
+</p>
+```
+
+```tsx
+// SearchPage.tsx — the row is no longer one link (see "Watch out for").
+<li key={team.providerTeamId}>
+  <div className={styles.row}>
+    <Link to={`/teams/${team.providerTeamId}`} state={state} className={styles.rowMain}>
+      … logo, name, meta, exactly as now …
+    </Link>
+    <PickedBy owners={owners} />
+  </div>
+</li>
+```
+
+`.row` becomes the card (border, radius, background, hover); `.rowMain` becomes
+the 44 px flex line, and the hover rule becomes `.rowMain:hover .rowName`.
+
+### Exit criteria
+
+- A result for a team on one board reads `Picked by Wilson`, and `Wilson` is
+  `href="/u/<userId>"`. Two boards list both, alphabetically. A team on no board
+  renders no line, no label, and no empty element.
+- **No link nests inside another**: the markup contains no `<a` inside an open
+  `<a>`, and the team link's accessible name is unchanged from Phase 3
+  ("Alabama Crimson Tide, SEC · ALA").
+- The index still loading, or failed, leaves the results list complete, with no
+  owner line and **no error shown**. Proved with the index query in an error
+  state and the search query succeeding.
+- One index request per page, not one per keystroke: typing three more letters
+  issues search requests only.
+- Every state renders with no `undefined`, `NaN` or `null` (`RAW_VALUE`), and
+  there is still exactly one `h1`.
+- A result still opens by provider id, and its back link still reads "Search".
+- 320 px: no sideways scroll with a 70-character team name and three owners.
+
+### Watch out for
+
+- **The nested link is the whole shape of this phase.** Phase 3 made the entire
+  row one `<Link>` for the tap target. An owner link inside it is invalid HTML
+  and two targets fighting for one click. Shrinking the link to the top line and
+  putting `PickedBy` beside it inside the card is what keeps both: a 44 px row
+  for the team, and real links for the names.
+- **Target size.** The team row keeps `min-height: 44px`. Each chip gets
+  `min-height: 32px` and `padding: 0 var(--space-2)` — above the 24 px minimum,
+  and never a bare word inside a running sentence.
+- **`aria-label` must contain the visible text** (2.5.3 label in name).
+  `Wilson's board` contains `Wilson`; `Open board` does not.
+- **Two independent queries, never one.** Do not gate the results on the index
+  with `enabled`, `Promise.all`, or a combined `queryFn`. A slow index must not
+  delay a search by a millisecond.
+- `queryKeys.owners` stays out of the `'admin'` prefix: signing out sweeps that
+  prefix, and a viewer's index is not the admin's. Same trap as
+  `queryKeys.search`.
+- **Prime and invalidate after an admin write**, or the administrator who just
+  moved a team sees the old index in their own browser for five minutes.
+  `/api/selections` goes in `publicPathsFor` *and* in the `userId === null`
+  branch, because a rename changes names in the index too.
+- Keep `<li key={team.providerTeamId}>`. The owners do not belong in the key.
+- In local development the site's boards are the live database's real nine
+  people, while `supabase/seed.sql` is nine placeholders (project notes §9). Do
+  not treat a local search whose results name unfamiliar people as a bug.
+
+---
+
+## Phase 7 — The team page, docs, and ship
+
+**Goal:** the same line on a team's own page, then ship the feature.
+
+### Scope
+
+- **`apps/web/src/features/team/TeamPage.tsx`** — `<PickedBy owners={owners(identity.providerTeamId)} />`
+  **inside the hero `Card`**, between the `.hero` block and `.heroFooter`. Not
+  between the hero and the live score: §11 and §51 put a game in progress before
+  everything else, and this is identity, so it belongs in the identity card.
+  Keyed on `providerTeamId`, never on `team.id`, which is `null` for a searched
+  team.
+- **Docs** — a "Testing who has a team" section in the README, following the
+  existing convention (Level A automated, Level B the website, Level B2 failure
+  states, Level C the live site); `context/project-notes.md` gains the route in
+  its public surface (§2), the one-read-per-page-session note (§4), and the
+  staleness note (§9); `docs/ops.md` gains the route and the release record.
+- **Accessibility** — one `h1` per page unchanged in every state; the chips in
+  reading order (they follow the team link in the markup, which is where they
+  are on screen); axe (WCAG 2.0/2.1 A and AA) on `/search` and on a team page at
+  320 px and 1280 px, light and dark.
+- **Ship** — deploy the Worker and the site, `npm run smoke` against both,
+  `npm run verify:rls` (a release that adds a public route, exactly as Phase 4
+  was), and read the KV counter.
+
+### Exit criteria
+
+- A team on a board shows `Picked by …` in its hero by **both** URLs — the uuid
+  a board card links to and the provider id a search result links to. A team on
+  no board shows nothing, and the hero is unchanged from Phase 4.
+- `npm run verify` green; `npm run check:bundle` clean after `build:web`.
+- The `/search` chunk still contains `supabase` and `gotrue` zero times.
+  `useTeamOwners` and `PickedBy` land in the index chunk, because two pages use
+  them — measure the cost the way Phase 4 measured the header box (build once
+  without, once with).
+- Keyboard only: from a result, Tab to an owner chip, Enter opens that board,
+  and browser Back returns to the results with the query intact.
+- The KV write ledger gains **no new category**: this feature makes no provider
+  call. Confirm before and after a dozen searches.
+- Deployed, smoke green including Phase 5's two checks, `verify:rls` 44/44.
+
+### Watch out for
+
+- **One more request on a deep-linked team page.** Arriving from a search costs
+  nothing (the index is already in the query cache); a cold `/teams/251` costs
+  one small Postgres read. Do not reach for it inside `useTeam`'s placeholder
+  path — it is a separate query with its own lifetime.
+- **Do not promise the line on every team page** in the documents. Most of the
+  ~762 teams are on nobody's board, which is the normal case, not a failure.
+- Phase 3's four-second retry budget applies here too: a failing index retries
+  twice before settling. It renders nothing throughout, so the symptom is the
+  absence of a line, not a spinner — which is correct, and is also why a broken
+  index is easy to miss. Drill it deliberately (`restFailure` in tests, and the
+  database blocked in the browser pass).
+
 ---
 
 ## Risks
@@ -757,6 +1472,15 @@ locally and shows a real crest in production. Nobody should file that as a bug.
 | Two URLs for one team                             | Server cache keys are provider-id based, so both share every expensive read; only the React Query entry is duplicated. Board links stay on the uuid, which keeps curated identity winning and leaves the board tests untouched                                    |
 | Existing bookmarks                                | `/teams/<uuid>` is unchanged and checked first. The only change on the wire is `team.id` gaining `| null`, which nothing reads                                                                                                                                    |
 | Identity drift between the two URLs               | A hand-curated conference on a stored row will not show on the provider-id URL. Cosmetic, and documented                                                                                                                                                          |
+
+### Part Two
+
+| Risk | Assessment |
+| --- | --- |
+| One more public read per page session | `/api/selections` is a single ~54-row Postgres query, `public, max-age=300`, with no provider call and no KV write. It costs one of the 120-a-minute read budget per page, not one per keystroke. If the free Supabase project ever becomes the constraint, the remedy is an L1 entry plus `evictL1` on the admin write — not KV, which is for provider data |
+| Board membership up to five minutes stale in a viewer's browser | The same lifetime `/api/users` already has, for data that changes only when the administrator changes it. The admin's own browser is primed by `refreshPublic`, and a board change already takes about a minute to reach other screens (project notes §8) |
+| Nine display names now appear beside any team a visitor searches | No new exposure: every board is already public at `/u/:userId` and every name is already on the home page. Recorded because it is the first time a person's name appears on a page reached without navigating to a board |
+| The index fails silently | A broken index renders no line, which is indistinguishable from "nobody picked this team" — by design, and the reason Phase 7 drills it rather than trusting it |
 
 ---
 
@@ -786,3 +1510,13 @@ locally and shows a real crest in production. Nobody should file that as a bug.
    run `npm run verify:rls` to confirm the database boundary is unchanged by a
    release that added a public route, and read KV writes, requests and CPU in the
    Cloudflare dashboard the next day.
+6. **The pick index (Part Two)** — the cases that carry the weight: one PostgREST
+   request with no `Authorization`, no ESPN request at all, a team on two boards
+   listing both alphabetically, a team on none absent from the index, an empty
+   database as `{"owners":{}}`, a dropped row (null embed, foreign namespace)
+   leaving the rest intact, the five-minute lifetime never inherited by an error,
+   no nested `<a>` in a result row, a failed index leaving the results complete
+   and silent, and `queryKeys.owners` surviving a sign-out sweep. By hand: search
+   a team that is on a board and click the name through to the board; search one
+   that is not and see no line; open the same team by uuid and by provider id and
+   get the same names; block the database and confirm search still lists teams.

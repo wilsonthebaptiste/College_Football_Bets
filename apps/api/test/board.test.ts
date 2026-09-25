@@ -6,6 +6,7 @@ import type {
   PredictionResponse,
   SeasonMetaResponse,
   TeamDetailResponse,
+  TeamOwnersResponse,
   TeamScheduleResponse,
   TeamSearchResponse,
 } from '@cfb/shared';
@@ -20,9 +21,13 @@ import { SEARCH_LIMIT, SEARCH_MAX_LENGTH } from '../src/services/search';
 import {
   ALL_TEAM_ROWS,
   JORDAN,
+  JORDAN_ID,
+  JORDAN_TEAMS,
   WILSON,
   WILSON_ID,
   WILSON_TEAMS,
+  ownerRow,
+  ownerRows,
   teamUuid,
   userRow,
 } from './helpers/boards';
@@ -1060,6 +1065,142 @@ describe('GET /api/search/teams', () => {
 
     const categories = kv.writes.map((write) => write.key.split('|')[2]);
     expect(categories.sort()).toEqual(['conferences', 'season_calendar', 'team_list']);
+  });
+});
+
+// ─── The pick index (plan-search-engine, Part Two, Phase 5) ──────────────────
+
+describe('GET /api/selections', () => {
+  /** The two seeded boards, inverted: Alabama (333) and Texas (251) are on both. */
+  const bothBoards = () =>
+    ownerRows([
+      { user: WILSON, teams: WILSON_TEAMS },
+      { user: JORDAN, teams: JORDAN_TEAMS },
+    ]);
+
+  const stubOwners = (selections: unknown[], options: { jwks?: boolean } = {}) => {
+    stub = installSupabaseStub({
+      appUsers: [WILSON, JORDAN],
+      teams: ALL_TEAM_ROWS,
+      selections,
+      external: (url) => espnResponse(url, {}),
+      ...(options.jwks === true ? { jwks: { keys: [signingKey.jwk] } } : {}),
+    });
+    return stub;
+  };
+
+  it('answers anyone with one anonymous Postgres read and no JWT work (§11.1)', async () => {
+    stubOwners(bothBoards(), { jwks: true });
+    const { response, body } = await get<TeamOwnersResponse>('/api/selections');
+
+    // The positive half first: "one request" and "no key set" are both true of
+    // a route that has simply fallen over.
+    expect(response.status).toBe(200);
+    expect(body.owners['333']?.map((owner) => owner.displayName)).toEqual(['Jordan', 'Wilson']);
+
+    expect(stub.restRequests).toHaveLength(1);
+    expect(stub.restRequests[0]?.authorization).toBeNull();
+    expect(stub.restRequests[0]?.path).toContain('/rest/v1/user_team_selections');
+    expect(stub.jwksFetches).toBe(0);
+    expect(response.headers.get('X-Request-Id')).toBeTruthy();
+  });
+
+  it('is cacheable for five minutes, the same lifetime the boards themselves have', async () => {
+    stubOwners(bothBoards());
+    const { response } = await get<TeamOwnersResponse>('/api/selections');
+    expect(response.headers.get('Cache-Control')).toBe('public, max-age=300');
+  });
+
+  it('calls the provider not at all, and answers with the provider down', async () => {
+    // App-owned data (§45). A team list outage takes out search and every team
+    // page; it must not take out the question "who has this team".
+    stubOwners(bothBoards());
+    const { response, body } = await get<TeamOwnersResponse>(
+      '/api/selections',
+      testEnv({ SPORTS_PROVIDER: 'espn', SPORTS_PROVIDER_FAULT: 'teams' }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(Object.keys(body.owners)).toHaveLength(10);
+    expect(stub.espnRequests).toHaveLength(0);
+  });
+
+  it('lists a shared team alphabetically, and leaves an unpicked team out entirely', async () => {
+    stubOwners(bothBoards());
+    const { body } = await get<TeamOwnersResponse>('/api/selections');
+
+    // Alabama is on both boards; Jordan sorts before Wilson whatever order the
+    // rows arrived in (Wilson's board is read first).
+    expect(body.owners['333']).toEqual([
+      { userId: JORDAN_ID, displayName: 'Jordan' },
+      { userId: WILSON_ID, displayName: 'Wilson' },
+    ]);
+    // Georgia is Wilson's alone.
+    expect(body.owners['61']).toEqual([{ userId: WILSON_ID, displayName: 'Wilson' }]);
+    // Oregon is on neither board: absent, not an empty array. Most of the ~762
+    // teams are in this state, and "Nobody has this team" on every row is noise.
+    expect(body.owners['2483']).toBeUndefined();
+    expect('2483' in body.owners).toBe(false);
+  });
+
+  it('answers an empty database with an empty index at 200, not a 404', async () => {
+    stubOwners([]);
+    const { response, body } = await get<TeamOwnersResponse>('/api/selections');
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ owners: {} });
+  });
+
+  it('drops a foreign namespace and a broken embed, and keeps the rest', async () => {
+    stubOwners([
+      ownerRow(WILSON, '333'),
+      // A `teams` row stored under another provider's ids: its id does not
+      // compare with the provider ids this map is keyed by (§43).
+      ownerRow(JORDAN, '333', 'mock'),
+      // Impossible under `on delete restrict` / `on delete cascade`, but half
+      // an owner is worse than none (the `toSelections` rule).
+      { app_users: null, teams: { provider: 'espn', provider_team_id: '61' } },
+      { app_users: { id: WILSON_ID, display_name: 'Wilson' }, teams: null },
+    ]);
+    const { response, body } = await get<TeamOwnersResponse>('/api/selections');
+
+    expect(response.status).toBe(200);
+    expect(body.owners).toEqual({ '333': [{ userId: WILSON_ID, displayName: 'Wilson' }] });
+  });
+
+  it('is a clean 5xx with a reference number, and no cache lifetime, when Postgres fails', async () => {
+    stub = installSupabaseStub({ restFailure: 500 });
+    const { response, body } = await get<ApiErrorBody>('/api/selections');
+
+    expect(response.status).toBe(500);
+    expect(body.error.kind).toBe('internal');
+    expect(body.error.requestId).toBe(response.headers.get('X-Request-Id'));
+    // The header is set after the await. Set before it, Hono would merge it
+    // into the error handler's response and pin this failure in every browser
+    // for five minutes (the Phase 2 finding, in a second place).
+    expect(response.headers.get('Cache-Control') ?? 'unset').not.toMatch(/max-age/);
+  });
+
+  it('says plainly that the database is not configured, and still does not cache it', async () => {
+    stubOwners(bothBoards());
+    const { response, body } = await get<ApiErrorBody>(
+      '/api/selections',
+      testEnv({ SUPABASE_URL: '', SUPABASE_ANON_KEY: '' }),
+    );
+
+    expect(response.status).toBe(500);
+    expect(body.error.message).toBe('The application database is not configured.');
+    expect(response.headers.get('Cache-Control') ?? 'unset').not.toMatch(/max-age/);
+    expect(stub.requests).toHaveLength(0);
+  });
+
+  it('spends no KV budget: this feature makes no provider call', async () => {
+    stubOwners(bothBoards());
+    const kv = new FakeKv();
+    const env = testEnv({ SPORTS_PROVIDER: 'espn', SPORTS_KV: kv.asNamespace() });
+    for (let i = 0; i < 3; i += 1) {
+      expect((await get('/api/selections', env)).response.status).toBe(200);
+    }
+    expect(kv.writes).toHaveLength(0);
   });
 });
 

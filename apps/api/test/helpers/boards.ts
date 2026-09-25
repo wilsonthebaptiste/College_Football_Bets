@@ -56,3 +56,25 @@ export const JORDAN_ID = JORDAN['id'] as string;
 
 /** Every seeded team as a `teams` row, for the team routes. */
 export const ALL_TEAM_ROWS = ROSTER.map((team) => teamRow(team.id));
+
+/**
+ * `user_team_selections` read from the other end, as the pick index reads it:
+ * `select=app_users(id,display_name),teams(provider,provider_team_id)`.
+ */
+export function ownerRow(
+  user: Record<string, unknown>,
+  providerTeamId: string,
+  provider = 'espn',
+): Record<string, unknown> {
+  return {
+    app_users: { id: user['id'], display_name: user['display_name'] },
+    teams: { provider, provider_team_id: providerTeamId },
+  };
+}
+
+/** Every pick of every board given, in board order — the whole index. */
+export function ownerRows(
+  boards: { user: Record<string, unknown>; teams: string[] }[],
+): Record<string, unknown>[] {
+  return boards.flatMap(({ user, teams }) => teams.map((teamId) => ownerRow(user, teamId)));
+}

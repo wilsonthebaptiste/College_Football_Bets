@@ -1,4 +1,4 @@
-import type { ProviderName, Team, UserTeamSelection } from '@cfb/shared';
+import type { ProviderName, Team, TeamOwner, UserTeamSelection } from '@cfb/shared';
 import { sizedLogoUrl, TEAM_LOGO_PX } from '../providers/logos';
 
 /**
@@ -45,6 +45,16 @@ export interface SelectionIdRow {
 
 export interface UserWithSelectionsRow extends AppUserRow {
   user_team_selections: SelectionRow[] | null;
+}
+
+/**
+ * A selection read from the other end: whose board it is on, and which team.
+ * Both sides are embedded to-one relationships, so both may be `null` (plan
+ * Part Two, Phase 5).
+ */
+export interface OwnerSelectionRow {
+  app_users: Pick<AppUserRow, 'id' | 'display_name'> | null;
+  teams: Pick<TeamRow, 'provider' | 'provider_team_id'> | null;
 }
 
 /** PostgREST renders `select=...,child(count)` as `[{ count: n }]`. */
@@ -102,4 +112,51 @@ export function toSelections(rows: SelectionRow[]): UserTeamSelection[] {
 
 export function countOf(aggregate: CountAggregate[] | null): number {
   return aggregate?.[0]?.count ?? 0;
+}
+
+/**
+ * Every board's picks, inverted to provider team id → who has that team.
+ *
+ * Three rows are dropped rather than guessed at, on `toSelections`' principle
+ * that half an answer is worse than none:
+ *
+ * - a row whose `app_users` or `teams` embed is `null` — impossible under
+ *   `on delete restrict` and `on delete cascade`, but a name with no team or a
+ *   team with no name is not something to render;
+ * - a row whose team belongs to another provider's id namespace, because the
+ *   key of this map is a provider id and ids from two namespaces do not
+ *   compare (§43).
+ *
+ * Each list is sorted here, not by PostgREST: ordering by an embedded column
+ * is a query-syntax feature whose support varies by version, and the sort is
+ * free on 54 rows. `displayName` then `userId`, so two people with the same
+ * name still come back in a stable order.
+ *
+ * A team nobody picked is simply absent. There is no de-duplication to do:
+ * `unique (user_id, team_id)` means one row per person per team.
+ */
+export function toTeamOwners(
+  rows: OwnerSelectionRow[],
+  namespace: ProviderName,
+): Record<string, TeamOwner[]> {
+  const owners: Record<string, TeamOwner[]> = {};
+
+  for (const row of rows) {
+    const user = row.app_users;
+    const team = row.teams;
+    if (user === null || team === null) continue;
+    if (toProviderName(team.provider) !== namespace) continue;
+
+    const list = owners[team.provider_team_id] ?? [];
+    list.push({ userId: user.id, displayName: user.display_name });
+    owners[team.provider_team_id] = list;
+  }
+
+  for (const list of Object.values(owners)) {
+    list.sort(
+      (a, b) => a.displayName.localeCompare(b.displayName) || a.userId.localeCompare(b.userId),
+    );
+  }
+
+  return owners;
 }
