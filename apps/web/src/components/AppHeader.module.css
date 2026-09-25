@@ -5,13 +5,31 @@
 
 .inner {
   display: flex;
+  /* Three things and a phone: the row wraps rather than shrinking the search
+     box to a stub or pushing the page sideways (§34). */
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-2) var(--space-4);
   max-width: var(--page-max);
   min-height: 3.5rem;
   margin-inline: auto;
+  padding-block: var(--space-2);
   padding-inline: var(--page-gutter);
+}
+
+/* Everything after the wordmark sits at the far end of the row. */
+.navWrap {
+  margin-inline-start: auto;
+}
+
+/* Takes what is left of the row, and no more of it than a search box needs on
+   a wide screen. On a phone there is nothing left, so it wraps to the line
+   below and has the whole of it. */
+.search {
+  flex: 1 1 12rem;
+  min-width: 0;
+  max-width: 22rem;
 }
 
 .wordmark {

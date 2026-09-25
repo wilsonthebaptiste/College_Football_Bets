@@ -1,4 +1,4 @@
-import type { TeamSearchResponse } from '@cfb/shared';
+import type { TeamOwnersResponse, TeamSearchResponse } from '@cfb/shared';
 import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, it } from 'vitest';
 import { readFromState } from '../../components/BackLink';
@@ -8,7 +8,9 @@ import {
   envelope,
   fcsIdentity,
   makeIdentity,
+  makeOwner,
   makeSnapshot,
+  ownersResponse,
   scheduleResponse,
   searchResponse,
   teamDetail,
@@ -45,6 +47,8 @@ const TEXAS_TECH = makeIdentity({
 });
 
 type Seed = TeamSearchResponse | ApiError | undefined;
+/** The pick index the page joins onto its results: an answer, a failure, or still on its way. */
+type Index = TeamOwnersResponse | ApiError | undefined;
 
 function seedError(client: QueryClient, queryKey: readonly unknown[], error: ApiError): void {
   client
@@ -53,12 +57,18 @@ function seedError(client: QueryClient, queryKey: readonly unknown[], error: Api
     .setState({ status: 'error', error, errorUpdatedAt: Date.now(), fetchStatus: 'idle' });
 }
 
+function newClient(): QueryClient {
+  return new QueryClient({ defaultOptions: { queries: { retryOnMount: false } } });
+}
+
 /** Renders `/search?q=<raw>` with `answer` already in the cache for that query. */
-function renderSearch(raw: string, answer: Seed = undefined) {
-  const client = new QueryClient({ defaultOptions: { queries: { retryOnMount: false } } });
+function renderSearch(raw: string, answer: Seed = undefined, index: Index = undefined) {
+  const client = newClient();
   const key = queryKeys.search(raw.trim().toLowerCase());
   if (answer instanceof ApiError) seedError(client, key, answer);
   else if (answer !== undefined) client.setQueryData(key, answer);
+  if (index instanceof ApiError) seedError(client, queryKeys.owners, index);
+  else if (index !== undefined) client.setQueryData(queryKeys.owners, index);
 
   const markup = renderAt(
     `/search?q=${encodeURIComponent(raw)}`,
@@ -66,7 +76,7 @@ function renderSearch(raw: string, answer: Seed = undefined) {
     <SearchPage />,
     client,
   );
-  return { markup, seen: visibleText(markup), heard: spokenText(markup) };
+  return { markup, seen: visibleText(markup), heard: spokenText(markup), client };
 }
 
 function headings(markup: string): string[] {
@@ -125,8 +135,9 @@ describe('exit 2 — a result opens that team’s page, and "Search" comes back'
     expect(links(markup)).toEqual(['/teams/251', '/teams/2641']);
   });
 
-  it('makes the whole row one link, with the logo out of its name', () => {
-    // Two results, two links: the name is not a second link inside the row.
+  it('makes the whole top line one link, with the logo out of its name', () => {
+    // Two results, two links: the name is not a second link inside the row,
+    // and with nobody's board holding these teams there is nothing else here.
     expect(markup.match(/<a /g)).toHaveLength(2);
     expect(markup).toContain('alt=""');
     expect(markup).not.toContain('Texas Longhorns logo');
@@ -320,5 +331,161 @@ describe('the input is reachable, and does not steal focus (§48)', () => {
     // keeps the JSX spelling; a browser reads either as the same attribute.
     expect(markup).toMatch(/spellcheck="false"/i);
     expect(markup).toMatch(/autocomplete="off"/i);
+  });
+});
+
+// ─── Phase 6 — "Picked by" on the results ───────────────────────────────────
+
+const WILSON = makeOwner('Wilson', '11111111-1111-4111-8111-111111111111');
+const JORDAN = makeOwner('Jordan', '22222222-2222-4222-8222-222222222222');
+
+/** The inner markup of the link that opens a team's page: its whole accessible name. */
+function teamLink(markup: string, providerTeamId: string): string {
+  const pattern = new RegExp(`<a[^>]*href="/teams/${providerTeamId}"[^>]*>(.*?)</a>`);
+  return pattern.exec(markup)?.[1] ?? '';
+}
+
+/** True if any `<a>` opens while another is still open — invalid, and two targets in one. */
+function nestsLinks(markup: string): boolean {
+  let open = 0;
+  for (const [, slash] of markup.matchAll(/<(\/?)a\b/g)) {
+    if (slash === '/') open -= 1;
+    else if (open > 0) return true;
+    else open += 1;
+  }
+  return false;
+}
+
+describe('exit 5 — a result names the boards that hold the team', () => {
+  it('names the one board that has it, and opens that board', () => {
+    const { markup, seen } = renderSearch(
+      'texas',
+      searchResponse([TEXAS]),
+      ownersResponse({ '251': [WILSON] }),
+    );
+    expect(seen).toContain('Picked by Wilson');
+    expect(links(markup)).toEqual(['/teams/251', `/u/${WILSON.userId}`]);
+  });
+
+  /**
+   * The order is the index's: `/api/selections` sorts by display name, and the
+   * page renders what it is given rather than sorting it a second time. (On
+   * the nine real boards no team is on two of them at all — Phase 5's finding —
+   * so this case exists only where it is seeded.)
+   */
+  it('names both boards when two have it, in the order the index gives', () => {
+    const { seen } = renderSearch(
+      'texas',
+      searchResponse([TEXAS]),
+      ownersResponse({ '251': [JORDAN, WILSON] }),
+    );
+    expect(seen).toContain('Picked by Jordan Wilson');
+  });
+
+  it('shows no line at all for a team nobody picked', () => {
+    const { markup, seen } = renderSearch(
+      'texas',
+      searchResponse([TEXAS, TEXAS_TECH]),
+      ownersResponse({ '251': [WILSON] }),
+    );
+    // One line for Texas, none for Texas Tech: no label, and no empty element.
+    expect(seen.match(/Picked by/g)).toHaveLength(1);
+    expect(links(markup)).toEqual(['/teams/251', `/u/${WILSON.userId}`, '/teams/2641']);
+    expect(seen).toContain('Texas Tech Red Raiders');
+  });
+
+  it('renders no raw value, and still has exactly one h1', () => {
+    const { markup, seen, heard } = renderSearch(
+      'texas',
+      searchResponse([TEXAS, TEXAS_TECH]),
+      ownersResponse({ '251': [JORDAN, WILSON], '2641': [WILSON] }),
+    );
+    expect(headings(markup)).toEqual(['h1:Search teams']);
+    expect(seen).not.toMatch(RAW_VALUE);
+    expect(heard).not.toMatch(RAW_VALUE);
+  });
+});
+
+describe('exit 6 — no link nests inside another', () => {
+  const withOwners = renderSearch(
+    'texas',
+    searchResponse([TEXAS]),
+    ownersResponse({ '251': [WILSON] }),
+  ).markup;
+  const withoutOwners = renderSearch('texas', searchResponse([TEXAS])).markup;
+
+  /**
+   * Phase 3 made the entire row one `<Link>` for the tap target. An owner's
+   * name inside it would be a link inside a link: invalid HTML, and two
+   * targets fighting over one tap. The link shrank to the top line for this.
+   */
+  it('keeps the owner’s name outside the team’s link', () => {
+    expect(nestsLinks(withOwners)).toBe(false);
+    expect(nestsLinks(withoutOwners)).toBe(false);
+    expect(withOwners.match(/<a /g)).toHaveLength(2);
+  });
+
+  /**
+   * Compared against the same row rendered with no owners, rather than to a
+   * string: the accessible name is what is inside the link, and a browser
+   * computes it from CSS this test cannot see.
+   */
+  it('leaves the team link’s accessible name exactly as Phase 3 left it', () => {
+    expect(teamLink(withOwners, '251')).toBe(teamLink(withoutOwners, '251'));
+    expect(visibleText(teamLink(withOwners, '251'))).toContain('Texas Longhorns');
+    expect(visibleText(teamLink(withOwners, '251'))).toContain('SEC · TEX');
+    expect(teamLink(withOwners, '251')).not.toContain('Wilson');
+  });
+});
+
+describe('exit 7 — the index is garnish: it degrades, it never fails (§38, §42)', () => {
+  const DB_DOWN = new ApiError(
+    {
+      kind: 'internal',
+      message: 'The application database is temporarily unreachable.',
+      requestId: 'req-db',
+    },
+    500,
+  );
+
+  it('lists every team with the index failed, and says nothing about it', () => {
+    const { markup, seen } = renderSearch('texas', searchResponse([TEXAS, TEXAS_TECH]), DB_DOWN);
+    expect(seen).toContain('Texas Longhorns');
+    expect(seen).toContain('Texas Tech Red Raiders');
+    expect(seen).toContain('2 teams found.');
+    expect(seen).not.toContain('Picked by');
+    // The search succeeded, so there is no alert on this page at all.
+    expect(markup).not.toContain('role="alert"');
+    expect(seen).not.toContain('temporarily unreachable');
+    expect(seen).not.toContain('req-db');
+    expect(headings(markup)).toEqual(['h1:Search teams']);
+    expect(seen).not.toMatch(RAW_VALUE);
+  });
+
+  it('lists every team with the index still on its way', () => {
+    const { markup, seen } = renderSearch('texas', searchResponse([TEXAS, TEXAS_TECH]));
+    expect(seen).toContain('2 teams found.');
+    expect(seen).not.toContain('Picked by');
+    expect(markup).not.toContain('role="alert"');
+    expect(seen).not.toMatch(RAW_VALUE);
+  });
+});
+
+describe('exit 8 — one index request per page, never one per keystroke', () => {
+  it('asks under one key however many queries are typed', () => {
+    const client = newClient();
+    for (const query of ['tex', 'texa', 'texas']) {
+      client.setQueryData(queryKeys.search(query), searchResponse([TEXAS]));
+      renderAt(`/search?q=${query}`, '/search', <SearchPage />, client);
+    }
+
+    const keys = client
+      .getQueryCache()
+      .getAll()
+      .map((query) => query.queryKey);
+    // Three searches asked for, and the index asked for once: the index key is
+    // a constant, so another letter cannot produce another request for it.
+    expect(keys.filter((key) => key[0] === 'search')).toHaveLength(3);
+    expect(keys.filter((key) => key[0] === 'owners')).toEqual([queryKeys.owners]);
   });
 });

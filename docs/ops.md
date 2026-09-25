@@ -4,7 +4,7 @@ How to deploy, run, and change the College Football Team Board. Written for
 the owner. Everything here is on free tiers; nothing needs a card on file.
 
 - [What runs where](#what-runs-where)
-- [Free-tier limits](#free-tier-limits)
+- [Free-tier limits](#free-tier-limits) · [What team search costs](#what-team-search-costs)
 - [Configuration reference](#configuration-reference)
 - [Deploying (the first time)](#deploying-the-first-time)
 - [Continuous deployment](#continuous-deployment)
@@ -63,6 +63,41 @@ The measured numbers from Phase 5: a board response is about 14 KB (2.2 KB
 gzipped). A cold board with six real teams costs about ten ESPN requests (the
 calendar, the poll, six schedules, and the day's scoreboard) and eight KV
 writes; a warm one costs none of either.
+
+### What team search costs
+
+Live since 2026-09-24. `GET /api/search/teams?q=` is public, like every other read,
+and `/teams/:teamId` now accepts the provider's team id as well as our uuid, so
+a visitor can reach **any** of the ~762 teams the provider lists.
+
+|                                        |                                                                                                                                                                         |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A search                               | ~2 ms of CPU (a fold and a sort over ~762 names), and the number of matches does not change it. `public, max-age=300`, so repeat keystrokes are absorbed by the browser |
+| KV writes from searching               | Effectively none. Twelve searches wrote three keys once each: `team_list`, `season_calendar`, `conferences` — all of which the cron already warms daily                 |
+| KV writes from what searching leads to | One `schedule` write per team page, at most hourly per team. **This is the cost, not the search**                                                                       |
+| A provider-id team page                | _Cheaper_ than the uuid page: it skips Postgres entirely                                                                                                                |
+
+**The crawler note.** Before search, a crawler could reach about 65 team pages
+— the 54 on boards plus a few stragglers. It can now reach ~762, and each one
+is a schedule read that lands in KV, against roughly 1,000 writes a day. Three
+things bound it, and none of them is new code: the write ledger (warns at 700,
+refuses at 900), the per-key minimum write interval in `cache/policy.ts`
+(`schedule` is written at most hourly per team), and the per-address read
+budget. Nothing is expected to go wrong; **check the KV write counter the day
+after the search is deployed** (below), and watch the `schedule` category
+rather than `team_list`. If it does climb, `READ_RATE_LIMIT_PER_MINUTE` is
+configuration, not code.
+
+**One thing the freshness envelope does not cover.** On `/teams/<uuid>` the
+team's name, logo, and conference come from Postgres; on
+`/teams/<providerTeamId>` they come from the provider's team list, which is
+cached for a day. The response's `Cache-Control` and its `Freshness` describe
+the _sports_ data on the page (a 15-minute schedule), not the name it is shown
+under. That is defensible — a team's name is not a fact that changes hourly —
+but it is a gap between what §23 promises and what this path delivers, and it
+is better written down here than discovered. The same asymmetry means a
+conference curated by hand on a stored row does not appear on the provider-id
+URL.
 
 ---
 
@@ -269,6 +304,24 @@ The first cron runs were `ok` for all five warmers (season from the provider,
 rankings, 762 teams, 138 FBS teams mapped to conferences, and the database
 keep-alive).
 
+### The team search release (2026-09-24)
+
+The second deploy: Worker version `051f9871-5347-4127-a82b-33647958e06e`, and a
+Pages deployment to the same project. Nothing in the configuration changed —
+same origin, same KV namespace, same `ESPN_USER_AGENT` — so it was steps 5 and
+7 only, with no step 8.
+
+| Question                                      | Answer                                                                                                                                                                                                         |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Did the two new public paths arrive?          | Yes. `/api/search/teams?q=` and `/api/teams/<providerTeamId>` were 404 before the deploy and 200 after                                                                                                         |
+| `npm run smoke` against the API and the site  | **20 passed, 0 failed**, including the four search checks and both CORS checks. All 54 of 54 board cards had sports data                                                                                       |
+| `npm run verify:rls` after the release        | **44 passed, 0 failed, 0 skipped**, probe rows cleaned up. Worth repeating on any release that adds a public route                                                                                             |
+| A warm search, from this side of the Atlantic | **~110–120 ms** end to end for `?q=texas` (12 matches) and `?q=state`, including the network. The match count does not move it                                                                                 |
+| KV writes during the whole verification       | **9 in that isolate**: `schedule` 7, `rankings` 1, `prediction` 1. **Zero** from `team_list` or `conferences` — the cron had already warmed them. Searching wrote nothing; the team pages did all of it        |
+| Real FCS data                                 | Mercer: `Conference unknown · MER`, **NR**, a real 2-2 record and a full schedule. North Dakota State: **Mountain West**, because ESPN's FBS groups list it there — the provider's own answer, unaltered (§46) |
+| The browser, against the deployed site        | 54 of 54 checks in headless Edge, plus 6 axe scans clean in light and dark at 390 px, and no sideways scroll at 320 px                                                                                         |
+| Requests and KV writes over 24 hours          | _Owner: read after 24 hours ([Watching usage](#watching-usage)). Watch `schedule`, not `team_list`_                                                                                                            |
+
 ---
 
 ## Continuous deployment
@@ -402,7 +455,9 @@ Plan §5 asks for 24 hours of normal use measured against the free tiers.
   Saturday. If errors with the `exceededCpu` outcome (error 1102) ever appear,
   that is the path to fix: see the plan's risk register.
 - **Storage & Databases → KV → SPORTS_KV → Metrics**: writes per day (limit
-  1,000) and reads (limit 100,000).
+  1,000) and reads (limit 100,000). After team search is deployed this is the
+  number most worth a look, and the category to watch is `schedule`: see
+  [What team search costs](#what-team-search-costs).
 - `GET /api/health` shows this isolate's KV writes today, by category. It is a
   floor, not the total: each isolate counts only its own.
 - **Usage alert.** In **Notifications → Add**, look for a Workers usage or
@@ -418,16 +473,18 @@ allowlists and a site password were deliberately not built (plan §5.3).
 
 ## Troubleshooting a deployment
 
-| Symptom                                               | Cause and fix                                                                                                                                                |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| The site loads but every board says "Unable to load"  | `VITE_API_BASE_URL` is wrong, or `ALLOWED_ORIGINS` doesn't match the site origin exactly. The browser console shows a CORS error. Fix, redeploy, rerun smoke |
-| Every card says "Sports data temporarily unavailable" | ESPN is refusing the Worker. See [The ESPN User-Agent](#the-espn-user-agent). Meanwhile, `SPORTS_PROVIDER = "mock"` keeps the site working                   |
-| `/api/users` is a 500                                 | The secrets are missing: `wrangler secret list --env production`. The Worker's log names the missing one                                                     |
-| Admin sign-in says "isn't set up"                     | The site was built without `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`. Rebuild with them and redeploy                                                    |
-| `wrangler deploy` complains about the KV namespace    | `REPLACE_WITH_KV_NAMESPACE_ID` is still in `wrangler.toml` (step 2)                                                                                          |
-| `wrangler deploy` fails with error 10034              | The Cloudflare account's email address isn't verified. Verify it from the dashboard banner, then deploy again                                                |
-| `pages project create` fails at the workspace root    | wrangler tried the newer Workers-based Pages. Add `--force` to `project create`, once (step 7)                                                               |
-| Worker errors with outcome `exceededCpu` (error 1102) | A request went over the CPU limit. On a Saturday that is a cold board parsing six schedules and the scoreboard. See the plan's risk register                 |
-| Error 1027 from the Worker                            | The daily request limit. It resets at 00:00 UTC. Check the metrics for a crawler                                                                             |
-| Everything failed after a quiet week                  | Supabase paused the project. Restore it in the dashboard, then check the cron is running (its hourly `select` should prevent this)                           |
-| A reload of `/u/…` shows a Pages 404                  | A `404.html` has appeared in `apps/web/dist`, which turns off Pages' single-page-app behaviour. Remove it                                                    |
+| Symptom                                                    | Cause and fix                                                                                                                                                                                                                  |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The site loads but every board says "Unable to load"       | `VITE_API_BASE_URL` is wrong, or `ALLOWED_ORIGINS` doesn't match the site origin exactly. The browser console shows a CORS error. Fix, redeploy, rerun smoke                                                                   |
+| Every card says "Sports data temporarily unavailable"      | ESPN is refusing the Worker. See [The ESPN User-Agent](#the-espn-user-agent). Meanwhile, `SPORTS_PROVIDER = "mock"` keeps the site working                                                                                     |
+| `/api/users` is a 500                                      | The secrets are missing: `wrangler secret list --env production`. The Worker's log names the missing one                                                                                                                       |
+| Admin sign-in says "isn't set up"                          | The site was built without `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`. Rebuild with them and redeploy                                                                                                                      |
+| `wrangler deploy` complains about the KV namespace         | `REPLACE_WITH_KV_NAMESPACE_ID` is still in `wrangler.toml` (step 2)                                                                                                                                                            |
+| `wrangler deploy` fails with error 10034                   | The Cloudflare account's email address isn't verified. Verify it from the dashboard banner, then deploy again                                                                                                                  |
+| `pages project create` fails at the workspace root         | wrangler tried the newer Workers-based Pages. Add `--force` to `project create`, once (step 7)                                                                                                                                 |
+| Worker errors with outcome `exceededCpu` (error 1102)      | A request went over the CPU limit. On a Saturday that is a cold board parsing six schedules and the scoreboard. See the plan's risk register                                                                                   |
+| Error 1027 from the Worker                                 | The daily request limit. It resets at 00:00 UTC. Check the metrics for a crawler                                                                                                                                               |
+| KV writes climbing after the search deploy                 | Look at the category in `/api/health`. `schedule` means team pages, not searching: see [What team search costs](#what-team-search-costs). Lower `READ_RATE_LIMIT_PER_MINUTE` if it does not settle                             |
+| Search says "Team information is temporarily unavailable." | ESPN's team list could not be read. It is the same read the admin console's search and the cron warmer use, so check `/api/health` and the User-Agent. A board team still shows its identity, because that comes from Postgres |
+| Everything failed after a quiet week                       | Supabase paused the project. Restore it in the dashboard, then check the cron is running (its hourly `select` should prevent this)                                                                                             |
+| A reload of `/u/…` shows a Pages 404                       | A `404.html` has appeared in `apps/web/dist`, which turns off Pages' single-page-app behaviour. Remove it                                                                                                                      |

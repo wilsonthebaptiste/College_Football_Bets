@@ -50,7 +50,7 @@ export function RootLayout() {
         <ErrorBoundary resetKey={location.pathname} fallback={<PageCrashed />}>
           {/* A page's code failing to download (offline, or a deploy since
               this tab loaded) lands in the boundary above: reload fixes both. */}
-          <Suspense fallback={<LoadingNote>Loading…</LoadingNote>}>
+          <Suspense fallback={<LoadingNote isPage>Loading…</LoadingNote>}>
             <Outlet />
           </Suspense>
         </ErrorBoundary>

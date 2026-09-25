@@ -67,16 +67,26 @@
   list-style: none;
 }
 
-/* The whole row is the link, so the tap target is the row, not the name. */
+/*
+ * The card. It is not itself the link: the owners' names inside it are links of
+ * their own, and a link inside a link is invalid HTML and two targets fighting
+ * over one tap. The link is `.rowMain`, which is still the whole top line.
+ */
 .row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: 44px;
+  display: grid;
+  gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--color-rule);
   border-radius: var(--radius-md);
   background: var(--color-surface);
+}
+
+/* The team's own line: the tap target is the line, not the name. */
+.rowMain {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
   color: var(--color-ink);
   text-decoration: none;
 }
@@ -85,7 +95,7 @@
   border-color: var(--color-accent);
 }
 
-.row:hover .rowName {
+.rowMain:hover .rowName {
   text-decoration: underline;
   text-decoration-thickness: 2px;
   text-underline-offset: 0.12em;

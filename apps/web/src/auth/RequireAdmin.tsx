@@ -32,14 +32,15 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
     );
   }
 
-  if (session.status === 'checking') return <LoadingNote>Checking your session…</LoadingNote>;
+  if (session.status === 'checking')
+    return <LoadingNote isPage>Checking your session…</LoadingNote>;
 
   if (session.status === 'signed-out') {
     const next = `${location.pathname}${location.search}`;
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
   }
 
-  if (check.isPending) return <LoadingNote>Checking administrator access…</LoadingNote>;
+  if (check.isPending) return <LoadingNote isPage>Checking administrator access…</LoadingNote>;
 
   if (check.isError) {
     const error = check.error;

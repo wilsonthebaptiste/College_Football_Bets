@@ -1,0 +1,37 @@
+.pickedBy {
+  display: flex;
+  /* Three names and a 320 px screen: the line wraps rather than pushing the
+     card sideways. The row gap is what keeps two wrapped lines legible. */
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.label {
+  color: var(--color-ink-muted);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  /* Above the 24 px minimum target (2.5.8), and never a bare word inside a
+     running sentence: each name is something to aim at. */
+  min-height: 32px;
+  min-width: 0;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-soft);
+  color: var(--color-ink);
+  font-weight: 600;
+  text-decoration: none;
+  /* A display name is free text; a long one breaks rather than overflowing. */
+  overflow-wrap: anywhere;
+}
+
+.chip:hover {
+  background: var(--color-sunken);
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}

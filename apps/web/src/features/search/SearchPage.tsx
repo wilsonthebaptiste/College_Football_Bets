@@ -1,12 +1,14 @@
-import type { TeamIdentity } from '@cfb/shared';
+import type { TeamIdentity, TeamOwner } from '@cfb/shared';
 import { useEffect, useId, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import type { FromState } from '../../components/BackLink';
+import { PickedBy } from '../../components/PickedBy';
 import { TeamLogo } from '../../components/TeamLogo';
 import { isApiError } from '../../lib/apiClient';
 import { teamLabel } from '../../lib/format';
 import { useDebouncedValue } from '../../lib/useDebouncedValue';
 import { useDocumentTitle } from '../../lib/useDocumentTitle';
+import { useTeamOwners } from '../../lib/useTeamOwners';
 import styles from './SearchPage.module.css';
 import { DEBOUNCE_MS, MIN_QUERY, useTeamSearch } from './useTeamSearch';
 
@@ -63,6 +65,9 @@ export function SearchPage() {
 
   const ready = query.length >= MIN_QUERY;
   const results = useTeamSearch(query);
+  // A second, independent query: one request for the whole index per page
+  // session, never one per keystroke, and never anything the results wait for.
+  const ownersOf = useTeamOwners();
   const teams = results.data?.teams;
   // `keepPreviousData` leaves the last query's list on screen while the next
   // one loads, so "still searching" is placeholder data, not just no data.
@@ -121,8 +126,10 @@ export function SearchPage() {
       {ready && teams !== undefined && teams.length > 0 && (
         <ul className={styles.results} role="list" aria-label="Search results">
           {teams.map((team) => (
+            // The owners are not in the key: they are what this row says about
+            // the team, not which team it is.
             <li key={team.providerTeamId}>
-              <ResultRow team={team} query={query} />
+              <ResultRow team={team} query={query} owners={ownersOf(team.providerTeamId)} />
             </li>
           ))}
         </ul>
@@ -141,14 +148,28 @@ export function searchFrom(query: string): FromState {
 }
 
 /**
- * One result: the whole row is a single link to that team's page, keyed by the
+ * One result: a card whose top line opens that team's page, keyed by the
  * PROVIDER's id (§Phase 1), because a team nobody has selected has no uuid.
+ *
+ * The link is the top line, not the whole card. Phase 3 made the entire row one
+ * `<Link>` for the tap target; an owner's name inside it would be a link inside
+ * a link — invalid HTML, and two targets fighting over one tap. Shrinking the
+ * link to the line it names and putting `PickedBy` beside it inside the card
+ * keeps both: a 44 px row for the team, and real links for the boards.
  *
  * The logo is decorative — the name is right beside it, so the link is
  * announced as "Alabama Crimson Tide, SEC · ALA, link" rather than with a
  * redundant "logo" in the middle of its name.
  */
-function ResultRow({ team, query }: { team: TeamIdentity; query: string }) {
+function ResultRow({
+  team,
+  query,
+  owners,
+}: {
+  team: TeamIdentity;
+  query: string;
+  owners: readonly TeamOwner[];
+}) {
   const name = teamLabel(team);
   const state = searchFrom(query);
   const meta = [team.conference ?? 'Conference unknown', team.abbreviation]
@@ -156,18 +177,21 @@ function ResultRow({ team, query }: { team: TeamIdentity; query: string }) {
     .join(' · ');
 
   return (
-    <Link to={`/teams/${team.providerTeamId}`} state={state} className={styles.row}>
-      <TeamLogo
-        src={team.logoUrl}
-        name={name}
-        abbreviation={team.abbreviation}
-        size={40}
-        decorative
-      />
-      <span className={styles.rowText}>
-        <span className={styles.rowName}>{team.name}</span>
-        <span className={styles.rowMeta}>{meta}</span>
-      </span>
-    </Link>
+    <div className={styles.row}>
+      <Link to={`/teams/${team.providerTeamId}`} state={state} className={styles.rowMain}>
+        <TeamLogo
+          src={team.logoUrl}
+          name={name}
+          abbreviation={team.abbreviation}
+          size={40}
+          decorative
+        />
+        <span className={styles.rowText}>
+          <span className={styles.rowName}>{team.name}</span>
+          <span className={styles.rowMeta}>{meta}</span>
+        </span>
+      </Link>
+      <PickedBy owners={owners} />
+    </div>
   );
 }

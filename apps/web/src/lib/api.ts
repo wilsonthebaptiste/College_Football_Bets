@@ -9,6 +9,7 @@ import type {
   RenameUserResponse,
   SelectionsResponse,
   TeamDetailResponse,
+  TeamOwnersResponse,
   TeamScheduleResponse,
   TeamSearchResponse,
   UsersResponse,
@@ -40,6 +41,14 @@ export const api = {
    */
   searchTeams: (query: string, signal?: AbortSignal) =>
     getPublic<TeamSearchResponse>(`/api/search/teams?q=${encodeURIComponent(query)}`, signal),
+
+  /**
+   * Who has each team, by provider team id (plan-search-engine, Phase 5). One
+   * read per page session, deliberately not a field on the search response:
+   * that route is one keystroke away and is pinned to make no Postgres request
+   * at all, which is what keeps typing free of Postgres latency and outages.
+   */
+  teamOwners: (signal?: AbortSignal) => getPublic<TeamOwnersResponse>('/api/selections', signal),
 
   /**
    * "Is this session an administrator?" Asked by `RequireAdmin` and by the
@@ -109,9 +118,16 @@ export const adminApi = {
     ),
 };
 
+/**
+ * The public reads that ANY admin change can make stale, whichever board it
+ * touched: the people list, and the pick index, which carries display names as
+ * well as memberships — so a rename changes it too.
+ */
+export const PUBLIC_INDEX_PATHS: readonly string[] = ['/api/users', '/api/selections'];
+
 /** The public reads an admin change can make stale: primed after every write (`refreshPublic`). */
 export const publicPathsFor = (userId: string): string[] => [
-  '/api/users',
+  ...PUBLIC_INDEX_PATHS,
   `/api/users/${id(userId)}`,
   `/api/users/${id(userId)}/board`,
 ];
@@ -134,6 +150,14 @@ export const queryKeys = {
    * "Texas" and "texas" are one entry and one request, not two.
    */
   search: (query: string) => ['search', query] as const,
+  /**
+   * The pick index. One key, not one per query: the whole index arrives in a
+   * single answer and the browser joins it onto whatever is on screen, so
+   * typing another letter cannot produce a second request. Out of the `'admin'`
+   * prefix for the same reason `search` is — a viewer's index is not the
+   * administrator's, and signing out sweeps that prefix.
+   */
+  owners: ['owners'] as const,
   adminSession: ['admin', 'session'] as const,
   adminUsers: ['admin', 'users'] as const,
   adminBoard: (userId: string) => ['admin', 'board', userId] as const,

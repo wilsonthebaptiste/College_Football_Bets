@@ -1,10 +1,11 @@
 import { QueryClient } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api, queryKeys } from './api';
+import { api, publicPathsFor, PUBLIC_INDEX_PATHS, queryKeys } from './api';
 
 /**
  * The two things about the public search that are easy to get wrong and
  * invisible once wrong: which URL it calls, and where its results are cached.
+ * The pick index has exactly the same two, and the same answers.
  */
 
 let urls: string[];
@@ -66,5 +67,50 @@ describe('queryKeys.search', () => {
   it('gives "Texas" and "texas" one entry once normalized, not two', () => {
     const key = (raw: string) => queryKeys.search(raw.trim().toLowerCase());
     expect(key('  Texas ')).toEqual(key('texas'));
+  });
+});
+
+describe('api.teamOwners', () => {
+  it('reads the public index, with no token and no query of any kind', async () => {
+    await api.teamOwners();
+    expect(urls).toEqual(['/api/selections']);
+    expect(headers[0]).not.toHaveProperty('authorization');
+  });
+});
+
+describe('queryKeys.owners', () => {
+  it('is one constant key, so typing another letter cannot ask for it again', () => {
+    expect(queryKeys.owners).toEqual(['owners']);
+  });
+
+  it('is not under the admin prefix, and survives the sign-out sweep', () => {
+    const client = new QueryClient();
+    client.setQueryData(queryKeys.owners, { owners: {} });
+    client.setQueryData(queryKeys.adminUsers, []);
+
+    client.removeQueries({ queryKey: ['admin'] });
+
+    expect(client.getQueryData(queryKeys.owners)).toEqual({ owners: {} });
+    expect(client.getQueryData(queryKeys.adminUsers)).toBeUndefined();
+  });
+});
+
+/**
+ * An admin write makes the index stale in the administrator's OWN browser,
+ * where it may be held for its five minutes. Every write re-fetches it, whether
+ * or not a board was the thing that changed: a rename changes the names in it.
+ */
+describe('the paths an admin write re-fetches', () => {
+  it('includes the pick index whatever changed', () => {
+    expect(PUBLIC_INDEX_PATHS).toContain('/api/selections');
+    expect(publicPathsFor('u-1')).toContain('/api/selections');
+  });
+
+  it('adds that board’s own two reads to the same list', () => {
+    expect(publicPathsFor('u-1')).toEqual([
+      ...PUBLIC_INDEX_PATHS,
+      '/api/users/u-1',
+      '/api/users/u-1/board',
+    ]);
   });
 });

@@ -5,6 +5,7 @@ what it is, how it is put together, what was learned the hard way, what is
 deployed, and what is left.
 
 Written at the close of Phase 5, 2026-09-19, when the application went live.
+Updated 2026-09-24, when team search was deployed.
 
 - The behaviour the app was built to (the specification) is
   [archive/spec.md](archive/spec.md). `§n` references throughout the code and
@@ -12,8 +13,9 @@ Written at the close of Phase 5, 2026-09-19, when the application went live.
 - The build plan, phase by phase, with completion notes for each, is
   [archive/plan.md](archive/plan.md). It is the long history; this file is the
   distillation.
-- Work in progress: [plan-search-engine.md](plan-search-engine.md) — adding a
-  public team search, so any team can be looked up, not only the 54 on boards.
+- [plan-search-engine.md](plan-search-engine.md) — the public team search, so
+  any team can be looked up and not only the 54 on boards. All four phases are
+  built, verified, and live since 2026-09-24.
 - Operations — deploying, configuration, limits, troubleshooting — is
   [../docs/ops.md](../docs/ops.md).
 - ESPN's undocumented API, as observed: [../docs/espn-notes.md](../docs/espn-notes.md).
@@ -25,8 +27,9 @@ Written at the close of Phase 5, 2026-09-19, when the application went live.
 ## 1. What it is, and where it is
 
 A private dashboard for nine people, each with a board of six college football
-teams. Anyone with the link can read every board; only the administrator can
-change them.
+teams. Anyone with the link can read every board, and can look up any of the
+~762 teams the provider lists, on or off a board; only the administrator can
+change the boards.
 
 | | |
 | --- | --- |
@@ -35,7 +38,7 @@ change them.
 | Database | Supabase Postgres: 9 people, 54 selections, 65 team rows (11 no longer on any board) |
 | Cost | Nothing. Every service is on a free tier, with no card on file |
 | Source | Branch `main`. Phase 5 is commit `5dd38b3`. **There is no git remote yet** |
-| Tests | 704, in 31 files. `npm run verify` runs typecheck, lint, tests, and the season check |
+| Tests | 777, in 35 files. `npm run verify` runs typecheck, lint, tests, and the season check |
 
 Built in five phases: foundation and contracts, the sports data layer, the
 website, the team page, then admin, hardening, and the deploy. Each phase's
@@ -54,6 +57,15 @@ Worker (Hono) ── routes → services → cache tiers → provider (ESPN or m
    ▼
 Supabase Postgres ── people, teams, selections, admins. Nothing from ESPN (§45)
 ```
+
+The public surface, for reference. Pages: `/` (every board), `/u/:userId` (one
+board), `/teams/:teamId` (a team, by our uuid **or** the provider's team id),
+`/search?q=` (any team the provider lists), plus `/login` and `/admin/*` for
+the administrator. API: `/api/health`, `/api/meta/season`, `/api/users`,
+`/api/users/:id`, `/api/users/:id/board`, `/api/teams/:teamId`,
+`/api/teams/:teamId/schedule`, `/api/games/:id`, `/api/games/:id/prediction`,
+`/api/search/teams?q=` — all public, no token — and `/api/admin/*`, which is
+the only branch that verifies a JWT.
 
 Three rules hold the structure together, and everything else follows from them:
 
@@ -82,10 +94,10 @@ apps/api/            The Worker
   src/db/            PostgREST client, queries, row mapping
   src/middleware/    CORS, rate limit; auth lives in src/auth/
   src/cron/          The warmers
-  test/              704 tests live here and beside the web sources;
+  test/              777 tests live here and beside the web sources;
                      test/fixtures/espn/ holds 20 real ESPN payloads
 apps/web/            The site (React + Vite, strict TS)
-  src/features/      home, board, team, admin
+  src/features/      home, board, team, search, admin
   src/components/    Cards, logos, states, dialog, header
   src/lib/           API client, query keys, polling, formatting
   src/auth/          Admin session, loaded only for the administrator
@@ -130,6 +142,24 @@ leaves the identity, games, and prediction standing.
 **Six teams is a UI convention, not a schema constraint.** The database allows
 1–24 selections per board; the editor warns past six.
 
+**A team has two addresses, and identity comes from a different place on
+each** (the search feature, 2026-09-23). `/teams/<uuid>` is a team we store,
+and its name, logo, and conference come from Postgres — §45's rule that
+identity is application-owned. `/teams/<providerTeamId>` is any of the ~762
+teams the provider lists, and there identity comes from the provider's own
+24-hour team list, because no row exists. That is the one place in the app
+where §45 does not hold, and two things follow from it:
+
+- A conference curated by hand on a stored row will not show on the
+  provider-id URL. Cosmetic, and accepted.
+- The response's freshness envelope covers the *sports* data (a 15-minute
+  schedule), not the name it is shown under, which may be a day old. A name is
+  not a fact that changes hourly, but the envelope does not say so.
+
+Board links stay on the uuid, which keeps curated identity winning where it
+exists. Both URLs share every expensive read, because the server's cache keys
+are provider-id based throughout.
+
 ## 4. The cache, and staying free
 
 Three tiers, because the free tier forces it: **L1** isolate memory (instant, no
@@ -161,6 +191,23 @@ Protections that exist because of real limits:
 - **`Cache-Control` on every public read**, so repeat traffic is absorbed by the
   browser and the edge before it reaches the Worker. Degraded or stale responses
   get a short 10-second lifetime, so a broken card is never pinned for a full TTL.
+
+**What search changed about the budget, measured.** A search is a fold and a
+sort over ~762 names: about **2 ms** of the 10 ms CPU budget, and the number of
+matches does not move it. Twelve searches wrote KV **three** times — the team
+list, the calendar, and the conference map, once each — and then opening a
+single searched team page added two more. So **searching is nearly free; the
+team pages searching leads to are what spend KV.** Crawlers can now reach ~762
+team pages instead of ~65, each one a schedule read, against about 1,000 writes
+a day. Three things bound it: the ledger (warn at 700, refuse at 900), the
+per-key minimum write interval, and the per-address read budget. The counter to
+watch after the search is deployed is `schedule`, not `team_list`.
+
+A person typing cannot spend the read budget either, and that is four things
+holding together rather than one: a 250 ms debounce, a query key normalized
+with `trim().toLowerCase()`, a five-minute client `staleTime`, and the route's
+own `public, max-age=300`. Backtracking over a prefix costs no request at all
+(measured). Remove any one of them and a keystroke becomes a Worker request.
 
 ## 5. What we learned about ESPN
 
@@ -301,11 +348,20 @@ network. The test that now covers it reproduces the race directly.
 - **A live score can lag its schedule by up to 25 s** (the trade-off above).
 - **The read budget is per isolate**, and keyed on an address that a shared
   network shares. Sized for nine people.
-- **Conferences are FBS-only**; everyone else shows "Conference unknown".
+- **Conferences are FBS-only**; everyone else shows "Conference unknown". The
+  map is not a division filter, though: a team carries a conference if ESPN's
+  FBS groups list it, whatever division it looks like it belongs to. ESPN puts
+  North Dakota State in the Mountain West, and the app says so (§46).
+- **A searched team page depends on the 24-hour team list.** If that list
+  cannot be loaded the page is a clean 503, whereas a board team still shows
+  its identity from Postgres. The asymmetry is accepted and tested.
 - **Nothing deletes a `teams` row.** Removed teams stay as harmless cached
   identity: replacing the seeded boards with the real ones left 11 such rows.
 - **The console's interactions are covered only by the browser runs**, which are
-  outside CI. The component tests render states statically.
+  outside CI. The component tests render states statically — which is also why
+  the header search box is proved by parts (where a submitted query goes, and
+  that `/search` reads it back) rather than by one test that types and presses
+  Enter. The whole journey is covered by the browser run.
 - **A real screen-reader pass was never done.** Only axe and accessible names.
 - **The repo's seed is not production's data, on purpose.** `supabase/seed.sql`
   still creates nine placeholder people and 50 teams, four of them shared
@@ -323,14 +379,19 @@ network. The test that now covers it reproduces the race directly.
    has no analytics scope, so this has to be done in the dashboard. This is the
    only Phase 5 exit criterion still open: the owner confirmed the live site on
    a real phone on 2026-09-19, which closed the other one.
-2. **Optional:** create the GitHub remote, push `main`, and turn on the CI deploy
+2. **Read the KV write counter** the day after the search release
+   (2026-09-24), and watch the `schedule` category rather than `team_list`:
+   searching is nearly free, and the team pages it leads to are what write.
+   [ops.md, "The team search release"](../docs/ops.md#the-team-search-release-2026-09-24)
+   records what it looked like on the day.
+3. **Optional:** create the GitHub remote, push `main`, and turn on the CI deploy
    job (docs/ops.md, "Continuous deployment"); a screen-reader pass.
 
 ## 11. Commands worth remembering
 
 | Command | What it does |
 | --- | --- |
-| `npm run verify` | Typecheck, lint, 704 tests, season check. The one to run |
+| `npm run verify` | Typecheck, lint, 777 tests, season check. The one to run |
 | `npm run dev` / `npm run dev:web` | The API on 8787 (mock data) and the site on 5173 |
 | `npm run verify:rls` | Attacks the live database directly, as `anon` and as a non-admin |
 | `npm run smoke -- <api> [site]` | Read-only checks against a running Worker, local or live |

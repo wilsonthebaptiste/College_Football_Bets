@@ -22,15 +22,17 @@ boards. These three phases make it say so, and make the name a way in.
       inverted to provider team id → who has that team. One Postgres read, no
       provider call. *Done 2026-09-24; notes below.* See
       [Part Two](#part-two--who-has-this-team-phases-57).
-- [ ] **Phase 6 — "Picked by" on the search results.** A shared `PickedBy`
+- [x] **Phase 6 — "Picked by" on the search results.** A shared `PickedBy`
       component under each result row, each name a link to that board. The
-      result row's whole-row link has to shrink for it.
+      result row's whole-row link had to shrink for it. *Done 2026-09-25;
+      notes below.*
 - [ ] **Phase 7 — The team page, docs, and ship.** The same line in the team
       page's hero, the accessibility pass, the documents, and the deploy.
 
 Phases are sequential. Each ends at a verifiable state, and `npm run verify`
 must be green before the next one starts. Part Two starts from **777 tests in
-35 files**, and Phase 6 starts from **788 in 35**.
+35 files**, Phase 6 started from **788 in 35**, and Phase 7 starts from
+**809 in 37**.
 
 This plan is written against [project-notes.md](project-notes.md) (how the
 application is built) and the archived [spec](archive/spec.md) — `§n` references
@@ -1403,11 +1405,232 @@ the 44 px flex line, and the hover rule becomes `.rowMain:hover .rowName`.
   people, while `supabase/seed.sql` is nine placeholders (project notes §9). Do
   not treat a local search whose results name unfamiliar people as a bug.
 
+### Completion notes (2026-09-25)
+
+Built as planned, with one small change to the plan's own markup (a space,
+below) and one file the plan did not ask for. `npm run verify` is green:
+**809 tests in 37 files**, up from 788 in 35. No API code was touched — Phase 5
+built everything the server side needed, and every changed file is under
+`apps/web/`.
+
+**The files.** `lib/api.ts` (`api.teamOwners`, `queryKeys.owners`,
+`PUBLIC_INDEX_PATHS`), `lib/useTeamOwners.ts` (new), `components/PickedBy.tsx`
++ `.module.css` (new), `features/search/SearchPage.tsx` + `.module.css`
+(`ResultRow` restructured), `features/admin/useAdminWrite.ts`, and
+`test/fixtures.ts` (`makeOwner`, `ownersResponse`). Three test files: the new
+`components/PickedBy.test.tsx` and `features/admin/useAdminWrite.test.tsx`, and
+additions to `SearchPage.test.tsx` and `lib/api.test.ts`.
+
+**Three departures from the plan's Scope.**
+
+- **`PUBLIC_INDEX_PATHS` is one exported constant, not two lists.** The plan
+  says `/api/selections` goes in `publicPathsFor` *and* in the
+  `userId === null` branch of `useAdminWrite.ts`. Written as two literals they
+  would drift the first time a third such read appears, and the failure would
+  be silent (an administrator seeing their own stale index). `publicPathsFor`
+  now spreads the constant and the `null` branch passes it, so "the reads any
+  write makes stale" exists once.
+- **There is a real space character between the names**, which the plan's
+  markup does not have. "Names are separated by CSS, not by a character in the
+  markup" is right about punctuation and wrong about whitespace: CSS `gap` puts
+  no space in the *text*, so `<span>Picked by</span><a>Wilson</a>` reads and
+  copies as "Picked byWilson". Each chip is preceded by a `{' '}` text node,
+  which a flex container does not render as an item (a whitespace-only
+  anonymous flex item is not rendered), so the layout is unchanged and the
+  sentence is a sentence. Caught by asserting the whole rendered line, not the
+  presence of its pieces.
+- **`useAdminWrite.test.tsx` is new.** `useAfterAdminWrite` had no test at all,
+  and Phase 6 adds a third thing for it to get right. The hook's callback is
+  captured out of a `renderToStaticMarkup` render and then called, which is
+  what a button press does; `fetch` is stubbed and the assertion is on the
+  URLs re-fetched and on `isInvalidated`.
+
+**`.row` is now the card and `.rowMain` the link**, exactly as the plan
+describes. The hover highlight stays on the card (so hovering a name highlights
+the card too, which is fine and is what the plan asked for); the underline rule
+is `.rowMain:hover .rowName`.
+
+**Twenty-one tests were added**: 12 in `SearchPage.test.tsx` (exits 5–8), 5 in
+`PickedBy.test.tsx`, 2 in `useAdminWrite.test.tsx`, and 5 in `lib/api.test.ts`
+(minus one merged). They cover every exit criterion — the one-board line and
+its `href`; two names in the index's order; no line and no empty element for an
+unpicked team; no nested `<a>`; the team link's inner markup identical to the
+same row rendered without owners; a failed index and a loading index each
+leaving the results complete, silent and alert-free; one `h1` and no raw value
+in all of those; one index cache entry across three different queries; the
+constant key surviving the sign-out sweep; and both halves of the admin refresh.
+
+**Six were watched to fail before being kept**, per the Phase 1 rule.
+
+| The edit | What went red |
+| --- | --- |
+| `SearchPage` stops calling `useTeamOwners` | exits 5, 6 and **8** — 5 tests |
+| `PickedBy` moved inside the team `<Link>` | both exit 6 tests |
+| `useTeamOwners` invents an owner for an empty answer | both exit 7 tests, and exit 2's link count |
+| `PickedBy` renders an empty `<p>` instead of `null` | "renders nothing at all" |
+| `queryKeys.owners` moved under the `'admin'` prefix | the sweep test and exit 8 |
+| `/api/selections` removed from `PUBLIC_INDEX_PATHS`, then the `owners` invalidation removed | the two `useAdminWrite` tests and the path test |
+
+All six were reverted and the suite is green.
+
+**Checked in headless Edge** (`playwright-core` from an earlier session's
+scratchpad) against the **production build** served by `vite preview`, proxying
+to a `wrangler dev` Worker on the mock provider and the live database, on a
+port nothing had touched with a cold `--persist-to`. **33 checks, all green:**
+
+- `/search?q=texas`: Texas reads **"Picked by Axel"**, the name is
+  `href="/u/41fc1d7f-…"`, its `aria-label` is `Axel's board` and contains the
+  visible text, and the chip is 32 px tall. `document.querySelectorAll('a a')`
+  is **0**. Playwright's `ariaSnapshot()` of the team link is
+  `link "Texas Longhorns SEC · TEX"` — Phase 3's accessible name, unchanged,
+  with no owner in it. One `h1`, no raw value, axe clean at 1280 px.
+- `/search?q=state`: 8 rows, **3 of them with no line at all** (mock teams 9,
+  127 and 152 are on nobody's board) and no empty element left behind.
+- Typing `alaba` then `ma`: **one** `/api/selections` and two
+  `/api/search/teams`. Alabama reads "Picked by Eli".
+- Keyboard only: from the page's box, Tab reaches the team line and a second
+  Tab reaches "Axel's board"; Enter opens `/u/41fc1d7f-…` and the board's own
+  `h1` is Axel; Back returns to `/search?q=texas` with the query still in the
+  box.
+- 320 px with a 70-character team name and three owners injected into the live
+  DOM: **no sideways scroll** (320 = 320), three chips at 32 px, the team line
+  still a 44 px target, the card 146 px tall, axe clean. Axe also clean at
+  390 px in **dark** mode.
+- `/api/selections` aborted at the browser and left past the retry budget
+  (5 s): 3 rows still listed, **0 owner lines, 0 alerts**, the status line
+  still "3 teams found.", one `h1`, no raw value.
+- The **home page asks for nothing**: no `/api/selections` request on `/`. And
+  within one document, search → a board → Back asks for the index once, not
+  twice.
+
+**At the build.** `npm run build:web` is clean, `npm run check:bundle` lists
+only the publishable key. `SearchPage` is **3.69 kB** (1.84 kB gzip), up from
+2.99 kB, with `supabase` and `gotrue` still appearing **zero** times; its
+stylesheet is 2.28 kB. The index chunk is 377.57 kB and holds `/api/selections`
+(it is in `lib/api.ts`). `PickedBy` and `useTeamOwners` are in the *SearchPage*
+chunk for now, because only one page imports them — Phase 7 is what moves them
+into the index chunk, and these are the two numbers to measure that against.
+
+`npm run smoke` against the local Worker is **22 passed, 2 failed**, both
+environmental: Phase 3's recorded "every card has sports data — 3 of 6" (the
+repo's mock roster meeting the live database's real boards, present at `HEAD`),
+and "CORS allows http://localhost:4179", which is the preview port not being in
+the Worker's `ALLOWED_ORIGINS` — the browser pass never needed CORS, because
+vite proxies `/api` on the page's own origin.
+
+### Findings
+
+**CSS `gap` is not a space, and the markup is what gets read and copied.** The
+plan's `PickedBy` puts the label and the names in a flex row and lets `gap`
+separate them. On screen that is right; in the text it is not, and the two are
+different documents. `<span>Picked by</span><a>Wilson</a>` has no whitespace
+between the elements, so the paragraph's text content — what a screen reader
+reads for the line, and what a person gets when they select and copy it — is
+"Picked byWilson". The fix is one `{' '}` per chip. What found it was writing
+the assertion as the whole sentence (`'Picked by Jordan Wilson'`) rather than
+as `toContain('Jordan')`: the second spelling passes against the broken
+version. **Assert the line a person reads, not the pieces it is made of.**
+
+**An assertion of absence needs a counterfactual that makes something appear.**
+The exit-7 tests — a failed index leaves the results complete and silent —
+stayed green when `useTeamOwners` was removed from the page entirely, which is
+exactly the class of false pass Phase 1 warned about. They only went red
+against a `useTeamOwners` that invents an owner for an empty answer. The rule
+that falls out: for a test that says "nothing appears", the edit that proves it
+must make something appear, and an edit that removes the feature proves a
+*different* test. Both counterfactuals are recorded in the table above so the
+next person does not have to re-derive which proves which.
+
+**`useQuery` registers its key in the query cache during
+`renderToStaticMarkup`**, and that is what makes "one index request per page,
+not one per keystroke" testable at all in this suite. Rendering the page at
+three different `?q=` values against one client leaves three `['search', …]`
+entries and exactly one `['owners']` entry. It is a structural proof rather
+than a request count — no fetch happens in SSR — but it fails for the right
+reason: removing the hook turns it red, and so does putting the key under the
+`'admin'` prefix.
+
+**A link's accessible name cannot be read off the markup string, and two
+different tools were needed.** `textContent` of the team link gives
+`TEXTexas LonghornsSEC · TEX`: the initials fallback is `aria-hidden` (so a
+browser drops it) and the name and meta spans are grid items (so a browser puts
+a boundary between them). Neither fact is visible to a regex. The unit test
+therefore compares the link's *inner markup* against the same row rendered with
+no owners — "unchanged from Phase 3" stated as an identity, which is what the
+criterion actually means — and the browser pass asks Playwright for
+`ariaSnapshot()`, which answers `link "Texas Longhorns SEC · TEX"`. **When a
+criterion is about what a browser computes, pin the invariant in the unit test
+and the value in the browser.**
+
+**A `goto` is a fresh query cache; only SPA navigation is a "page session".**
+The first version of the one-request-per-page check went `/` → `/search` →
+Back → Forward and read **two** `/api/selections`, which looked like a bug in
+the hook. Both of those history steps crossed documents, because each `goto` is
+a full load, and each full load builds a new `QueryClient`. Clicking a link and
+pressing Back — one document, the router navigating — reads one. The claim in
+the plan ("one request per page session") is about a document's lifetime, and
+the measurement has to be too. Phase 7 will measure the same thing on the team
+page and will hit this on the way.
+
+**A broken index is invisible, which is the design and also the risk.** The
+drill (`route.abort` on `/api/selections`, then five seconds for the two
+retries) produces a page indistinguishable from "nobody picked any of these
+teams": 3 rows, 0 lines, 0 alerts, the status line unchanged. That is the
+behaviour Part Two asked for — owners are garnish — but it means no one will
+ever notice the index is down by looking at the site. The only signals are the
+Worker's own logs and `/api/health`; nothing on the page will ever say so, and
+Phase 7's documents should say that plainly rather than leaving it implied.
+
+**The nine real boards still share no teams, so the multi-name case has to be
+manufactured to be seen.** Phase 5 found it; Phase 6 confirms it in the
+browser. Every owner line on real data is one name long, so the wrap behaviour,
+the gap between chips and the 320 px measurement were all taken against three
+chips injected into the live DOM. With a 70-character team name and three
+owners the card is 146 px tall at 320 px and nothing scrolls sideways. Anyone
+"simplifying" the CSS after seeing only single-name lines on screen should
+re-run that injection before believing it is unused.
+
+**Only the page that uses it asks for it — today.** The home page makes no
+`/api/selections` request, and neither does a board. That is worth writing down
+because Phase 7 changes it: the team page will ask too, and a cold
+`/teams/251` opened from outside the app becomes one extra small Postgres read
+where today it is none. Arriving from a search still costs nothing, since the
+index is already in the query cache.
+
 ---
 
 ## Phase 7 — The team page, docs, and ship
 
 **Goal:** the same line on a team's own page, then ship the feature.
+
+### What Phase 6 leaves in place
+
+Everything the team page needs already exists; Phase 7 adds two lines to
+`TeamPage.tsx` and then does the documents and the deploy.
+
+```tsx
+import { PickedBy } from '../../components/PickedBy';
+import { useTeamOwners } from '../../lib/useTeamOwners';
+
+const owners = useTeamOwners();          // (providerTeamId) => readonly TeamOwner[]
+<PickedBy owners={owners(identity.providerTeamId)} />   // renders null when empty
+```
+
+- `useTeamOwners()` is the whole query: key `queryKeys.owners` (`['owners']`,
+  constant, outside the `'admin'` prefix), `staleTime` five minutes, no error
+  surface of any kind. Two callers share one request per document.
+- `PickedBy` takes `readonly TeamOwner[]` and nothing else, renders `null` for
+  an empty list, and carries its own CSS. The copy, the `/u/:userId` links and
+  the `` `${displayName}'s board` `` labels are pinned in
+  `components/PickedBy.test.tsx`, so Phase 7 need not re-test them — only that
+  the hero renders the component with the right team's owners, by **both**
+  URLs.
+- The admin refresh is done: `/api/selections` is in `PUBLIC_INDEX_PATHS` and
+  `queryKeys.owners` is invalidated after every write, both branches.
+- `PickedBy` and `useTeamOwners` are currently inside the `SearchPage` chunk
+  (3.69 kB; the index chunk is 377.57 kB). A second importer is what moves them
+  into the index chunk, which is the measurement this phase's criterion asks
+  for.
 
 ### Scope
 

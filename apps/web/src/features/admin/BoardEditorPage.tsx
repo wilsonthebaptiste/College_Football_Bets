@@ -167,7 +167,7 @@ export default function BoardEditorPage() {
     pendingFocus.current = null;
   });
 
-  if (board.isPending) return <LoadingNote>Loading the board…</LoadingNote>;
+  if (board.isPending) return <LoadingNote isPage>Loading the board…</LoadingNote>;
 
   if (board.isError) {
     const error = board.error;

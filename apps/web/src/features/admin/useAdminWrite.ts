@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
-import { publicPathsFor, queryKeys } from '../../lib/api';
+import { publicPathsFor, PUBLIC_INDEX_PATHS, queryKeys } from '../../lib/api';
 import { isApiError, refreshPublic } from '../../lib/apiClient';
 
 /**
@@ -13,14 +13,21 @@ import { isApiError, refreshPublic } from '../../lib/apiClient';
  *    this, a board read inside its `max-age` would still show the old order.
  * 3. Only then are the viewer pages' queries invalidated, so their refetch
  *    finds the fresh copy.
+ *
+ * The pick index is in both halves whatever changed, and not only when a board
+ * did: it carries display names as well as memberships, so a rename goes stale
+ * in it too. Without this the administrator who just moved a team would be the
+ * one person still seeing the old answer, for five minutes, in their own
+ * browser (plan-search-engine, Phase 6).
  */
 export function useAfterAdminWrite(): (userId: string | null) => void {
   const queryClient = useQueryClient();
   return useCallback(
     (userId: string | null) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.adminUsers });
-      void refreshPublic(userId === null ? ['/api/users'] : publicPathsFor(userId)).then(() => {
+      void refreshPublic(userId === null ? PUBLIC_INDEX_PATHS : publicPathsFor(userId)).then(() => {
         void queryClient.invalidateQueries({ queryKey: queryKeys.users });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.owners });
         if (userId !== null) {
           void queryClient.invalidateQueries({ queryKey: queryKeys.board(userId) });
         }

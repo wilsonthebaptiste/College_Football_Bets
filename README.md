@@ -7,19 +7,22 @@ was learned, what is deployed, and what is left. The original specification and
 the phase-by-phase build plan are archived in
 [context/archive/](context/archive/).
 
-**Status: Phases 1–4 are complete. Phase 5 (admin and ship) is built and
-deployed: the site is live at <https://cfb-board-pfc.pages.dev>, on real ESPN
-data, and committed as `5dd38b3`.** What remains is yours: 24 hours of usage
-numbers (see
+**Status: the five build phases are complete and team search is deployed. The
+site is live at <https://cfb-board-pfc.pages.dev>, on real ESPN data, and you
+can now look up any team the provider lists, not only the 54 on boards** (see
+[Testing the search](#testing-the-search-on-your-machine)). What is still
+outstanding is yours: 24 hours of usage numbers (see
 [Testing Phase 5](#testing-phase-5-on-your-machine) and
 [docs/ops.md](docs/ops.md)). The website has a home page listing every board,
 each person's board of six team cards, a full team page (rank, record, the
 live game, the previous and next games, the matchup prediction, and the whole
-season's schedule), and an admin console for the administrator: add, rename,
-and delete people, and add, remove, and reorder each board's teams. Nobody
-signs in to look at boards. The data comes from ESPN or from a built-in mock
-season. When ESPN fails, the API serves the last good data labeled as stale,
-and the site shows that label instead of breaking the page.
+season's schedule), a search box in the header that reaches **any** team the
+provider lists rather than only the 54 on boards, and an admin console for the
+administrator: add, rename, and delete people, and add, remove, and reorder
+each board's teams. Nobody signs in to look at boards. The data comes from
+ESPN or from a built-in mock season. When ESPN fails, the API serves the last
+good data labeled as stale, and the site shows that label instead of breaking
+the page.
 
 ---
 
@@ -37,7 +40,8 @@ apps/api/            Cloudflare Worker: the application API
 apps/web/            The website: React + Vite + TypeScript
   src/app/           Routes, page frame, not-found page
   src/features/      home (board picker), board (cards), team (detail, schedule,
-                     prediction), admin (sign-in, people, board editor)
+                     prediction), search (any team), admin (sign-in, people,
+                     board editor)
   src/components/    Rank, record, game lines, live score, logos, freshness, states
   src/lib/           API client, polling intervals, date formatting
   src/auth/          The admin session (loaded only for the administrator)
@@ -90,14 +94,14 @@ npm run verify
 A pass looks like this at the end:
 
 ```
- Test Files  31 passed (31)
-      Tests  704 passed (704)
+ Test Files  35 passed (35)
+      Tests  777 passed (777)
 ✓ No hard-coded year literals outside packages/shared/src/season.ts
 ```
 
-(Those are the Phase 5 totals. Phase 1 on its own was 4 files and 101 tests.
-Phase 2 brought it to 13 files and 287, Phase 3 to 20 and 387, and Phase 4 to
-24 and 473.)
+(Those are today's totals. Phase 1 on its own was 4 files and 101 tests.
+Phase 2 brought it to 13 files and 287, Phase 3 to 20 and 387, Phase 4 to 24
+and 473, and Phase 5 to 31 and 704. Team search added the last 73.)
 
 That one command runs four checks:
 
@@ -105,7 +109,7 @@ That one command runs four checks:
 | ---------------- | -------------------------------------------------------------------------------------- |
 | **typecheck**    | The code is valid strict TypeScript. The API and the shared types agree on every shape |
 | **lint**         | No `any` types and no sloppy patterns (§41)                                            |
-| **test**         | 704 tests. Each phase's are listed under its own "Testing Phase N" section             |
+| **test**         | 777 tests. Each phase's are listed under its own "Testing …" section                   |
 | **check:season** | No year like `2026` is hard-coded anywhere, so next season needs no code change (§21)  |
 
 What Phase 1's 101 tests cover:
@@ -958,26 +962,195 @@ labelled "unavailable" cards. Details are in the Phase 5 completion notes in
 
 ---
 
+## Testing the search on your machine
+
+The site can now look up **any** college football team the provider lists —
+about 762 of them, all divisions — not only the 54 on somebody's board. There
+is a search box in the header of every page, a `/search` page whose URL is the
+query, and a team page for a team nobody has selected. It needs nothing new:
+the same Supabase setup as before, and the mock season for the sports data.
+
+**Restart both servers first** (`npm run dev`, `npm run dev:web`). Read the
+terminal for the ports they actually take — 8787 and 5173 are the usual ones,
+not a promise.
+
+**Worth knowing before you test:**
+
+- **In mock mode no searched team has a logo**, so every result row and every
+  searched team page shows initials instead. That is the mock provider, which
+  reports no logo for any team; board cards get theirs from the database. On
+  the live site both have real crests.
+- **An FCS team shows "Conference unknown"** on a result row, and no conference
+  line at all on its team page. Conference names come from the provider's FBS
+  groups, and it does not publish one for everyone else. Nothing is guessed.
+- **"NR" is not "—".** "NR" means the poll was read and does not list that
+  team. "—" means the poll could not be read. An FCS team gets "NR".
+- **A failing search takes about four seconds to say so.** Anything 5xx is
+  retried twice, a second apart and then two. A 429 appears at once, because a
+  rate limiter is not worth retrying.
+
+### Level A — Automated checks
+
+```powershell
+npm run verify
+```
+
+The result should be 35 test files and 777 tests. The search added 73 to
+Phase 5's 704, in four phases:
+
+- **The team page for any team** (11). `/api/teams/<providerTeamId>` and its
+  schedule answer for a team with no row of ours, with `id: null` and the same
+  content a board team gets; the request makes no database call at all, and
+  works with no database configured; a uuid still resolves first; an unknown
+  id, a malformed id and an over-long id are clean 404s.
+- **The public search endpoint** (14). No token, no database call, a
+  five-minute cache lifetime, and the same ranking as the admin console's own
+  search, asserted against it. A short query is a 400, the team list being
+  down is a 503 with a reference number, the conference map being down still
+  answers 200, and an error never inherits the cache lifetime.
+- **The `/search` page** (32). The query seeded from `?q=`, a plain list of
+  links and never a combobox, provider-id hrefs, "Conference unknown" and the
+  initials fallback, the below-minimum hint with no request made, "Searching…",
+  no matches, a provider outage, a 429, and a failure with no reference
+  number — each with one `h1` and no raw value on screen.
+- **The header box and the pass over every page** (16). The header's exact
+  contents, its `search` landmark labelled apart from the page's, where a
+  submitted query goes and that `/search` reads it back; every page under the
+  one layout that carries the header; and a page-level wait having a heading.
+
+Then the build and the key scan:
+
+```powershell
+npm run build:web
+npm run check:bundle
+```
+
+`/search` should build as its own chunk of about 3 kB, and the scan should
+list only the publishable key, as public by design.
+
+### Level B — The website
+
+Open <http://localhost:5173>.
+
+1. **The header.** Every page has **Search teams** in the header: home, a
+   board, a team page, `/search` itself, `/login`, and a URL that does not
+   exist. Type `texas` and press Enter. You land on `/search?q=texas`, the
+   header box is empty again, and the page's own box holds `texas`.
+2. **Typing.** Clear the page's box and type `tex` one letter at a time. In the
+   Network tab there is **one** request, for `tex` — not three. Delete a letter
+   and type it back: no new request at all. The URL keeps step with the box.
+3. **Too short.** Clear the box and type `a`. The hint says to type at least
+   two letters, no request is made, and no results list appears.
+4. **Nothing found.** Type `zzzzqq`. It says `No teams match “zzzzqq”.`
+5. **Accents.** Type `san jose`. San José State is found.
+6. **Open a result.** Press one. The team page shows everything a board team
+   shows: name, rank, record, the previous and next games, the prediction, and
+   the whole schedule. The back link says **Search** and returns to your
+   results with the query still in the box.
+7. **A team nobody has selected.** Search `mercer` and open it. The row says
+   `Conference unknown · MER`, and the page says **NR** with a real record and
+   a real schedule.
+8. **The URL is the search.** Copy `/search?q=texas`, open it in a new tab, and
+   reload it. Same results. Press Back: it goes to the page before your search,
+   not through every letter you typed.
+9. **From `/search` itself.** With results on screen, type `mercer` in the
+   **header** box and press Enter. The page's box and its results both follow.
+10. **An old link still works.** Open a board, open a card, and note the
+    `/teams/<uuid>` URL. It still works, and shows the same team as the
+    provider-id URL — with the logo, which the uuid page gets from the database.
+11. **Keyboard only.** From the top of any page: Tab to the wordmark, Tab past
+    the nav, Tab to the header box, type, Enter. Then Tab into the results and
+    Enter to open one. Every control shows a focus ring.
+12. **Phone width.** In the device toolbar at 320 px, the header is two rows —
+    the wordmark and nav, then the search box across the full width — and
+    nothing scrolls sideways. The box, its button, and each result row are all
+    at least 44 px tall.
+
+### Level B2 — Failure states
+
+| Do this                                                                                                                                       | What you should see                                                                                                                                                                                   |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stop `npm run dev`, delete `apps\api\.wrangler\state`, and restart it with `npx wrangler dev --var SPORTS_PROVIDER_FAULT:teams` in `apps/api` | After about four seconds, `/search?q=texas` shows `Team information is temporarily unavailable.` and a reference number. The header box still works, and the query is still in the page's box to edit |
+| With that fault still on, open `/teams/251`                                                                                                   | The same message and a **Try again** button, under one heading                                                                                                                                        |
+| Restart `npm run dev` normally, then search and hold **Enter** on a result row to hammer the API                                              | A 429 shows `Too many requests.` **immediately** — it is not retried                                                                                                                                  |
+
+**Both parts of that first drill matter.** `--var` is what puts the fault in
+the Worker (wrangler prints its bindings at startup: if
+`env.SPORTS_PROVIDER_FAULT` is not in that list, the drill is not armed), and
+deleting the state directory is what makes the fault _reachable_ — the team
+list is cached for a day, so a warm cache answers cheerfully and the drill
+looks like it passed.
+
+### Level C — The live site
+
+Deployed 2026-09-24. Smoke is 20/20, `verify:rls` is 44/44, and 54 browser
+checks pass against the deployed site; what is left here is your own phone.
+
+1. **Search on your phone.** Open <https://cfb-board-pfc.pages.dev>, type a
+   school into the header box, and open a result. Try an FCS school — Mercer,
+   or North Dakota State — and check it says **NR** and has a real schedule.
+   (North Dakota State will say **Mountain West**. That is ESPN's own answer,
+   passed through unaltered; the conference map is not a division filter.)
+2. **Smoke.**
+
+   ```powershell
+   npm run smoke -- https://cfb-api.cfb-api.workers.dev https://cfb-board-pfc.pages.dev
+   ```
+
+   Every line should pass — 20 of them with a site to check CORS against,
+   including the four the search added: that a query finds a team, that the
+   answer is cacheable, that the team page a result opens serves that team by
+   the provider's id with no row of ours, and that a one-letter query is a 400.
+
+3. **The day after.** Look at the KV write counter
+   ([Watching usage](docs/ops.md#watching-usage)). Searching itself is nearly
+   free; it is the **team pages** searching leads to that write to KV, and the
+   counter to watch is `schedule`.
+
+### Search exit criteria and how each is checked
+
+| Exit criterion (plan-search-engine)                                             | Checked by              | Status                                 |
+| ------------------------------------------------------------------------------- | ----------------------- | -------------------------------------- |
+| A team page for a team with no row of ours, with no database call on that path  | Level A                 | ✅ automated                           |
+| Anyone can search, with no token, and the answer is cacheable                   | Level A, Level C step 2 | ✅ automated · ✅ live smoke           |
+| Two characters or more lists matches; the URL can be shared and reloaded        | Level A, Level B 1–8    | ✅ automated browser run · ⏳ you      |
+| A result opens that team's page, and "Search" returns to the results            | Level A, Level B 6      | ✅ automated browser run · ⏳ you      |
+| Nothing invented: "NR" and "Conference unknown" for a team outside the FBS poll | Level A, Level B 7      | ✅ automated browser run · ⏳ you      |
+| A search box in the header of every page, reachable by keyboard                 | Level A, Level B 1, 11  | ✅ automated browser run · ⏳ you      |
+| One `h1` per page, 44 px targets, no sideways scroll at 320 px, axe clean       | Level B 12              | ✅ automated browser run · ⏳ you      |
+| `/search` is its own chunk and pulls in no sign-in code                         | Level A (the build)     | ✅ checked at the build                |
+| Deployed, smoke-tested, and opened on a phone                                   | Level C                 | ✅ deployed 2026-09-24 · ⏳ your phone |
+
+"Automated browser run" means 54 checks in headless Edge against a real
+`wrangler dev` Worker, run against both the dev server and the production
+build, plus 10 more during a forced provider outage and 6 axe scans in light
+and dark. Details are in the Phase 4 completion notes in
+[context/plan-search-engine.md](context/plan-search-engine.md).
+
+---
+
 ## Troubleshooting
 
-| Problem                                                    | Fix                                                                                                                                                                                                                              |
-| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run dev` says port 8787 is in use                     | An old server is still running. Close that terminal, or run `npx wrangler dev --port 8788` in `apps/api`                                                                                                                         |
-| `/api/users` returns 500 after setup                       | Check `apps/api/.dev.vars`, then restart `npm run dev`, which reads the file only at startup                                                                                                                                     |
-| Admin calls always return 401                              | See step 3 of `docs/supabase-setup.md`. The project may have no public signing key                                                                                                                                               |
-| Things worked last week and nothing does now               | Free Supabase projects pause after about 7 days idle. Press Restore in the dashboard                                                                                                                                             |
-| `verify:rls` says "Could not read any app_users"           | The seed has not been run, or the root `.env` points at a different project                                                                                                                                                      |
-| The website says "Unable to load boards"                   | The API isn't running. Start `npm run dev` in another terminal, then press **Try again**                                                                                                                                         |
-| The website runs on 5174, not 5173                         | Something else holds 5173. Either port works: the dev server forwards `/api` to 8787 regardless                                                                                                                                  |
-| `/login` says "Admin sign-in isn't set up"                 | `apps/web/.env` is missing or incomplete (Level C). Restart `npm run dev:web` after editing it                                                                                                                                   |
-| The team page says "Schedule unavailable"                  | The schedule is its own request. Press **Try again**. If it keeps failing, check that DevTools isn't blocking it (Phase 4, Level B2) and that `npm run dev` is running                                                           |
-| Every card says "Season complete" in September             | `SEASON_OVERRIDE` is still in `apps/api/.dev.vars` from the offseason drill (Phase 4, Level B3). Remove the line and restart `npm run dev`                                                                                       |
-| A test account gets "Email or password is incorrect."      | The account isn't in this Supabase project, its password doesn't match `.env`, or its email was never confirmed. Recreate it in **Authentication → Users** with **Auto Confirm User** ticked. Keep the non-admin out of `admins` |
-| The console says "That team is already on this board."     | It is. The database refuses a team twice on one board (§3); the search marks such teams **On this board**                                                                                                                        |
-| The console says "This board changed since it was loaded." | Another tab or device changed the board. Reload the page and try again                                                                                                                                                           |
-| A changed board still shows the old order elsewhere        | Other people's pages catch up within about a minute (the board's cache). Your own admin browser sees it at once                                                                                                                  |
-| The API answers 429 "Too many requests."                   | More than 120 reads a minute from one address. Wait a few seconds. For a load test, set `READ_RATE_LIMIT_PER_MINUTE=off` in `apps/api/.dev.vars`                                                                                 |
-| Anything about deploying                                   | See the troubleshooting table at the end of [docs/ops.md](docs/ops.md#troubleshooting-a-deployment)                                                                                                                              |
+| Problem                                                        | Fix                                                                                                                                                                                                                                                                                            |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev` says port 8787 is in use                         | An old server is still running. Close that terminal, or run `npx wrangler dev --port 8788` in `apps/api`                                                                                                                                                                                       |
+| `/api/users` returns 500 after setup                           | Check `apps/api/.dev.vars`, then restart `npm run dev`, which reads the file only at startup                                                                                                                                                                                                   |
+| Admin calls always return 401                                  | See step 3 of `docs/supabase-setup.md`. The project may have no public signing key                                                                                                                                                                                                             |
+| Things worked last week and nothing does now                   | Free Supabase projects pause after about 7 days idle. Press Restore in the dashboard                                                                                                                                                                                                           |
+| `verify:rls` says "Could not read any app_users"               | The seed has not been run, or the root `.env` points at a different project                                                                                                                                                                                                                    |
+| The website says "Unable to load boards"                       | The API isn't running. Start `npm run dev` in another terminal, then press **Try again**                                                                                                                                                                                                       |
+| The website runs on 5174, not 5173                             | Something else holds 5173. Either port works: the dev server forwards `/api` to 8787 regardless                                                                                                                                                                                                |
+| `/login` says "Admin sign-in isn't set up"                     | `apps/web/.env` is missing or incomplete (Level C). Restart `npm run dev:web` after editing it                                                                                                                                                                                                 |
+| The team page says "Schedule unavailable"                      | The schedule is its own request. Press **Try again**. If it keeps failing, check that DevTools isn't blocking it (Phase 4, Level B2) and that `npm run dev` is running                                                                                                                         |
+| Every card says "Season complete" in September                 | `SEASON_OVERRIDE` is still in `apps/api/.dev.vars` from the offseason drill (Phase 4, Level B3). Remove the line and restart `npm run dev`                                                                                                                                                     |
+| A test account gets "Email or password is incorrect."          | The account isn't in this Supabase project, its password doesn't match `.env`, or its email was never confirmed. Recreate it in **Authentication → Users** with **Auto Confirm User** ticked. Keep the non-admin out of `admins`                                                               |
+| The console says "That team is already on this board."         | It is. The database refuses a team twice on one board (§3); the search marks such teams **On this board**                                                                                                                                                                                      |
+| The console says "This board changed since it was loaded."     | Another tab or device changed the board. Reload the page and try again                                                                                                                                                                                                                         |
+| A changed board still shows the old order elsewhere            | Other people's pages catch up within about a minute (the board's cache). Your own admin browser sees it at once                                                                                                                                                                                |
+| The API answers 429 "Too many requests."                       | More than 120 reads a minute from one address. Wait a few seconds. For a load test, set `READ_RATE_LIMIT_PER_MINUTE=off` in `apps/api/.dev.vars`                                                                                                                                               |
+| No searched team has a logo, but board cards do                | Expected in mock mode: the mock provider reports no logo for any team, and board cards get theirs from the database. Not a bug, and not true on the live site                                                                                                                                  |
+| A fault drill "passes" — search still works with the fault set | Two ways to arm it wrong. Set it with `npx wrangler dev --var SPORTS_PROVIDER_FAULT:teams`, not as a shell variable, and check wrangler's startup binding list names it; then delete `apps\api\.wrangler\state`, or the day-old cached team list answers without the provider ever being asked |
+| Anything about deploying                                       | See the troubleshooting table at the end of [docs/ops.md](docs/ops.md#troubleshooting-a-deployment)                                                                                                                                                                                            |
 
 For database-side problems, the full table is at the bottom of
 [docs/supabase-setup.md](docs/supabase-setup.md).

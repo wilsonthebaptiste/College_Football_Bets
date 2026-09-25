@@ -15,6 +15,8 @@ import type {
   Team,
   TeamDetailResponse,
   TeamIdentity,
+  TeamOwner,
+  TeamOwnersResponse,
   TeamRecord,
   TeamScheduleResponse,
   TeamSearchResponse,
@@ -341,6 +343,22 @@ export function fcsIdentity(overrides: Partial<TeamIdentity> = {}): TeamIdentity
 
 export function searchResponse(teams: TeamIdentity[]): TeamSearchResponse {
   return { teams };
+}
+
+// ─── The pick index (plan-search-engine, Part Two) ──────────────────────────
+
+/** Someone whose board holds a team. The uuid is what `/u/:userId` addresses. */
+export function makeOwner(displayName: string, userId: string = nextId()): TeamOwner {
+  return { userId, displayName };
+}
+
+/**
+ * `GET /api/selections` as the browser sees it: provider team id → who has that
+ * team. A team nobody picked is ABSENT, never an empty array — the shape the
+ * page relies on to render no line at all.
+ */
+export function ownersResponse(owners: Record<string, TeamOwner[]>): TeamOwnersResponse {
+  return { owners };
 }
 
 export function makePrediction(overrides: Partial<Prediction> = {}): Prediction {

@@ -48,7 +48,8 @@ export default function LoginPage() {
   }
 
   if (session.status === 'signed-in') return <Navigate to={next} replace />;
-  if (session.status === 'checking') return <LoadingNote>Checking your session…</LoadingNote>;
+  if (session.status === 'checking')
+    return <LoadingNote isPage>Checking your session…</LoadingNote>;
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

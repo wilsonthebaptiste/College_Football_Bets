@@ -3,6 +3,7 @@ import { useAdminSession } from '../auth/AdminSessionProvider';
 import { useAdminCheck } from '../auth/useAdminCheck';
 import { cx } from '../lib/cx';
 import { APP_NAME } from '../lib/useDocumentTitle';
+import { HeaderSearch } from './HeaderSearch';
 import { FootballIcon } from './icons';
 import styles from './AppHeader.module.css';
 
@@ -12,6 +13,13 @@ import styles from './AppHeader.module.css';
  * it (Phase 3's Level C finding). `/login` is never linked and stays reachable
  * by URL (plan §3.1). Hiding the link protects nothing, and is not meant to:
  * the database does (§31).
+ *
+ * The search box is last, after the nav, in the markup and on screen alike:
+ * the row wraps and never reorders, so what Tab visits next is always what is
+ * next along the line (§48). The plan asked for it between the wordmark and
+ * the nav; that order costs a third header row on a phone, because the box
+ * breaks onto its own line and pushes the nav onto another. Measured at
+ * 320 px: 113 px of header this way, 165 px the other.
  */
 export function AppHeader() {
   const { status } = useAdminSession();
@@ -25,7 +33,7 @@ export function AppHeader() {
           <FootballIcon className={styles.ball} />
           {APP_NAME}
         </Link>
-        <nav aria-label="Main">
+        <nav aria-label="Main" className={styles.navWrap}>
           <ul className={styles.nav} role="list">
             <li>
               <NavLink
@@ -48,6 +56,9 @@ export function AppHeader() {
             )}
           </ul>
         </nav>
+        <div className={styles.search}>
+          <HeaderSearch />
+        </div>
       </div>
     </header>
   );

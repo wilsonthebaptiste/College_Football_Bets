@@ -47,11 +47,31 @@ export function ErrorState({
   );
 }
 
+interface LoadingNoteProps {
+  children: string;
+  /**
+   * True when the note IS the whole page — a chunk still downloading, a
+   * session still being checked. Its text then doubles as the page's one `h1`,
+   * so a page is never heading-less while it waits (§48). Inside a page that
+   * already has a heading, leave it off.
+   */
+  isPage?: boolean;
+}
+
 /** A short "working on it" line for waits too brief or too simple for a skeleton. */
-export function LoadingNote({ children }: { children: string }) {
+export function LoadingNote({ children, isPage = false }: LoadingNoteProps) {
+  if (!isPage) {
+    return (
+      <p className={styles.loading} role="status">
+        {children}
+      </p>
+    );
+  }
+  // `role` goes on the wrapper, not the heading: a `status` on the <h1> would
+  // replace its heading role rather than add to it.
   return (
-    <p className={styles.loading} role="status">
-      {children}
-    </p>
+    <div role="status">
+      <h1 className={styles.loading}>{children}</h1>
+    </div>
   );
 }
