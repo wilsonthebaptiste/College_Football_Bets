@@ -12,5 +12,18 @@ export type {
 } from './game';
 export { isFinal, isLive } from './game';
 export type { Prediction, PredictionSide, PredictionSource } from './prediction';
+export type {
+  BoardProjection,
+  ConferenceStanding,
+  FpiProjectionInputs,
+  OutcomeKind,
+  ProjectionAnomaly,
+  ProjectionAnomalyKind,
+  ProjectionInputs,
+  ProjectionSource,
+  ProjectionTerm,
+  ProjectionTermState,
+  TeamProjection,
+} from './projection';
 export type { TeamSnapshot } from './snapshot';
 export type { AppUser, UserSummary, UserTeamSelection } from './user';

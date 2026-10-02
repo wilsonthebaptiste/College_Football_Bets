@@ -161,6 +161,53 @@ export async function resolveCurrentSeason(deps: SeasonResolutionDeps): Promise<
   return { season: resolveSeasonFromDate(deps.now), source: 'date' };
 }
 
+// ─── How much season is behind us ────────────────────────────────────────────
+// Used by the projected-points rubric (`scoring.ts`) to weight a team's current
+// poll position against a rank-based model of where it finishes. It lives here,
+// and takes a `Season` rather than a `Date`, for the same two reasons the rest
+// of this module does: `check:season` forbids a year literal elsewhere, and the
+// season is already resolved once per request, so nothing downstream should be
+// reading the clock a second time.
+
+/** Regular-season weeks the weighting is spread over. */
+export const REGULAR_WEEKS = 15;
+
+/**
+ * The most weight the regular season ever gives the current fact. Short of 1
+ * because a team ranked in November can still fall out of the final poll.
+ */
+const REGULAR_SEASON_MAX_WEIGHT = 0.8;
+
+/**
+ * The date heuristic never knows the week (see `resolveSeasonFromDate`). Half of
+ * the regular season's maximum is the honest answer to "somewhere in there".
+ */
+const UNKNOWN_WEEK_WEIGHT = 0.4;
+
+/**
+ * Not 1.0 on purpose: the final poll comes AFTER the bowls, so a team ranked in
+ * December can still drop out of it. The residual is honest uncertainty.
+ */
+const POSTSEASON_WEIGHT = 0.95;
+
+/**
+ * 0 before a snap has been played, rising through the regular season, highest in
+ * the postseason. Monotone across preseason → week 15 → postseason.
+ */
+export function seasonProgress(season: Season): number {
+  switch (season.type) {
+    case 'preseason':
+      return 0;
+    case 'regular': {
+      if (season.week === null || !Number.isFinite(season.week)) return UNKNOWN_WEEK_WEIGHT;
+      const week = Math.min(Math.max(season.week, 0), REGULAR_WEEKS);
+      return (REGULAR_SEASON_MAX_WEIGHT * week) / REGULAR_WEEKS;
+    }
+    case 'postseason':
+      return POSTSEASON_WEIGHT;
+  }
+}
+
 // ─── Small helpers ───────────────────────────────────────────────────────────
 
 /**

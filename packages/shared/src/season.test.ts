@@ -3,9 +3,11 @@ import {
   formatSeasonLabel,
   isSameSeason,
   parseSeasonOverride,
+  REGULAR_WEEKS,
   resolveCurrentSeason,
   resolveSeasonFromDate,
   seasonKey,
+  seasonProgress,
   type Season,
 } from './season';
 
@@ -208,6 +210,68 @@ describe('resolveCurrentSeason precedence', () => {
 
     expect(result.source).toBe('date');
     expect(result.season.year).toBe(2025);
+  });
+});
+
+describe('seasonProgress', () => {
+  const regular = (week: number | null): Season => ({ year: 2025, type: 'regular', week });
+
+  it('is 0 before a snap has been played', () => {
+    expect(seasonProgress({ year: 2025, type: 'preseason', week: null })).toBe(0);
+  });
+
+  it('rises linearly through the regular season to 0.8', () => {
+    expect(seasonProgress(regular(1))).toBeCloseTo(0.8 / REGULAR_WEEKS, 10);
+    expect(seasonProgress(regular(5))).toBeCloseTo(0.8 * (5 / REGULAR_WEEKS), 10);
+    expect(seasonProgress(regular(REGULAR_WEEKS))).toBeCloseTo(0.8, 10);
+  });
+
+  it('caps a week past the end of the regular season rather than exceeding 0.8', () => {
+    expect(seasonProgress(regular(REGULAR_WEEKS + 4))).toBeCloseTo(0.8, 10);
+  });
+
+  it('answers 0.4 when the week is unknown, which the date heuristic never knows', () => {
+    expect(seasonProgress(regular(null))).toBe(0.4);
+    expect(seasonProgress(resolveSeasonFromDate(utc('2025-10-01T19:42:00Z')))).toBe(0.4);
+  });
+
+  it('is 0.95 in the postseason, not 1 — the final poll comes after the bowls', () => {
+    expect(seasonProgress({ year: 2025, type: 'postseason', week: null })).toBe(0.95);
+  });
+
+  it('is monotone from preseason through week 15 to postseason', () => {
+    const chain: Season[] = [
+      { year: 2025, type: 'preseason', week: null },
+      ...Array.from({ length: REGULAR_WEEKS }, (_unused, index) => regular(index + 1)),
+      { year: 2025, type: 'postseason', week: null },
+    ];
+
+    const weights = chain.map(seasonProgress);
+    for (let index = 1; index < weights.length; index += 1) {
+      const previous = weights[index - 1];
+      const current = weights[index];
+      expect(previous).toBeDefined();
+      expect(current).toBeDefined();
+      expect(current as number).toBeGreaterThan(previous as number);
+    }
+  });
+
+  it('never reads the clock: the same season always gives the same weight', () => {
+    const season = regular(7);
+    const before = seasonProgress(season);
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(utc('2030-01-01T00:00:00Z'));
+      expect(seasonProgress(season)).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('tolerates a nonsense week rather than returning a weight above 0.8 or below 0', () => {
+    expect(seasonProgress(regular(0))).toBe(0);
+    expect(seasonProgress(regular(-3))).toBe(0);
+    expect(seasonProgress(regular(Number.NaN))).toBe(0.4);
   });
 });
 
