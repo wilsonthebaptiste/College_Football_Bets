@@ -8,6 +8,7 @@ import { adminRoutes } from './routes/admin';
 import { gameRoutes } from './routes/games';
 import { healthRoutes } from './routes/health';
 import { metaRoutes } from './routes/meta';
+import { projectionRoutes } from './routes/projections';
 import { searchRoutes } from './routes/search';
 import { selectionRoutes } from './routes/selections';
 import { teamRoutes } from './routes/teams';
@@ -41,6 +42,14 @@ export function createApp(): Hono<AppBindings> {
   // Beside the boards it inverts: the same Postgres tables, read from the other
   // end (plan-search-engine, Part Two).
   app.route('/api/selections', selectionRoutes);
+  // Projected points (predicting_score.md, Phase 3). Mounted at `/api` rather
+  // than under one prefix because it owns two paths in two places: the
+  // leaderboard at `/api/projections` and one board's breakdown at
+  // `/api/users/:userId/projection`. Hono merges a sub-app's routes into this
+  // router path by path, so this does not shadow `/api/users/:userId/board`:
+  // the board response is byte-identical to before this feature existed, and a
+  // test asserts it carries no projection field (§42).
+  app.route('/api', projectionRoutes);
   app.route('/api/teams', teamRoutes);
   app.route('/api/games', gameRoutes);
   // Mounted here, above the admin branch, so the read budget applies to it:

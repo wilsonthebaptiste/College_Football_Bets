@@ -46,6 +46,17 @@ import { testEnv } from '../helpers/supabase-stub';
 
 const SEASON = { year: 2026, type: 'regular' as const, week: 5 };
 
+/**
+ * The labels the two real publishers' figures wear.
+ *
+ * Passed in rather than hard-coded inside `conferenceStandingFor` since Phase 3:
+ * a hard-coded `playoffstatus` would have labelled the MOCK publisher's
+ * synthetic odds with a real publisher's name (§46). `services/projection.ts`
+ * derives them from the configured publishers, and a route test asserts mock
+ * mode labels every conference term `mock_projection`.
+ */
+const REAL_LABELS = { oddsSource: 'playoffstatus', fpiSource: 'espn_fpi' } as const;
+
 function teamList(): TeamIdentity[] {
   return readTeamList(fixture('team-list'))!.map(toTeamIdentity);
 }
@@ -154,6 +165,7 @@ describe('a conference standing is one of three states, never two', () => {
       conference: 'FBS Indep.',
       join,
       fpiWinConference: 0.4,
+      ...REAL_LABELS,
     });
     expect(standing).toEqual({ kind: 'not_eligible' });
 
@@ -187,6 +199,7 @@ describe('a conference standing is one of three states, never two', () => {
         conference: 'SEC',
         join,
         fpiWinConference: 0.354,
+        ...REAL_LABELS,
       }),
     ).toEqual({
       kind: 'odds',
@@ -202,6 +215,7 @@ describe('a conference standing is one of three states, never two', () => {
       conference: 'SEC',
       join: null,
       fpiWinConference: 0.354,
+      ...REAL_LABELS,
     });
     expect(standing).toEqual({
       kind: 'odds',
@@ -228,6 +242,7 @@ describe('a conference standing is one of three states, never two', () => {
         conference: 'SEC',
         join: null,
         fpiWinConference: null,
+        ...REAL_LABELS,
       }),
     ).toEqual({ kind: 'unavailable' });
   });
@@ -241,6 +256,7 @@ describe('a conference standing is one of three states, never two', () => {
         conference: null,
         join: null,
         fpiWinConference: null,
+        ...REAL_LABELS,
       }),
     ).toEqual({ kind: 'unavailable' });
   });

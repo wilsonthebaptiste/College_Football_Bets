@@ -18,7 +18,8 @@ export type CacheCategory =
   | 'prediction'
   | 'board_composite'
   | 'projection_inputs'
-  | 'conference_odds';
+  | 'conference_odds'
+  | 'projection_board';
 
 export type CacheTier = 'l1' | 'l2' | 'l3';
 
@@ -134,6 +135,18 @@ const TABLE: Readonly<Record<CacheCategory, PolicyRow>> = {
     tiers: DURABLE,
     kvWriteIntervalSeconds: 6 * HOUR,
   },
+  // The assembled answer (Phase 3), not a document: selections from Postgres,
+  // plus the four already-cached reads, plus arithmetic. L1 only, and never KV
+  // — it holds nothing a publisher produced, so a durable copy would only be a
+  // second place for a board change to go stale. Two minutes is long enough to
+  // absorb a page's own polling and short enough that an admin's edit reaches
+  // the leaderboard about as fast as it reaches a board (60 s).
+  projection_board: {
+    ttlSeconds: 2 * MINUTE,
+    staleSeconds: 5 * MINUTE,
+    tiers: EPHEMERAL,
+    kvWriteIntervalSeconds: 0,
+  },
 };
 
 /** Rankings move weekly in season and not at all out of it (plan §7: 1 h, 6 h offseason). */
@@ -190,7 +203,8 @@ export type CacheResource =
   | 'prediction'
   | 'board'
   | 'projection_inputs'
-  | 'conference_odds';
+  | 'conference_odds'
+  | 'projection_board';
 
 /** Bump when a cached value's shape changes, so KV never serves an old shape. */
 const KEY_VERSION = 'v2';

@@ -28,6 +28,21 @@ export function cacheControlFor(freshness: Freshness, now: number): string {
   return `public, max-age=${String(maxAge)}`;
 }
 
+/**
+ * `Cache-Control` for a response whose own lifetime is SHORTER than its inputs'.
+ *
+ * A projection is assembled from documents cached for six hours, so deriving
+ * `max-age` from their expiry would pin the answer in browsers for most of a
+ * day — long after a board change or a recomputed publisher should have reached
+ * the screen. The composite's own TTL is the ceiling instead, and the degraded
+ * cases keep the same short lifetime every other route gives them.
+ */
+export function cacheControlCapped(freshness: Freshness, maxAgeSeconds: number): string {
+  if (freshness.state === 'unavailable') return 'no-store';
+  if (freshness.state === 'stale') return `public, max-age=${String(STALE_MAX_AGE_SECONDS)}`;
+  return `public, max-age=${String(maxAgeSeconds)}`;
+}
+
 /** The plan's vocabulary is hit | miss | stale; "nothing to serve" reports as a miss. */
 export function xCacheValue(status: CacheStatus): 'hit' | 'miss' | 'stale' {
   return status === 'unavailable' ? 'miss' : status;

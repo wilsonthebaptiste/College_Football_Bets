@@ -62,12 +62,29 @@ function adminDb(c: AdminContext): PostgrestClient {
 }
 
 /**
+ * The projected-points answers are a second derivation of the same selections,
+ * cached in L1 for 120 s (predicting_score.md, Phase 3). Dropped for the same
+ * reason the board is: without it an administrator would see a board change at
+ * once and the projected total up to two minutes later.
+ *
+ * Both keys, because one board's change moves the leaderboard as well — a
+ * renamed person, a new board, or a team swapped for a better one all reorder
+ * it. `userId` is `null` when there is no one board to forget (a new person).
+ */
+function forgetProjections(c: AdminContext, userId: string | null): void {
+  const provider = providerName(c.env);
+  if (userId !== null) evictL1(cacheKey('projection_board', provider, userId));
+  evictL1(cacheKey('projection_board', provider, 'all'));
+}
+
+/**
  * The public board is cached in L1 for up to 60 s (plan §7). After a write,
  * this isolate's copy is dropped so the next read here rebuilds it. Other
  * isolates catch up when theirs expires (docs/ops.md, "Changing a board").
  */
 function forgetBoard(c: AdminContext, userId: string): void {
   evictL1(cacheKey('board', providerName(c.env), userId));
+  forgetProjections(c, userId);
 }
 
 async function readJson(c: AdminContext): Promise<Record<string, unknown>> {
@@ -177,6 +194,8 @@ adminRoutes.post('/users', async (c) => {
   // Note the client: the administrator's own token, not an elevated key. If they
   // are somehow not in `admins`, Postgres refuses this insert on its own (§31).
   const user = await createUser(adminDb(c), displayName);
+  // A new person is a new line on the leaderboard, at "0 of 0 teams".
+  forgetProjections(c, null);
 
   const body: CreateUserResponse = { user };
   c.header('Cache-Control', NO_STORE);

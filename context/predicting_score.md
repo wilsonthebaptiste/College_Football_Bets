@@ -16,9 +16,16 @@
       `npm run verify` green and `format:check` clean. Details, the four
       departures from this plan, and what it settled are in
       [Phase 2 — Completion Notes](#phase-2--completion-notes).
-- [ ] **Phase 3 — The endpoints.** `GET /api/projections` (every board's total)
-      and `GET /api/users/:userId/projection` (one board, per-team breakdown),
-      with freshness envelopes and labelled degradation.
+- [x] **Phase 3 — The endpoints.** ✅ **Complete, 2026-10-02.**
+      `GET /api/projections` (every board's total, one Postgres read and no
+      per-team provider call) and `GET /api/users/:userId/projection` (one
+      board, per-team breakdown), both with per-input freshness, each
+      publisher's own stamp, and labelled degradation. 982 tests in 42 files
+      (from 958 in 41); `npm run verify` green and `format:check` clean. Both
+      routes were run against the real nine boards in workerd, and the "odds
+      down" and "both down" drills with them. Details, the six departures, and
+      the three labelling bugs this phase found are in
+      [Phase 3 — Completion Notes](#phase-3--completion-notes).
 - [ ] **Phase 4 — The screens.** A total beside each name on the home page, a
       breakdown panel on the board page, and the same arithmetic for one team on
       the team page. Accessibility pass.
@@ -854,6 +861,191 @@ inherit it (the finding that already has a test on the search route).
 - The leaderboard is a *derived ordering* of people. Sort by total descending,
   then by display name, so a tie is stable; and do not label anybody "winning" —
   it is a projection, and ties to 2 dp will happen.
+
+---
+
+## Phase 3 — Completion Notes
+
+Built 2026-10-02. Every exit criterion above passes, and both routes were run
+against the **real nine boards** through the live Supabase project in workerd,
+with the "odds down" and "both down" drills on top.
+
+Files as planned, plus four the scope table did not name: `queries.ts` gained
+`listBoardsWithSelections` (see departure 2), `cache-headers.ts` gained
+`cacheControlCapped` (departure 4), `routes/admin.ts` gained
+`forgetProjections` (see below), and `services/search.ts` gained the two
+envelope-returning reads the assembly needs (`readConferenceMap`,
+`readTeamListRead`).
+
+### Three labelling bugs, and the one that mattered
+
+This phase is the first thing that puts a `ProjectionSource` on the wire, which
+is why all three surfaced here rather than in Phase 1 or 2.
+
+**1. The one number we model was wearing ESPN's name.** `estimateSource` was
+being derived from the same helper as FPI's label, so in ESPN mode every finish
+term came out `espn_fpi`. That is §46's named example of what not to do —
+calling an internally calculated figure a provider's prediction — and it is the
+exact condition the whole feature's licence rests on (§4: *exactly one quantity
+is modelled by us and it is labelled as our estimate*). `estimateSourceFor` is
+now its own function with its own comment saying why it is not FPI's, and the
+`rankings` input entry carries the estimate's label too: in this response the
+poll exists only as the input to our model, so a screen reading the sources
+knows the number derived from it is ours. **The end-to-end test against the
+captured payloads is what caught it**; nothing in mock mode could have, because
+there every label is `mock_projection` and the bug was invisible.
+
+**2. `conferenceStandingFor` hard-coded `playoffstatus` and `espn_fpi`.** So in
+mock mode the conference terms of a synthetic projection claimed to come from a
+real publisher. Both labels are parameters now (`oddsSource`, `fpiSource`),
+derived from the configured publishers, and five Phase 2 test call sites gained
+them. A route test asserts that in mock mode *every* term of *every* team is
+labelled `mock_projection` and that the word `playoffstatus` appears nowhere in
+the response.
+
+**3. The FPI conference fallback leaked outside the power four.** This one is a
+correctness bug, not just a label. `conferenceStandingFor` decides
+`not_eligible` from the team's conference, and a `null` conference skips that
+branch — so with the conference map down, a Mountain West team would have
+reached the FPI fallback and been paid **3 × P(wins the Mountain West)**, which
+the rubric does not pay for at all. The assembly now offers `fpiWinConference`
+only for a team whose conference is *known* to be power four. With the map gone,
+every conference term is `unavailable`: pessimistic, correct, and tested.
+
+### Six departures, each a decision
+
+**1. There are five inputs, not four.** The plan lists the selections, the two
+documents, the conference map, and the rankings. The join also needs the
+provider's **team list** — it is what resolves the odds publisher's own
+spellings ("Mississippi St.") to provider team ids. So `ProjectionInputName` has
+five members and the response names all five. It costs nothing (24 h TTL,
+cron-warmed) but it is a fifth independent way the conference half can degrade,
+and one that looks nothing like the scrape being down: the scrape is fine and
+its rows cannot be attached to anybody. A test drills it on its own.
+
+**2. The leaderboard reads from the `app_users` end, not from
+`user_team_selections`.** The plan says "the same query `/api/selections`
+uses". That query cannot see a board with **no** selections, so a person with an
+empty board would have vanished from the leaderboard rather than appearing at
+"0 of 0" with no total. `listBoardsWithSelections` is still exactly one
+PostgREST request, and a test asserts both the count and that an empty board
+survives.
+
+**3. The composite freshness needed two refinements over `composeFreshness`.**
+Only the two publishers are `primary`; the rankings, conference map, and team
+list are `reference`, or a 24-hour conference map would date every projection a
+day old (the rule rankings already get on a card). And `composeFreshness`
+deliberately *ignores* an `unavailable` part, because on a board a failed card
+carries its own error — here a dead publisher is half the rubric, so one down
+forces `stale` and both down is `unavailable`. Without that, a response that
+could say nothing would have been labelled `fresh` with a null `fetchedAt` and
+cached for two minutes.
+
+**4. `Cache-Control` cannot be derived from the inputs' expiry.**
+`setCacheHeaders` computes `max-age` from the data's own expiry, which here is
+**six hours** — long enough to outlast an admin's board change and a
+publisher's recompute. `cacheControlCapped` caps it at the composite's own 120 s
+and keeps the existing treatment for the degraded cases: 10 s when stale,
+`no-store` when there is nothing to show. All three are asserted.
+
+**5. Anomalies are logged at assembly, not in the route.** Phase 1's notes say
+the route logs them. But the composite is cached for 120 s, so a route would
+re-log the same anomaly on every read of the same cached answer — noise, not
+signal. They are logged where the arithmetic runs, once per refresh, together
+with the join's two-way diagnostics (`projection_join_incomplete`), which are
+the only warning a publisher's rename will ever give.
+
+**6. `/api/users/:userId/projection` is mounted from `routes/projections.ts`,
+not from `userRoutes`.** The whole feature is one file and one mount, and
+nothing in the board's own routes knows it exists. Hono merges a sub-app's
+routes into the parent router path by path, so `/api` is a safe mount: the board
+response is unchanged, and a test asserts its exact key set and that the strings
+`projection` and `projected` appear nowhere in it.
+
+### An admin write had to learn about a second cache
+
+`routes/admin.ts` already drops the board composite from its own isolate after a
+write (`forgetBoard`), so an administrator sees their change at once rather than
+a minute later. The projection is a **second derivation of the same selections**
+with its own 120 s cache, so without the same treatment an admin would have
+added a team, watched the board change, and watched the projected total not
+change — and reasonably concluded the feature was broken.
+
+`forgetProjections` drops two keys, and the second one is the easy one to miss:
+a single board's change moves the **leaderboard** as well, because it is an
+ordering of everybody. It is called from every write that already forgot a board
+(rename, delete, add, remove, reorder) and from one that did not — creating a
+person, who is a new line on the leaderboard at "0 of 0 teams". Both are tested
+in `admin.test.ts` beside the board's own equivalent.
+
+### What the real boards actually look like
+
+Run in workerd against the live Supabase project with mock sports data, which is
+the combination that exercises the response's states without touching a
+publisher:
+
+| | |
+| --- | --- |
+| Boards | 9, sorted 13.44 down to 0.17, no ties |
+| Teams counted | 3 of 6 to 6 of 6 — the real boards hold teams the 50-team mock roster does not |
+| `not_eligible` on screen | Navy: two conference terms at `0.00` with no source |
+| `unavailable` on screen | UCLA: six terms at `—`, no total, excluded from the count |
+| Partial | Texas Tech: no FPI row, conference terms known, a total anyway |
+| Arithmetic | the six team totals summed to the board total to every decimal place |
+
+That spread is worth knowing before Phase 4 designs anything: **every state the
+panel has to render is already on the first board you open**, and one of the nine
+boards has only three of six teams counted.
+
+### Two drills, on the real runtime
+
+`wrangler dev --var SPORTS_PROVIDER_FAULT:<token> --persist-to <cold dir>`, the
+posture the search plan's Phase 2 finding prescribes.
+
+| Drill | Projection | The board route |
+| --- | --- | --- |
+| `odds` | 200, `max-age=10`, freshness `stale`, champion term falls back to FPI's figure, runner-up a quoted `0.00` | **untouched**: 200, `fresh` |
+| `all` | 200, `no-store`, every term `—`, nine boards with no totals, a reference number | 0 of 6 cards (`all` kills schedules too) |
+
+The `odds` row is §42 proven rather than asserted: a scrape failure degrades the
+projection and leaves the application's most important read alone. It also shows
+the two publishers' disagreement in the flesh — Oregon's conference champion term
+went from `0.29` (the scrape) to `1.61` (FPI's `probwinconf`), which is the
+documented ~0.75-point gap doing exactly what the plan said it would.
+
+### Things Phase 4 and 5 will get wrong if nobody says so
+
+- **"The panel's team rows sum to its total on screen" cannot hold in general**,
+  and Phase 4's exit criterion asks for it. The response sums *unrounded* team
+  totals and rounds once, which is the whole point — the plan's own eight worked
+  teams board **22.65** where their rounded totals sum to **22.64**. Phase 4 has
+  to pick: render the rounded-once board total (and not promise the visible rows
+  add up to it), or render the sum of the displayed rows (and disagree with the
+  API). Rendering `total.display` and not claiming the column adds up is the
+  honest one. The same applies to a team's six lines against its own total.
+- **`total: null` must not be coalesced to zero anywhere**, and
+  `teamsCounted` / `teamsTotal` must both be rendered. A board at "3 of 6" is
+  not comparable to one at "6 of 6", and nine boards sorted by total will put a
+  half-covered board wherever its three teams land.
+- **Only `fpi` and `conference_odds` carry a publisher's stamp**, and
+  `conference_odds.computedLabel` is **null on real data** because the four pages
+  disagree. Phase 4's "as of \<playoffstatus stamp\>" has to come from
+  `pages[]`, matched to the team's own conference.
+- **Poll this at minutes, not seconds.** The route is `max-age=120` and its
+  inputs move every six hours. `poll.ts`'s live cadence applied here would be
+  7,000 pointless requests a day.
+- **`not_eligible` and `unavailable` are both on screen on real data** (Navy and
+  UCLA above), so the §7 guard is not hypothetical: `0.00` with a reason, versus
+  `—`. Collapsing them is visible on the first board.
+- **The projection composite is L1-only and writes no KV**, so this phase adds
+  nothing to the write budget: the feature's cost is still Phase 2's at most
+  eight writes a day. Phase 5's KV reading should expect exactly that.
+- **`CONFERENCE_ODDS_PROVIDER` is still `mock` in `[env.production.vars]`.** The
+  routes exist now, so this is the setting that decides whether the deployed
+  Worker is projecting from a real publisher or from synthetic data — and
+  nothing on screen distinguishes the two except the labels, which do say
+  `mock_projection`. **Phase 5 has to flip it**, and that is the moment the
+  courtesy budget becomes real.
 
 ---
 

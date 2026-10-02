@@ -1,5 +1,6 @@
 import type { TeamIdentity } from '@cfb/shared';
 import { cacheKey, policyFor } from '../cache/policy';
+import type { CacheRead } from '../cache/swr';
 import { HttpError, invalidRequest } from '../http/errors';
 import { sizedLogoUrl, TEAM_LOGO_PX } from '../providers/logos';
 import type { ConferenceMap } from '../providers/types';
@@ -65,14 +66,26 @@ export function rankMatches(teams: readonly TeamIdentity[], query: string): Team
     .map((entry) => entry.team);
 }
 
-/** The provider's full team list, through the cache (24 h). */
-export async function readTeamList(services: Services): Promise<TeamIdentity[]> {
+/**
+ * The provider's full team list, through the cache (24 h), as a cache read.
+ *
+ * The envelope rather than the list, for the caller that must survive without
+ * it: projected points needs the list only to resolve one publisher's team
+ * spellings to the other's ids, so a failed read costs the conference terms
+ * their label, not the whole projection.
+ */
+export async function readTeamListRead(services: Services): Promise<CacheRead<TeamIdentity[]>> {
   const { cache, provider } = services;
-  const read = await cache.read<TeamIdentity[]>({
+  return cache.read<TeamIdentity[]>({
     key: cacheKey('team_list', provider.name),
     policyFor: () => policyFor('team_list'),
     load: () => provider.listTeams(),
   });
+}
+
+/** The provider's full team list, through the cache (24 h). */
+export async function readTeamList(services: Services): Promise<TeamIdentity[]> {
+  const read = await readTeamListRead(services);
   const teams = read.envelope.data;
   if (teams === null) {
     // Nothing downstream has anything to show without the list, so unlike most
@@ -92,18 +105,30 @@ export async function readTeamList(services: Services): Promise<TeamIdentity[]> 
 
 /**
  * Conference names for the current season (espn-notes §7), through the cache
- * (24 h). Optional garnish: if they cannot be loaded, teams are listed without
- * a conference rather than not at all.
+ * (24 h), as a cache read.
+ *
+ * The envelope rather than the map, for the one caller that has to know the
+ * difference between "the map says this team is in no conference we pay for"
+ * and "the map could not be read": projected points, where collapsing those two
+ * would pay a structural zero on the strength of a failed request (§7).
  */
-export async function readConferences(services: Services): Promise<ConferenceMap> {
+export async function readConferenceMap(services: Services): Promise<CacheRead<ConferenceMap>> {
   const { cache, provider } = services;
   const { season } = await resolveSeason(services);
-  const read = await cache.read<ConferenceMap>({
+  return cache.read<ConferenceMap>({
     key: cacheKey('conferences', provider.name, String(season.year)),
     policyFor: () => policyFor('conferences'),
     load: () => provider.getConferences(season),
   });
-  return read.envelope.data ?? {};
+}
+
+/**
+ * The same read, flattened for search's purposes. Optional garnish there: if
+ * the conferences cannot be loaded, teams are listed without one rather than
+ * not at all.
+ */
+export async function readConferences(services: Services): Promise<ConferenceMap> {
+  return (await readConferenceMap(services)).envelope.data ?? {};
 }
 
 function withConference(team: TeamIdentity, conferences: ConferenceMap): TeamIdentity {

@@ -78,6 +78,33 @@ export async function getUserWithSelections(
 }
 
 /**
+ * Every board, with its selections: one PostgREST request for the whole
+ * leaderboard (`GET /api/projections`, predicting_score.md Phase 3).
+ *
+ * Read from the `app_users` end rather than from `user_team_selections`, which
+ * is how the pick index reads the same rows. The difference is the case that
+ * matters here: a person with an empty board has no selection rows at all, so
+ * reading from the other end would drop them from the leaderboard entirely
+ * instead of giving them a board with `teamsTotal: 0`.
+ *
+ * Nine boards of six is 54 embedded rows, and the schema's ceiling of 24 per
+ * board puts these nine at 216. Past roughly 150 boards this needs paging, and
+ * that is a different plan — the same note `listTeamOwners` carries.
+ */
+export async function listBoardsWithSelections(db: PostgrestClient): Promise<UserWithSelections[]> {
+  const rows = await db.select<UserWithSelectionsRow>('app_users', {
+    select: `id,display_name,user_team_selections(id,selection_order,created_at,teams(${TEAM_COLUMNS}))`,
+    order: 'display_name.asc',
+    'user_team_selections.order': 'selection_order.asc',
+  });
+
+  return rows.map((row) => ({
+    user: { id: row.id, displayName: row.display_name },
+    selections: toSelections(row.user_team_selections ?? []),
+  }));
+}
+
+/**
  * Who has each team, across every board (plan Part Two, Phase 5).
  *
  * One `select` with no filters: nine boards of six is 54 rows, and the schema's

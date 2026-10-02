@@ -178,6 +178,84 @@ if (owner !== undefined) {
   }
 }
 
+// ── Projected points ────────────────────────────────────────────────────────
+// Two things only this can check: that the leaderboard names the same boards
+// `/api/users` does, and that a breakdown's own numbers add up. The rubric's
+// arithmetic is pinned by the test suite against real teams; what is at stake
+// here is whether the deployed Worker reaches both publishers at all.
+const projections = await get('/api/projections');
+const boards = projections.body?.boards ?? [];
+check(
+  projections.status === 200 && boards.length === list.length,
+  'GET /api/projections with no token',
+  `${boards.length} boards, ${projections.ms} ms`,
+);
+check(
+  boards.every((board) => ids.has(board.userId)),
+  '  every board on it is a board that exists',
+);
+const withTotal = boards.filter((board) => board.total !== null);
+check(
+  withTotal.length > 0,
+  '  at least one board has a projected total',
+  withTotal
+    .slice(0, 3)
+    .map((board) => `${board.displayName} ${board.total.display}`)
+    .join(', '),
+);
+for (const source of projections.body?.sources ?? []) {
+  const stamp = source.computedLabel ?? source.pages?.[0]?.computedLabel ?? 'none';
+  console.log(`      ${source.input}: ${source.freshness.state}, as of ${stamp}`);
+}
+
+const projected = withTotal[0] ?? boards[0];
+if (projected !== undefined) {
+  const breakdown = await get(`/api/users/${projected.userId}/projection`);
+  const entries = breakdown.body?.teams ?? [];
+  check(
+    breakdown.status === 200 && entries.length > 0,
+    `GET projection of ${projected.displayName}`,
+    `${entries.length} teams, ${breakdown.ms} ms`,
+  );
+
+  // Each team's rubric lines sum to its own total, and the counted teams' totals
+  // sum to the board's. Unrounded on both sides: the 2-dp strings are allowed to
+  // disagree by a cent, which is exactly why the unrounded value is shipped too.
+  const near = (a, b) => Math.abs(a - b) < 1e-9;
+  const linesAddUp = entries.every(
+    (entry) =>
+      entry.projection.total === null ||
+      near(
+        entry.projection.total.value,
+        entry.projection.terms.reduce((sum, term) => sum + (term.contribution?.value ?? 0), 0),
+      ),
+  );
+  check(linesAddUp, '  every team’s rubric lines sum to its total');
+
+  const teamTotals = entries.reduce((sum, entry) => sum + (entry.projection.total?.value ?? 0), 0);
+  const board = breakdown.body?.board;
+  check(
+    board?.total === null ? teamTotals === 0 : near(board.total.value, teamTotals),
+    '  the teams sum to the board’s total',
+    board?.total === null
+      ? 'no total'
+      : `${board.total.display} over ${board.teamsCounted} of ${board.teamsTotal} teams`,
+  );
+  // A projection is never a result, so nothing it answers may be a confident
+  // zero: a team nobody publishes about has no total, not 0.00.
+  check(
+    entries.every(
+      (entry) => entry.projection.total !== null || entry.projection.complete === false,
+    ),
+    '  a team with no total is incomplete, not a zero',
+  );
+  check(
+    /max-age|no-store/.test(breakdown.headers.get('cache-control') ?? ''),
+    '  Cache-Control set',
+    breakdown.headers.get('cache-control') ?? '',
+  );
+}
+
 const shortQuery = await get('/api/search/teams?q=a');
 check(
   shortQuery.status === 400,

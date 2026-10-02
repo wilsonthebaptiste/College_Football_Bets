@@ -3,7 +3,9 @@ import type {
   AdminBoardResponse,
   AdminUsersResponse,
   ApiErrorBody,
+  BoardProjectionResponse,
   BoardResponse,
+  ProjectionsResponse,
   RenameUserResponse,
   SelectionsResponse,
   TeamSearchResponse,
@@ -724,6 +726,56 @@ describe('the public board reflects an admin change on the next read (exit crite
     expect(await board()).toEqual(['333', '194', '2572']);
     await asAdmin({ method: 'DELETE', path: `/api/admin/selections/${firstSelectionOf(JORDAN)}` });
     expect(await board()).toEqual(['194', '2572']);
+  });
+
+  it('the projection and the leaderboard move with the board, not two minutes later', async () => {
+    // The projected total is a second derivation of the same selections, with
+    // its own 120 s cache. An administrator who adds a team and then sees the
+    // board change but not the total would reasonably conclude it was broken.
+    install();
+    const breakdown = async () =>
+      (
+        await (
+          await app.request(`/api/users/${JORDAN}/projection`, {}, testEnv())
+        ).json<BoardProjectionResponse>()
+      ).teams.map((entry) => entry.team.providerTeamId);
+    const leaderboard = async () =>
+      (
+        await (await app.request('/api/projections', {}, testEnv())).json<ProjectionsResponse>()
+      ).boards.find((board) => board.userId === JORDAN)?.teamsTotal;
+
+    expect(await breakdown()).toEqual(['333', '194']);
+    expect(await leaderboard()).toBe(2);
+    // Served from their own L1 caches now…
+    expect(await breakdown()).toEqual(['333', '194']);
+
+    await asAdmin({
+      method: 'POST',
+      path: `/api/admin/users/${JORDAN}/selections`,
+      body: { providerTeamId: '2572' },
+    });
+
+    // …and not after the write. Both keys: the board's own breakdown and the
+    // leaderboard, whose ordering a single board's change moves.
+    expect(await breakdown()).toEqual(['333', '194', '2572']);
+    expect(await leaderboard()).toBe(3);
+  });
+
+  it('a new person appears on the leaderboard at once, at zero of zero', async () => {
+    install();
+    const names = async () =>
+      (
+        await (await app.request('/api/projections', {}, testEnv())).json<ProjectionsResponse>()
+      ).boards.map((board) => board.displayName);
+
+    const before = await names();
+    expect(before).not.toContain('Newcomer');
+
+    await asAdmin({ method: 'POST', path: '/api/admin/users', body: { displayName: 'Newcomer' } });
+
+    const after = await names();
+    expect(after).toContain('Newcomer');
+    expect(after).toHaveLength(before.length + 1);
   });
 });
 
