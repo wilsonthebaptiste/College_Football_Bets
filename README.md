@@ -1128,7 +1128,7 @@ checks pass against the deployed site; what is left here is your own phone.
 `wrangler dev` Worker, run against both the dev server and the production
 build, plus 10 more during a forced provider outage and 6 axe scans in light
 and dark. Details are in the Phase 4 completion notes in
-[context/plan-search-engine.md](context/plan-search-engine.md).
+[context/archive/plan-search-engine.md](context/archive/plan-search-engine.md).
 
 ---
 
@@ -1287,7 +1287,7 @@ including 6 axe scans in light and dark at 320, 390 and 1280 px — and then 42
 of the same checks again against the **deployed** site on real ESPN data, the
 43rd skipped because no game was in progress. Details are in the Phase 7
 completion notes in
-[context/plan-search-engine.md](context/plan-search-engine.md).
+[context/archive/plan-search-engine.md](context/archive/plan-search-engine.md).
 
 ---
 
