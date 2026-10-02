@@ -2,6 +2,7 @@ import type { Season } from '@cfb/shared';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   toPrediction,
+  toProjectionInputs,
   toProviderGame,
   toRankings,
   toSchedule,
@@ -11,6 +12,7 @@ import {
 import {
   readCalendar,
   readErrorBody,
+  readFpiPage,
   readGroup,
   readRankings,
   readRefPage,
@@ -156,6 +158,13 @@ function pipeline(body: unknown): void {
 
   const rankings = readRankings(body);
   if (rankings !== null) toRankings(rankings, SEASON);
+
+  // Projected points' national half. The damage here is the interesting kind:
+  // the `names` array is what the column reads are indexed by, so deleting an
+  // entry from it shifts every column, and mangling `values` leaves holes in
+  // the middle of a row of probabilities.
+  const fpi = readFpiPage(body);
+  if (fpi !== null) toProjectionInputs(fpi);
 
   readRefPage(body, 'groups');
   readRefPage(body, 'teams');

@@ -5,14 +5,14 @@ what it is, how it is put together, what was learned the hard way, what is
 deployed, and what is left.
 
 Written at the close of Phase 5, 2026-09-19, when the application went live.
-Updated 2026-09-24, when team search was deployed, and 2026-10-01, when Phase 1
-of projected points landed.
+Updated 2026-09-24, when team search was deployed, and 2026-10-02, when Phases 1
+and 2 of projected points landed.
 
 > **Work in flight.** Projected points — the first *computed* sports number in
-> the application — is being built now. Phase 1 of 5 is complete and merged into
-> `main`'s working tree; nothing is deployed and no route or screen exists yet.
-> **§12 is the handoff**, and it is the section to read before touching
-> `packages/shared/src/scoring.ts` or starting Phase 2.
+> the application — is being built now. Phases 1 and 2 of 5 are complete;
+> nothing is deployed and no route or screen exists yet. **§12 is the handoff**,
+> and it is the section to read before touching `packages/shared/src/scoring.ts`,
+> `apps/api/src/providers/playoffstatus/`, or starting Phase 3.
 
 - The behaviour the app was built to (the specification) is
   [archive/spec.md](archive/spec.md). `§n` references throughout the code and
@@ -24,9 +24,9 @@ of projected points landed.
   any team can be looked up and not only the 54 on boards. All four phases are
   built, verified, and live since 2026-09-24.
 - [predicting_score.md](predicting_score.md) — projected points, the feature in
-  flight. Five phases; Phase 1 is done and carries its own completion notes.
-  That file holds the measured source data, the rubric, and the plan; **§12 of
-  this file holds what building Phase 1 actually taught us.**
+  flight. Five phases; Phases 1 and 2 are done and each carries its own
+  completion notes. That file holds the measured source data, the rubric, and
+  the plan; **§12 of this file holds what building them actually taught us.**
 - Operations — deploying, configuration, limits, troubleshooting — is
   [../docs/ops.md](../docs/ops.md).
 - ESPN's undocumented API, as observed: [../docs/espn-notes.md](../docs/espn-notes.md).
@@ -49,7 +49,7 @@ team and open them; only the administrator can change the boards.
 | Database | Supabase Postgres: 9 people, 54 selections, 65 team rows (11 no longer on any board) |
 | Cost | Nothing. Every service is on a free tier, with no card on file |
 | Source | Branch `main`, on <https://github.com/wilsonthebaptiste/College_Football_Bets> (remote created 2026-09-20; Phases 1–7 pushed 2026-09-25) |
-| Tests | 879, in 38 files. `npm run verify` runs typecheck, lint, tests, and the season check |
+| Tests | 958, in 41 files. `npm run verify` runs typecheck, lint, tests, and the season check |
 
 Built in five phases: foundation and contracts, the sports data layer, the
 website, the team page, then admin, hardening, and the deploy. Each phase's
@@ -87,7 +87,11 @@ Three rules hold the structure together, and everything else follows from them:
 2. **Only `apps/api/src/providers/espn/` knows ESPN exists.** Outside it, `espn`
    appears only as a label type (`ProviderName`, `PredictionSource`) so that
    sources can be named honestly on screen (§46). Swapping providers is a new
-   directory plus one line in `providers/registry.ts`.
+   directory plus one line in `providers/registry.ts`. The rule has a mirror
+   now that there is a second publisher: only
+   `apps/api/src/providers/playoffstatus/` knows that site exists, and it has
+   its own small interface and its own registry entry so the two can fail, be
+   drilled, and be mocked independently (§12).
 3. **The database is the authorization boundary, not the UI.** Every write goes
    to PostgREST with the administrator's own token, and Row Level Security
    decides. There is no service-role key anywhere in the repo, CI, or the
@@ -101,15 +105,18 @@ packages/shared/     Types and pure logic shared by the API and the browser
                      scoring.ts — the projected-points rubric, §12)
 apps/api/            The Worker
   src/routes/        HTTP surface: public reads, /api/admin/*, health
-  src/services/      Board, team, snapshot, live overlay, search, context
+  src/services/      Board, team, snapshot, live overlay, search, context,
+                     projection (the two publishers and the name join, §12)
   src/cache/         TTL policy (one table), the three tiers, stale-while-revalidate
-  src/providers/     espn/ (client, raw types, validate, normalize, logos),
-                     mock/, faults, registry
+  src/providers/     espn/ (client, raw types, validate, normalize, logos, FPI),
+                     playoffstatus/ (client, parse, conferences — conference
+                     odds and nothing else, §12), mock/, faults, registry
   src/db/            PostgREST client, queries, row mapping
   src/middleware/    CORS, rate limit; auth lives in src/auth/
   src/cron/          The warmers
-  test/              tests live here and beside the web sources (879 in all);
-                     test/fixtures/espn/ holds 20 real ESPN payloads
+  test/              tests live here and beside the web sources (958 in all);
+                     test/fixtures/espn/ holds 21 real ESPN payloads and
+                     test/fixtures/playoffstatus/ the four scraped pages
 apps/web/            The site (React + Vite, strict TS)
   src/features/      home, board, team, search, admin
   src/components/    Cards, logos, states, dialog, header
@@ -118,7 +125,7 @@ apps/web/            The site (React + Vite, strict TS)
 supabase/            Migrations, RLS policies, the reorder RPC, seed, and
                      test/ (the security model on real Postgres, via PGlite)
 scripts/             verify-rls, smoke, check-bundle-secrets, check-season-literals,
-                     capture-espn-fixtures
+                     capture-espn-fixtures, capture-playoffstatus-fixtures
 ```
 
 ## 3. Decisions that shaped everything
@@ -195,15 +202,19 @@ source of truth for every category:
 | Rankings | 1 h | |
 | Prediction | 30 min | |
 | Team list, conferences | 1 day | Warmed by cron |
+| Projection inputs (FPI) | 6 h | Stale 1 day. Warmed by cron (§12) |
+| Conference odds (scraped) | 6 h | Stale 7 days — it is a scraped page. Warmed by cron |
 
 Protections that exist because of real limits:
 
 - **A KV write ledger** warns at 700 writes and refuses at 900, against the
   1,000/day limit. Each key also has a minimum write interval.
-- **Cron warmers** refresh the calendar, rankings, team list, and conference map
-  off the request path, and run one Postgres `select` so the free Supabase
-  project never pauses. They deliberately do **not** warm schedules: fifty teams
-  hourly would be about 1,200 KV writes a day.
+- **Cron warmers** refresh the calendar, rankings, team list, conference map,
+  and the two projection documents off the request path, and run one Postgres
+  `select` so the free Supabase project never pauses. They deliberately do
+  **not** warm schedules: fifty teams hourly would be about 1,200 KV writes a
+  day. A cron run now makes six KV writes, and the two projection documents are
+  at most eight a day between them.
 - **A per-address read budget**: 120 reads a minute per isolate, then 429 with
   `Retry-After`. Best-effort by design — it stops one noisy client, not a
   distributed crawl. The content is nine display names and otherwise-public
@@ -260,9 +271,18 @@ which are saved as fixtures.
   passes. `curl/8.9.1 college-football-bets/0.5` passes; the same two tokens in
   the other order does not. This cost a day in Phase 2 and was confirmed again
   from the deployed Worker in Phase 5.
-- **Two API families are needed** and they share no conventions:
+- **Three API families are needed** and they share no conventions:
   `site.api.espn.com` for browser-facing shapes, `sports.core.api.espn.com` for a
-  hypermedia API of `$ref` URLs. Conference names need two hops.
+  hypermedia API of `$ref` URLs, and — since projected points —
+  `site.web.api.espn.com` for the Football Power Index, where figures arrive in
+  parallel `names`/`values` arrays rather than as named fields. Conference names
+  need two hops.
+- **The FPI table's columns are positional, and that is the trap.**
+  `probwintitle` is the eleventh slot, with projected wins and losses a few
+  places away, so an off-by-one does not crash — it puts a projected loss where
+  a probability belongs, and 1.6 looks like a perfectly ordinary probability
+  once divided by 100. Columns are read by name, and four field sums catch a
+  broken read (espn-notes §12).
 - **The predictor keeps returning pregame numbers after kickoff,** which is why
   a live game's prediction is labelled "Pregame prediction, made before kickoff"
   rather than hidden or refreshed.
@@ -280,7 +300,7 @@ to fail, so failure states can be exercised on purpose.
 
 ## 6. How correctness was checked
 
-The suite is 879 tests in 38 files. What carried the most weight:
+The suite is 958 tests in 41 files. What carried the most weight:
 
 - **The authorization matrix** (90 tests). Every `/api/admin/*` route against
   every way of not being an administrator: no token, a non-Bearer header, an
@@ -312,10 +332,20 @@ The suite is 879 tests in 38 files. What carried the most weight:
   real teams of 2026-09-30, where the published totals are the expected values.
   Its bounds are proved over 2,500 randomized inputs.
 
+- **Both of projected points' publishers, against real captured payloads, and
+  in both directions** (§12). The FPI table is held to reading its columns by
+  name — a reordered `names` array still reads correctly, a renamed column
+  fails validation rather than reading its neighbour — and the scrape is held
+  to a row count, two column sums, and a two-way name join that resolves 67 of
+  67 rows against the conference map captured the same day. The scrape's parse
+  also has its own totality test: the HTML is truncated and mangled at 300
+  random points per page and must never throw.
+
 **`npm run verify` does not check formatting.** `format:check` is a separate
 script. Prettier reformatted two of the five files Phase 1 touched *after* a
-green `verify`, so run `npm run format:check` (or `npm run format`) before
-committing, or CI's formatting step will be the thing that fails.
+green `verify`, and eleven of Phase 2's, so run `npm run format:check` (or
+`npm run format`) before committing, or CI's formatting step will be the thing
+that fails.
 
 ## 7. Findings from the deploy (2026-09-19)
 
@@ -434,11 +464,14 @@ network. The test that now covers it reproduces the race directly.
   shared-team path (§27) and a team nobody selected. The live boards were
   replaced with the real nine people and their teams on 2026-09-19, through the
   admin API.
-- **Projected points carries three limitations of its own** — the one modelled
-  number, the eight worked rows that are tuned close to a rounding boundary, and
-  one row of the plan's own table that real data contradicts. All three are in
-  §12; they are listed there rather than here because nothing of the feature is
-  deployed yet.
+- **Projected points carries its own limitations** — the one modelled number,
+  the eight worked rows that are tuned close to a rounding boundary, a scrape
+  whose only warning of a redesign is three integrity checks, and two
+  publishers that disagree about conference odds by up to ~0.75 points per
+  team. They are in §12 rather than here because nothing of the feature is
+  deployed yet. (The third limitation this list used to carry — one row of the
+  plan's table that real data appeared to contradict — was settled in Phase 2:
+  the row was right.)
 - **The CI deploy job is still untested.** The remote has existed since
   2026-09-20 and the `verify` job passes on every push; the `deploy` job is
   gated on a `DEPLOY_ENABLED` repository variable that is not set, and every
@@ -471,18 +504,21 @@ network. The test that now covers it reproduces the race directly.
 5. **Optional:** turn on the CI deploy job — the remote exists and `main` is
    pushed, so all that is left is the token, the variables, and
    `DEPLOY_ENABLED` (docs/ops.md, "Continuous deployment"); a screen-reader pass.
-6. **Projected points, Phase 2 of 5** — the two probability sources. Start from
-   [predicting_score.md](predicting_score.md) for the plan and from §12 below for
-   what Phase 1 learned. Phase 1 is **uncommitted** — it sits in the working
-   tree of `main` alongside an unrelated move of `plan-search-engine.md` into
-   `context/archive/`. Commit it before starting Phase 2, and remember §9: a
+6. **Projected points, Phase 3 of 5** — the two public endpoints. Start from
+   [predicting_score.md](predicting_score.md) for the plan and from §12 below
+   for what Phases 1 and 2 learned. Everything the routes need is built: both
+   documents are cached, warmed, mockable and independently faultable, and
+   `services/projection.ts` already assembles one team's inputs. Remember §9: a
    green local `main` proves nothing about what the remote has verified.
+7. **Flip `CONFERENCE_ODDS_PROVIDER` to `playoffstatus`** in
+   `[env.production.vars]` when the routes ship. It is deliberately still
+   `mock`, so the deployed Worker is not yet scraping anybody's site.
 
 ## 11. Commands worth remembering
 
 | Command | What it does |
 | --- | --- |
-| `npm run verify` | Typecheck, lint, 879 tests, season check. The one to run |
+| `npm run verify` | Typecheck, lint, 958 tests, season check. The one to run |
 | `npm run format:check` | Prettier. **Not** part of `verify`, but CI runs it |
 | `npm run dev` / `npm run dev:web` | The API on 8787 (mock data) and the site on 5173 |
 | `npm run verify:rls` | Attacks the live database directly, as `anon` and as a non-admin |
@@ -490,19 +526,19 @@ network. The test that now covers it reproduces the race directly.
 | `npm run check:bundle` | Fails if a privileged key is in a built bundle |
 | `npm run deploy --workspace @cfb/api` | Deploys the Worker (`--env production`) |
 | `npm run build:web` + `wrangler pages deploy apps/web/dist --project-name cfb-board --branch main` | Deploys the site |
-| `npm run capture:fixtures` | Re-downloads the ESPN sample payloads |
+| `npm run capture:fixtures` | Re-downloads the ESPN sample payloads, FPI included |
+| `npm run capture:odds` | Re-downloads the four conference pages and the ESPN conference map |
 
-## 12. Projected points — the handoff after Phase 1
+## 12. Projected points — the handoff after Phase 2
 
-Phase 1 of five, built 2026-09-30/10-01. **Pure arithmetic in
-`packages/shared` only.** No provider, no route, no screen, nothing deployed.
-`npm run verify` green: 879 tests in 38 files, up 58 from 821 (50 in the new
-`scoring.test.ts`, 8 added to `season.test.ts`).
+Phases 1 and 2 of five, built 2026-09-30 to 10-02. **The rubric and both
+publishers exist; no route, no screen, nothing deployed.** `npm run verify`
+green: 958 tests in 41 files, up 137 from 821.
 
 The plan, the measured source data, and the per-phase exit criteria are in
-[predicting_score.md](predicting_score.md), which now also carries Phase 1's own
-completion notes. **This section is the part that does not belong in a plan: what
-went wrong, what the plan got wrong, and what Phases 2–4 will trip over.**
+[predicting_score.md](predicting_score.md), which carries each phase's own
+completion notes. **This section is the part that does not belong in a plan:
+what went wrong, what the plan got wrong, and what Phases 3–5 will trip over.**
 
 ### What exists
 
@@ -511,8 +547,43 @@ went wrong, what the plan got wrong, and what Phases 2–4 will trip over.**
 | `packages/shared/src/domain/projection.ts` | The types. `ProjectionSource`, `OutcomeKind`, `ProjectionTerm`, `ConferenceStanding`, `ProjectionInputs`, `TeamProjection`, `BoardProjection`, `ProjectionAnomaly` |
 | `packages/shared/src/scoring.ts` | `RUBRIC`, `projectTeam`, `projectTeamAtWeight`, `projectBoard`, `top25Probability`, `top25Baseline`, `roundPoints`, `formatPoints`, and every tunable constant |
 | `packages/shared/src/season.ts` | `seasonProgress(season)` and `REGULAR_WEEKS`, added to the one module allowed to reason about the calendar |
-| `packages/shared/src/scoring.test.ts` | 50 tests, including the eight real teams of 2026-09-30 |
-| `packages/shared/src/season.test.ts` | 8 more tests, on `seasonProgress` |
+| `packages/shared/src/envelope.ts` | `ProviderName` widened with `playoffstatus`; `SportsProviderName` introduced beside it (see below) |
+| `apps/api/src/providers/espn/` | `ESPN_FITT_API`, `RawFpiPage`, `readFpiPage`, `toProjectionInputs`, `getTeamProjections` — the FPI table |
+| `apps/api/src/providers/playoffstatus/` | **New.** `client.ts`, `parse.ts`, `provider.ts`, `conferences.ts`. The only code that knows that site exists |
+| `apps/api/src/providers/mock/projections.ts` | Synthetic figures for both halves, labelled `mock_projection` |
+| `apps/api/src/services/projection.ts` | The two cached reads, the two-way join, `conferenceStandingFor` |
+| `apps/api/src/services/teamNames.ts` | Name normalization and the one alias |
+| `apps/api/test/fixtures/playoffstatus/` | The four captured pages, the ESPN conference map, and a manifest recording both |
+
+### Phase 2's own four departures are in the plan, not here
+
+They are decisions a later phase could undo, so they live with the plan's own
+reasoning: the stamp that is per-page rather than per-document, the second
+`SwrCache`, the document-shaped `getTeamProjections`, and the field-sum warning
+moving out of `validate.ts`. See
+[predicting_score.md, Phase 2 — Completion Notes](predicting_score.md#phase-2--completion-notes).
+What follows is the material that outlives the plan.
+
+### The type split that keeps a publisher from owning a team
+
+`ProviderName` is now `espn | mock | playoffstatus`, and
+**`SportsProviderName` (`espn | mock`) was introduced beside it** rather than
+widening one type for both jobs. The wide type is for freshness labels, which a
+publisher of conference odds genuinely needs. The narrow one is for everywhere
+that means "whose team is this": `SportsDataProvider.name`, `teamNamespace`,
+`TeamIdentity.provider`, `db/rows.ts toProviderName`, `providerName(env)`,
+`HealthResponse.provider`.
+
+Without the split, a `teams` row could have claimed `provider:
+'playoffstatus'` — a team identity from a site that publishes none (§43).
+
+**One consequence is easy to miss and expensive.** `isCacheEntry` in
+`cache/tiers.ts` narrows a stored entry's provider against a **runtime** set,
+which had to gain `playoffstatus` as well as the type. Miss that half and the
+symptom is not a type error: it is a permanent cache miss, refetching and
+rewriting the key on every read. Only a second isolate reading the first's KV
+copy catches it, and there is now a test that does exactly that. Any future
+publisher needs both lines.
 
 ### Four places the plan was wrong, and what was done instead
 
@@ -603,26 +674,33 @@ cross-check against the plan's own source-disagreement table.
   all. Keep that assertion: it is the cheapest possible guard against someone
   rounding in the service instead of at the edge.
 
-### One row of the plan's table is contradicted by real data
+### A row of the plan's table looked wrong, and was not — settled in Phase 2
 
-**Texas A&M's finish term of −0.19 requires an FPI rank of 25 or better.**
-Checked exhaustively: ranks 1–25 reproduce both that term and the row's −0.07
-total, and rank 26 onward reproduces neither, because the baseline is capped at
-the `TOP25_AT_25` anchor for anything inside the poll and decays immediately
-below it. That contradicts the same row's **3% playoff probability** — a team FPI
-ranks in its top 25 does not have 3% playoff odds — and the row also has the team
-unranked in the poll. So either that row's finish term or its implied FPI rank is
-wrong in the plan.
+Phase 1 could only solve the three unranked teams' FPI ranks backwards from
+their published finish terms, which pins a rank inside the poll no further than
+"25 or better": the baseline is capped at the `TOP25_AT_25` anchor, so ranks
+1–25 all reproduce the same term and 26 onward reproduces none of it.
 
-The table is the stated source, so the fixture reproduces it (at rank 25) and
-records the oddity in a comment rather than smoothing it over. **Phase 2 will
-settle it**: the captured FPI payload has a real `fpirank` for Texas A&M, so
-re-derive that row when it arrives and correct either the plan's table or the
-fixture. Nebraska carries the same "≤ 25" ambiguity for a benign reason — the cap
-makes every rank inside the poll equivalent, and its 26% playoff odds are
-coherent with that. Kansas's rank solves cleanly to about 70.
+On that basis Phase 1 recorded Texas A&M's row as internally inconsistent — a
+team FPI ranks inside its own top 25 "does not have 3% playoff odds". **The
+captured payload says it does**: FPI rank **16** with **3.2%** playoff odds,
+unranked in the AP poll, on the same day the table was read. FPI rank is how
+good a team is; playoff odds are the path in front of it, and a strong team that
+has already lost is plausibly both. The plan's table needed no correction, and
+the suspicion is the thing that was wrong.
 
-### Things Phases 2–4 will get wrong if nobody says so
+The other two came out close: **Nebraska 14** (guessed ~20) and **Kansas 70**
+(solved ~70, exactly). All three are now the *measured* values in the fixture,
+and because of the cap, swapping them in changed no expected value. A
+cross-check in `test/espn/fpi.test.ts` asserts the three against the captured
+payload, so a re-capture cannot stale the shared fixture in silence.
+
+**The general lesson is worth keeping:** two numbers from one publisher that
+look contradictory may be measuring different things. Solving an input backwards
+from a rounded output tells you less than it appears to, and the honest move —
+reproducing the stated source and recording the doubt — was the right one.
+
+### Things Phases 3–5 will get wrong if nobody says so
 
 - **The finish term breaks the `contribution = points × probability` rule.** It
   is the full expectation over two paid states, `1·p + (−1)·(1 − p) = 2p − 1`,
@@ -645,13 +723,31 @@ coherent with that. Kansas's rank solves cleanly to about 70.
 - **`RUBRIC` is declared `as const satisfies Record<OutcomeKind, number>`.**
   Adding an `OutcomeKind` without a points entry is therefore a type error, which
   is the intent. Do not loosen that annotation.
-- **`check:season` was never a problem, because of where things went.**
-  `seasonProgress` lives in `season.ts` (the one exempt file) and every dated
-  fixture lives in a `.test.ts` (also exempt). Phase 2 captures fixtures stamped
-  with a date — put them under `test/fixtures/`, which is exempt too, and name
-  the capture date in the fixture as the ESPN ones do.
-- **`ProviderName` still has to widen in Phase 2**, exactly as the plan says:
-  add `'playoffstatus'` for freshness labels and introduce `SportsProviderName`
-  for the places that mean "the configured sports provider", so a `teams` row
-  remains unable to claim `playoffstatus`. Nothing in Phase 1 touched
-  `envelope.ts`, so this is still entirely ahead of you.
+- **`check:season` caught Phase 2 twice, both times in a doc comment** — an
+  example `lastUpdated` value of `"2026-10-01T08:00Z"` in two files. Exactly the
+  over-broad rule §8 says is worth keeping. Write `<yyyy>-MM-DDTHH:mmZ` instead.
+  Fixtures and tests are exempt, so the captured payloads were never a problem.
+- **The FPI fallback sets `reachConferenceGame` equal to `winConference`.** When
+  the scrape is gone and FPI's `probwinconf` stands in, `max(0, e − d)` comes out
+  at exactly zero, so the runner-up term is a quoted zero rather than an
+  invention — FPI publishes no runner-up probability anywhere. **Phase 4 must not
+  render that as "no chance of finishing second."** It means "this publisher does
+  not say", and the term's `source` being `espn_fpi` rather than `playoffstatus`
+  is the signal to read.
+- **A `null` conference is `unavailable`, not `not_eligible`.** Not knowing a
+  team's conference is not the same as knowing it is outside the power four, so
+  if the conference map fails, every conference term goes `unavailable` —
+  including for teams that genuinely are ineligible. Pessimistic and correct.
+- **The conference-odds read resolves the season, so a cold read of both
+  documents is three KV writes, not two.** `season_calendar` is shared with
+  every other read and cron-warmed, so it is not a cost this feature adds; the
+  test says so explicitly rather than looking wrong to somebody later.
+- **A growing alias table in `services/teamNames.ts` is a bug, not diligence.**
+  One entry, `pittsburgh → pitt`, resolves all 67 rows. If a second seems
+  necessary, check the normalization first: replacing punctuation with a space
+  instead of removing it produces a phantom second mismatch (`N.C. State`).
+- **Projected points still has three screens and two routes to go**, and the
+  per-phase exit criteria are in the plan. The one thing the plan does not say:
+  on today's data `ConferenceOddsDocument.computedLabel` is **null**, because
+  the four pages carry two different stamps. Phase 4's "as of \<playoffstatus
+  stamp\>" has to come from the per-conference `pages[]` entry.

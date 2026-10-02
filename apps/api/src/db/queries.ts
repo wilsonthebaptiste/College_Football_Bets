@@ -1,5 +1,5 @@
 import type {
-  ProviderName,
+  SportsProviderName,
   Team,
   TeamIdentity,
   TeamOwner,
@@ -90,7 +90,7 @@ export async function getUserWithSelections(
  */
 export async function listTeamOwners(
   db: PostgrestClient,
-  namespace: ProviderName,
+  namespace: SportsProviderName,
 ): Promise<Record<string, TeamOwner[]>> {
   const rows = await db.select<OwnerSelectionRow>('user_team_selections', {
     select: 'app_users(id,display_name),teams(provider,provider_team_id)',
@@ -157,7 +157,7 @@ export async function deleteUser(db: PostgrestClient, userId: string): Promise<v
 /** The stored team for a provider identity (§43), or `null` if none is stored yet. */
 export async function findTeamByProviderId(
   db: PostgrestClient,
-  provider: ProviderName,
+  provider: SportsProviderName,
   providerTeamId: string,
 ): Promise<Team | null> {
   const rows = await db.select<TeamRow>('teams', {
@@ -173,7 +173,7 @@ export async function findTeamByProviderId(
 /** Stores a provider identity as a `teams` row (§43). Identity only, never records or ranks (§45). */
 export async function insertTeam(
   db: PostgrestClient,
-  provider: ProviderName,
+  provider: SportsProviderName,
   identity: TeamIdentity,
 ): Promise<Team> {
   const row = await db.insertOne<TeamRow>('teams', {

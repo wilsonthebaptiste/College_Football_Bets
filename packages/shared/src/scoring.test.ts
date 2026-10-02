@@ -635,16 +635,21 @@ describe('roundPoints and formatPoints', () => {
  *   the published interval; the assertion is therefore that every term matches
  *   the table to 2 dp AND the total matches the table's total, which is the
  *   property the table was actually demonstrating.
- * - `fpiRank` for the three unranked teams is solved back from the table's
- *   finish term, for the same reason. Kansas's is ~70. Nebraska's and Texas
- *   A&M's are pinned only to "25 or better": the baseline is capped at the
- *   `TOP25_AT_25` anchor inside the poll, so every rank from 1 to 25 reproduces
- *   the term and 26 onward reproduces none of it. Benign for Nebraska, whose 26%
- *   playoff odds fit a rank near 20. NOT benign for Texas A&M, whose same row
- *   carries 3% playoff odds while unranked — a team FPI ranks in its top 25 does
- *   not have 3% playoff odds, so that row is internally inconsistent. The table
- *   is the source, so it is reproduced and the oddity recorded, not smoothed
- *   over; Phase 2's captured FPI payload will settle it.
+ * - `fpiRank` for the three unranked teams is MEASURED, from the FPI payload
+ *   Phase 2 captured: Texas A&M 16, Nebraska 14, Kansas 70. Phase 1 could only
+ *   solve them back from the table's finish term, which pins a rank inside the
+ *   poll no further than "25 or better" — the baseline is capped at the
+ *   `TOP25_AT_25` anchor, so every rank from 1 to 25 reproduces the same term
+ *   and 26 onward reproduces none of it.
+ *
+ *   That cap is also why swapping the solved ranks for the measured ones
+ *   changed no expected value here, and it settles the suspicion Phase 1
+ *   recorded. Texas A&M's row looked internally inconsistent — 3% playoff odds
+ *   for a team FPI ranks inside its own top 25 — and the real payload says it
+ *   is not: FPI rank 16 with 3.2% playoff odds, on the same day. The two
+ *   measure different things. FPI rank is how good a team is; playoff odds are
+ *   the path in front of it, and an SEC team that is strong and already beaten
+ *   is plausibly both. The plan's table needed no correction.
  */
 const WORKED_SEASON: Season = { year: 2026, type: 'regular', week: 5 };
 
@@ -728,7 +733,8 @@ const WORKED_EXAMPLES: readonly WorkedExample[] = [
     team: 'Nebraska',
     providerTeamId: '158',
     ranking: UNRANKED,
-    fpiRank: 20,
+    // Measured, Phase 2. Phase 1 solved it to "25 or better" and guessed ~20.
+    fpiRank: 14,
     winTitle: 0.008,
     makeTitleGame: 0.023,
     makePlayoffs: 0.258,
@@ -740,7 +746,9 @@ const WORKED_EXAMPLES: readonly WorkedExample[] = [
     team: 'Texas A&M',
     providerTeamId: '245',
     ranking: UNRANKED,
-    fpiRank: 25,
+    // Measured, Phase 2, alongside the 3.2% playoff odds this row's 3% reports.
+    // The pair is coherent; see the provenance note above.
+    fpiRank: 16,
     winTitle: 0.002,
     makeTitleGame: 0.0045,
     makePlayoffs: 0.03,
@@ -752,6 +760,7 @@ const WORKED_EXAMPLES: readonly WorkedExample[] = [
     team: 'Kansas',
     providerTeamId: '2305',
     ranking: UNRANKED,
+    // Measured, Phase 2 — exactly the ~70 Phase 1 solved for.
     fpiRank: 70,
     winTitle: 0,
     makeTitleGame: 0,

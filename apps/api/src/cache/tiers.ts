@@ -71,6 +71,20 @@ export function isServable(entry: CacheEntry<unknown>, now: number): boolean {
   return now < fetchedAtMs(entry) + (entry.ttlSeconds + entry.staleSeconds) * 1000;
 }
 
+/**
+ * The `ProviderName` union, as a runtime set, beside the guard that needs it.
+ *
+ * Adding a publisher is one line here as well as in the type. Miss it and the
+ * symptom is not a type error but a silent cache miss: `isCacheEntry` would
+ * decide a perfectly good stored entry was not an entry, and the key would be
+ * refetched and rewritten on every read.
+ */
+const PROVIDER_NAMES: ReadonlySet<unknown> = new Set<ProviderName>([
+  'espn',
+  'mock',
+  'playoffstatus',
+]);
+
 /** L2 and L3 hand back untyped JSON. Check it is an entry before trusting it. */
 function isCacheEntry(value: unknown): value is CacheEntry<unknown> {
   if (typeof value !== 'object' || value === null) return false;
@@ -82,7 +96,7 @@ function isCacheEntry(value: unknown): value is CacheEntry<unknown> {
     typeof entry['category'] === 'string' &&
     typeof entry['ttlSeconds'] === 'number' &&
     typeof entry['staleSeconds'] === 'number' &&
-    (entry['provider'] === 'espn' || entry['provider'] === 'mock')
+    PROVIDER_NAMES.has(entry['provider'])
   );
 }
 

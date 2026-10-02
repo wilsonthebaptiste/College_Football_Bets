@@ -1,0 +1,1339 @@
+<!DOCTYPE HTML>
+<html lang="en-US">
+<head>
+
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-55LF4V7QL9"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-55LF4V7QL9');
+</script>
+
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+/*
+
+body,div,dl,dt,dd,ul,ol,li,h1,h2,h3,h4,h5,h6,pre,form,fieldset,input,textarea,p,blockquote,th,td {
+	margin:0;
+	padding:0;
+}
+table {
+	border-collapse:collapse;
+	border-spacing:0;
+}
+fieldset,img {
+	border:0;
+}
+address,caption,cite,code,dfn,em,strong,th,var {
+	font-style:normal;
+	font-weight:normal;
+}
+ol,ul {
+	list-style:none;
+}
+caption,th {
+	text-align:left;
+}
+h1,h2,h3,h4,h5,h6 {
+	font-size:100%;
+	font-weight:normal;
+}
+q:before,q:after {
+	content:'';
+}
+abbr,acronym { border:0;
+}
+
+*/
+
+body {
+padding-right: 1px;
+padding-left:  1px;
+
+/* padding-right: .5em;
+padding-left: .5em; */
+
+
+/* max-width: 960px; */
+margin-right: auto;
+margin-left: auto;
+
+}
+
+p{
+font-family: "Times New Roman", "Bookman Old Style", "Sans-Serif";
+font-size: 100%;
+
+margin-top: 0em;
+margin-bottom: .5em;
+
+}
+
+.atext{
+cursor:pointer;
+text-decoration:underline;
+color:#0000FF;
+}
+
+.ar{
+font-size:88%;
+ }
+
+.description p{
+    margin-left: 1em;
+    margin-right:1em;
+
+    hyphens: auto;
+
+}
+
+.bsclst{
+margin-left:2em;
+margin-right:.25em;
+}
+
+.bnr{
+font-family: "Verdana", "Arail", "Sans-Serif";
+font-size: 150%;
+font-weight: 700;
+font-style: italic;
+margin-left: 0;
+margin-top: 0em;
+position:relative;
+/* border:1px solid red; */
+}
+
+.bnr a:link{
+color: black;
+text-decoration:none;
+}
+
+.bnr a:visited{
+color: black;
+text-decoration:none;
+}
+
+.hb{
+/* border: 1px solid black; */
+position: absolute;
+right:0;
+font-family: "Verdana", "Arail", "Sans-Serif";
+font-weight: 700;
+font-style: normal;
+display:inline;
+font-size:75%;
+
+}
+
+#snav .hb{
+font-size:150%;
+/* top:-.40em; */
+}
+
+.hb a:link{
+color: black;
+text-decoration:none;
+}
+
+.hb a:visited{
+color: black;
+text-decoration:none;
+}
+
+.da a:link{
+color: black;
+text-decoration:none;
+}
+
+.da a:visited{
+color: black;
+text-decoration:none;
+}
+
+
+h1{
+font-family: "Verdana", "Arail", "Sans-Serif";
+font-size: 150%;
+font-weight: 700;
+margin-top: 0em;
+}
+
+
+
+h2 {
+font-family: "Verdana", "Arail", "Sans-Serif";
+font-size: 150%;
+font-weight: 700;
+margin-top: 0em;
+/*border-left: 1px dotted;border-right: 1px dotted;border-top: 1px dotted;border-bottom: 1px dotted;
+margin-height: 22%;*/
+
+}
+
+
+
+h3 {
+font-family: "Verdana", "Arail", "Sans-Serif";
+font-size: 115%;
+font-weight: 700;
+margin-top: 0em;
+}
+
+caption{
+font-family: "Verdana", "Arail", "Sans-Serif";
+font-size: 115%;
+font-weight: 700;
+margin-bottom:.25em;
+}
+
+table{
+/* font-size: 9.0px;  */
+border-collapse: collapse;
+border: 1px solid gray;
+margin: 0px;
+ width: 100%;
+}
+
+td{
+border: 1px solid gray;
+text-align:center;
+padding-top: 5px;
+padding-bottom: 5px;
+padding-left: 0px;
+padding-right: 0px;
+/* height:27px; */
+}
+
+.tblteam{
+/* height: 22px;  */
+text-align:left;
+padding-left:1px;
+}
+
+th{
+border:1px solid gray;
+font-family: "Verdana", "Arail", "Sans-Serif";
+font-weight: 700;
+text-align: center;background: #D2D2D2;
+padding:0px;
+min-width:2em;
+}
+
+
+.tt{
+position: relative;
+}
+
+.tt .ttc{
+  display:none;
+  position: absolute;
+  top:90%;
+  /*left:90%;*/
+  font-weight:normal;
+  font-size:14px;
+  font-style:normal;
+  background-color:#FFFDBF;
+  border:solid 1.5px black;
+  border-radius:5px;
+  z-index: 1;
+  padding: .25em;
+  text-align:left;
+  font-family:monospace;
+  width:min-content;
+  color:black;
+  white-space: nowrap;
+  
+  
+}
+
+.tt_info{
+color:blue;
+font-family: "Times New Roman", "Serif";
+font-style: italic;
+vertical-align: super;
+font-size:smaller;
+}
+
+
+
+/* .tt:hover .ttc{
+display:block;
+
+}
+
+
+.tt:hover{
+background-color:#FFFDBF;
+ }
+ 
+ 
+ 
+.ttc:hover, .ttc:active, .ttc:focus{
+display:none;
+ } */
+
+ 
+ 
+ul{
+padding-left:1.25rem;
+}
+
+
+nav ul{
+list-style-type: none;
+/* margin: 0px; */
+padding: 0;
+/* left: 0px; */
+/* border:1px solid black; */
+padding-left:.25rem;
+}
+
+nav li{
+/* left: 0px; */
+/* margin-left:0px; */
+/* border:1px solid red; */
+
+/*height: 26px; */
+
+margin-bottom: 8px;
+
+}
+
+.libreak{
+/*height: 52px;*/
+margin-bottom: 28px;
+}
+
+.wide{
+display:none;
+}
+
+.wkinfo{
+margin-left:auto;
+margin-right:auto;
+text-align: center;
+}
+
+.flxbx1{
+
+display:flex;
+
+
+
+justify-content: space-between;
+}
+
+.flxbx2{
+display:flex;
+
+
+flex-wrap: wrap;
+
+margin:0px;
+padding:1px;
+border:1px solid gray;
+
+width:auto;
+}
+
+
+
+.conflst{
+border: none;
+list-style: none;
+
+
+
+display:flex;
+
+
+flex-wrap: wrap;
+
+margin:0;
+padding:0;
+
+
+/* margin: 0px;
+padding: .2%;
+left: 0px; */
+
+width:100%;
+
+
+}
+
+
+.conflst li{
+
+
+
+flex-grow:1;
+flex-shrink:1;
+flex-basis:45%;
+
+border:1px solid gray;
+margin:1px;
+
+padding: .25em;
+text-align:center;
+
+
+}
+
+ img{
+border: none;
+max-width: 100%;
+height: auto;
+
+  }
+
+.description{
+margin-bottom:1em;
+padding-left:.25em;
+}
+
+
+header{
+padding-left:.25em;
+}
+
+nav{
+
+
+margin: 0px;
+padding: .25em;
+
+/* margin:1px;
+padding:.5em; */
+
+font-family: "Verdana", "Arail", "Sans-Serif";
+font-size: 100%;
+/* line-height: 170%; /* 165 not big enough */
+border:1px solid gray;
+
+
+
+order:2;
+flex-grow:1;
+flex-shrink:1;
+flex-basis:100%;
+}
+
+.mncntnt{
+margin:0px;
+margin-bottom:1px;
+padding: 1px;
+padding-top:.5em;
+
+border:1px solid gray;
+
+/* margin:1px;
+padding:.25em; */
+
+
+order:1;
+flex-grow:1;
+flex-shrink:1;
+flex-basis:100%;
+
+
+}
+
+/*
+.bscp{
+font-family: "Times New Roman", "Bookman Old Style", "Sans-serif";font-size: 100%;
+margin-left: 2em;
+}
+
+..bsclst{
+margin-left: 2em;
+
+}
+*/
+
+
+.breadcrumbs{
+font-family: "Verdana", "Arail", "Sans-Serif";
+font-size:75%;
+font-weight: 400;
+/* white-space: nowrap; */
+line-height: 200%;
+
+}
+
+.breadcrumbs a{
+color: #969696;
+}
+
+.datetime{
+font-family: "Verdana", "Arail", "Sans-Serif";
+font-size:75%;
+font-weight: 400;
+color: #969696;
+line-height: 200%;
+}
+
+.grayed{
+color: #969696;
+}
+
+
+/* .leftpane{
+font-family: "Verdana", "Arail", "Serif";font-size: 75%;padding-left: .5em;padding-top: .5em;
+} */
+
+
+/* .trheader{
+font-family: "Verdana", "Arail", "Serif";font-weight: 700;text-align: center;background: #D2D2D2;
+
+} */
+
+/* Active League - Coming Soon - Inactive leagues */
+/* .AL{
+font-family: "Verdana", "Arail";
+font-size: 85%;
+font-weight: 700;
+margin-bottom: .25em;
+} */
+
+
+
+footer{
+margin-top:1em;
+font-size: 75%;
+text-align: center;
+}
+
+.gr_winner{
+background: #D2D2D2;
+}
+
+.gr_loser{
+
+
+}
+
+.gr_notplayed{
+
+}
+
+.makebold{
+font-weight: 700;
+}
+
+.notes{
+font-family: "Times New Roman","Serif";
+font-size: 75%;
+text-align: left;
+}
+
+.sepRow{
+background: #D2D2D2;font-size:  0px;margin-top: 0px;margin-bottom: 0px;padding-top: 0px;padding-bottom: 0px;
+height: 2px;
+}
+
+.cutline{
+background: #D2D2D2;margin-top: 0px;margin-bottom: 0px;padding-top: 0px;padding-bottom: 0px; font-size: 50%;text-align:left;
+height: auto;
+}
+
+.st{
+width:35%;
+}
+
+.ss{
+width:12%;
+}
+
+.sd{
+width:18%;
+}
+
+.sah{
+width:18%;
+}
+
+.sw{
+width:10%;
+ }
+
+.so{
+ width:54%;
+}
+
+
+
+@media (min-width: 360px) and (max-width:413px) {
+/*        table{
+       font-size: 10.9px;
+       } */
+       .bnr{
+       font-size: 200%;
+       }
+ }
+
+ @media (min-width: 414px) and (max-width:479px) {
+/*        table{
+       font-size: 12.9px;
+       } */
+       .bnr{
+       font-size: 200%;
+       }
+ }
+
+ @media (min-width: 480px) and (max-width:567px) {
+/*        table{
+       font-size: 14.9px;
+       } */
+       .bnr{
+       font-size: 200%;
+       }
+
+       .conflst li{
+                flex-basis:22%
+       }
+
+       .conflst .c3{
+                flex-basis:27%;
+       }
+
+       .conflst .c5{
+                flex-basis:18%;
+       }
+
+       .conflst .c6{
+                flex-basis:15%;
+       }
+ }
+
+ /* Iphone5 - 568 : IPAD Landscape   - 768px */
+ @media (min-width: 568px) and (max-width:767px) {
+/*        table{
+       font-size: 16.0px;
+       } */
+       .bnr{
+       font-size: 200%;
+       }
+
+
+       .conflst li{
+                flex-basis:22%
+       }
+
+       .conflst .c3{
+                flex-basis:27%;
+       }
+
+       .conflst .c5{
+                flex-basis:18%;
+       }
+
+       .conflst .c6{
+                flex-basis:15%;
+       }
+ }
+
+ /* IPAD Portrait   - 768px - nav on left pane -  */
+@media (min-width: 768px) and (max-width:960px) {
+
+       .bnr{
+       font-size: 200%;
+       }
+
+       .hb{
+       display:none;
+       }
+
+
+
+       body{
+            padding-right: .5em;
+            padding-left: .5em;
+       }
+
+       .description{
+            padding-left:0em;
+       }
+
+
+       header{
+            padding-left:0em;
+       }
+
+
+
+       .description p{
+                    margin-left: 5%;
+                    margin-right:5%;
+       }
+
+
+
+
+/*        table{
+       font-size: 16px;
+//        border-collapse: separate;
+
+       } */
+
+       ul{
+          padding-left:3.25rem;
+       }
+
+             .bsclst{
+margin-left:7%;
+}
+
+    .description div{
+
+         margin-left:5%;
+
+
+    }
+
+       .sepRow{
+               height: 1px;
+        }
+
+
+
+       td{
+       /* height: auto; */
+        padding: 2px;
+       }
+
+       th{
+        padding: 2px;
+       }
+
+        .tblteam{
+       /*  height: auto; */
+        padding-left:2px;
+        }
+
+       .mncntnt{
+
+       margin:1px;
+       padding: 4px;
+
+       order:2;
+       flex-grow:1;
+       flex-shrink:1;
+       flex-basis:100%;
+       }
+
+       nav{
+
+       /* width:intial; */
+
+       margin:1px;
+       padding:.5em;
+       min-width: 175px;
+
+       font-size: 75%;
+      /*  line-height: 240%;  */
+
+
+       order:1;
+       flex-grow:0;
+       flex-shrink:0;
+       flex-basis:auto;
+       }
+
+       nav li{
+             /*height: 20px;  */
+             margin-bottom: 4px;
+       }
+
+       .flxbx2{
+
+       flex-wrap: nowrap;
+       }
+
+       .conflst li{;
+                flex-basis:22%
+       }
+
+       .conflst .c3{
+                flex-basis:27%;
+       }
+
+       .conflst .c5{
+                flex-basis:18%;
+       }
+
+       .conflst .c6{
+                flex-basis:15%;
+       }
+
+/*        .wide{
+        display:initial;
+       }
+       .narrow{
+        display:none;
+       } */
+ }
+  /* End IPAD Portrait   - 768px - nav on left pane -  */
+
+
+ /* Total Desktop Mode - add wide mode - no table collapse*/
+@media print, (min-width: 960px) {
+
+       body{
+            padding-right: 2em;
+            padding-left: 2em;
+       }
+
+       .description{
+            padding-left:0em;
+       }
+
+
+       header{
+            padding-left:0em;
+       }
+
+       .bnr{
+       font-size: 200%;
+       }
+
+       .hb{
+       display:none;
+       }
+
+
+       .description p{
+       margin-left: 5%;
+      margin-right:5%;
+      }
+
+
+
+
+       ul{
+          padding-left:3.25rem;
+       }
+
+
+       .bsclst{
+margin-left:7%;
+}
+
+    .description div{
+
+        margin-left:5%;
+
+
+    }
+
+
+
+       table{
+       /* font-size: 100%;  */
+       border-collapse: separate;
+
+       }
+
+       .sepRow{
+               height: 1px;
+        }
+
+
+       td{
+        padding: 2px;
+/*          height: auto; */
+       }
+
+       th{
+        padding: 2px;
+       }
+
+        .tblteam{
+        /* height: auto; */
+        padding-left:2px;
+        }
+
+       .mncntnt{
+
+       margin:1px;
+       padding:4px;
+
+       order:2;
+       flex-grow:1;
+       flex-shrink:1;
+       flex-basis: 100%;
+       }
+
+       nav{
+
+       /* width:intial; */
+
+       margin:1px;
+       padding:.5em;
+       min-width: 175px;
+
+
+       font-size: 75%;
+      /*  line-height: 240%;    */
+
+
+       order:1;
+       flex-grow:0;
+       flex-shrink:0;
+       flex-basis:auto;
+       }
+
+       .flxbx2{
+       flex-wrap: nowrap;
+       }
+
+       .wide{
+        display:inline;
+       }
+       .narrow{
+        display:none;
+       }
+
+       nav li{
+             /*height: 20px;  */
+             margin-bottom: 4px;
+       }
+        .conflst li{
+                flex-basis:22%
+       }
+
+
+
+       .conflst .c3{
+                flex-basis:27%;
+       }
+
+       .conflst .c5{
+                flex-basis:18%;
+       }
+
+       .conflst .c6{
+                flex-basis:15%;
+       }
+ }
+
+ /* Total Desktop Mode - add wide mode - no table collapse*/
+
+
+ @media print{
+ nav{
+ display:none;
+ }
+
+ }
+
+</style>
+
+
+
+    <title>2026 Big 10 Football Post Season Probabilities</title>
+
+    <meta name="description" content="The 2026 Big 10 Football Post Season Probabilities table presents the probabilities that your team plays and wins the Conference Championship game.">
+    <meta name="keywords" content="Big 10 Football, Football, Playoff Picture, Playoff Status, Playoff Standings, 2026, Playoff Probabilities">
+	
+	<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+	<link rel="icon" type="image/png" href="/favicon-32x32.png" sizes="32x32">
+	<link rel="icon" type="image/png" href="/favicon-16x16.png" sizes="16x16">
+	<link rel="manifest" href="/manifest.json">
+	<link rel="mask-icon" href="/safari-pinned-tab.svg" color="#5bbed5">
+	<meta name="apple-mobile-web-app-title" content="Playoff Status">
+	<meta name="application-name" content="Playoff Status">
+	<meta name="theme-color" content="#ffffff">	
+	
+	<meta property="og:url"           content="http://www.playoffstatus.com/big10football/big10footballpostseasonprob.html" />
+  	<meta property="og:type"          content="website" />
+  	<meta property="og:title"         content="2026 Big 10 Football Post Season Probabilities" />
+  	<meta property="og:description"   content="The 2026 Big 10 Football Post Season Probabilities table presents the probabilities that your team plays and wins the Conference Championship game." />
+  	<meta property="og:image"         content="http://www.playoffstatus.com/images/fb-384x384-v1.png" />
+	<meta property="fb:app_id" 		  content="454838591524915" />
+	
+	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:site" content="@PlayoffStatus" />
+	
+	
+<!-- 	og:see_also  link
+	og:rich_attachment true -->
+	
+	
+    <!--[if IE]>
+    <script src="http://html5shim.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+	
+	<script src="../scripts/basic_v_1_4.js" async></script>
+	
+	
+	
+		
+ </head>
+
+<body>
+<script> window.fbAsyncInit = function() { 
+	FB.init({
+	appId:'454838591524915',
+	xfbml:true,
+	version:'v2.8'
+	});
+	FB.AppEvents.logPageView();
+};
+
+(function(d, s, id) {
+	var js, fjs = d.getElementsByTagName(s)[0];
+	if (d.getElementById(id)) { return; }
+	js = d.createElement(s); js.id = id;
+	js.src = "//connect.facebook.net/en_US/sdk.js";
+	fjs.parentNode.insertBefore(js, fjs);
+}(document, 'script', 'facebook-jssdk'));
+</script>
+  
+<header>  
+  
+<p id="top" class="bnr"><a href="../index.html">PlayoffStatus.com</a><span class="hb"><a href="#snav"><b><span style="position:relative; font-size:85%; top:-.35em;">&darr;</span><span style="position:relative; font-size:110%; top:-.15em;">&equiv;</span></b></a></span></p>
+		
+<div class="flxbx1">
+	<div class="breadcrumbs">
+    				<a href="../index.html">Home</a>
+					<a href="../ncaafootball/ncaafootball.html"><span class="ar">&#9658;</span>NCAA Football</a><a href="big10football.html"><span class="ar">&#9658;</span>Big 10 Football</a><a  href="big10footballpostseasonprob.html"><span class="ar">&#9658;</span>Big 10 Football Post Season Probabilities</a>
+	</div>
+	
+				
+
+	<div class="datetime">
+		Sun Sep&#160;27 2:45&#160;am
+	</div>
+</div>
+
+<hr>
+</header>
+
+<div class="description">	
+	<h2 class="wkinfo">Big 10 Football&nbsp;- Week&nbsp;5&nbsp;of&nbsp;13</h2> 
+	
+<h1>Big 10 Football Championship Game Probabilities</h1>
+<p>Is your team going to play and win the Conference Championship game? The Big 10 Football Post Season Probabilities table presents the probabilities that your team plays and wins the Conference Championship game. All future unplayed conference games are assumed won/lost with a probability based upon relative team strengths. Click a team name to proceed to the team playoff picture page.</p>
+</div>
+
+
+<div class="flxbx2" id="sflx">
+
+          <nav id="snav">
+
+
+<br>
+					<div style="position:relative;"><b>Site Navigation</b><span class="hb"><a href="#top"><b><span style="position:relative; font-size:85%; top:-.75em;">&uarr;</span><span style="position:relative; font-size:110%; top:-.45em;">&equiv;</span></b></a></span></div>
+					<br>
+					<ul>
+					
+					
+					 <li><a href="big10football.html">Big 10 Football Home</a></li>
+					 <li><a href="big10footballschedule.html">Big 10 Football Schedule</a></li>
+					 <li><a href="big10footballplayoffschedule.html">Championship Game Schedule</a></li>
+					  <li class="libreak"><span class="ar">&#9658;&nbsp;</span>Championship Game Probabilities</li>		 							
+					 
+					 
+					 <li><a href="../index.html">PlayoffStatus.com Home</a></li>
+					 <li><a href="../ncaafootball/ncaafootball.html">NCAA Football Home</a></li>
+					
+					
+					</ul>
+					
+										 <br><br><br>
+					 
+<a href="https://twitter.com/PlayoffStatus" class="twitter-follow-button" data-show-count="false">Follow @PlayoffStatus</a>
+<script async src="//platform.twitter.com/widgets.js" charset="utf-8"></script>
+<br>	
+
+<a href="https://twitter.com/share" class="twitter-share-button" data-text="Big 10 Tournament Probabilities" data-via="PlayoffStatus" data-related="PlayoffStatus" data-show-count="false">Tweet</a>
+<br>
+
+<br><br>
+
+<div
+  class="fb-like"
+  data-share="true"  
+  data-show-faces="false"
+  data-layout="button"
+  data-size="small">
+</div> 
+
+<div class="fb-follow"
+	data-href="https://www.facebook.com/PlayoffStatus"
+	data-layout="button"
+	data-size="small"
+	data-show-faces="false">
+</div>
+					
+					
+					
+
+					<br><br><br><br><br>
+					 <span style="font-size: smaller;color: #969696;"> Data may change several<br> times on day of play<br>Bookmark site for easy return</span>			 							
+      				 										
+           			 
+          </nav>
+
+<div class="mncntnt" style="font-size:16px;">
+            
+			<table>
+				<caption>Big 10 Football Post Season Probabilities</caption>			
+                <tr>
+                  <th colspan="1"> </th>
+                 								
+                  <th colspan="2"><span class="wide">Record </span><span class="narrow">Rcrd</span></th>				 
+                  <th rowspan="2">Big 10 Football Champions</th>
+                  <th rowspan="2">Championship Game Participate</th>
+
+				  
+				  
+				  
+				
+                </tr>
+
+                <tr>
+                  <th style="text-align:left;">Team</th>
+									
+
+                  <th>W</th>
+									<th>L</th>
+									
+																	
+                </tr>
+								
+									
+
+                <tr>
+                  <td class="tblteam"><a href="uclastandings.html">UCLA</a></td>
+																	
+				  <td>2</td>
+			   	  <td>0</td>			 
+                 <td><span style="color:#FF0000;">17%</span></td>
+                  <td><span style="color:#FF0000;">31%</span></td>
+                  			  				  								
+                </tr>
+									
+
+                <tr>
+                  <td class="tblteam"><a href="iowastandings.html">Iowa</a></td>
+																	
+				  <td>1</td>
+			   	  <td>0</td>			 
+                 <td><span style="color:#FF0000;">12%</span></td>
+                  <td><span style="color:#FF0000;">23%</span></td>
+                  			  				  								
+                </tr>
+									
+
+                <tr>
+                  <td class="tblteam"><a href="nebraskastandings.html">Nebraska</a></td>
+																	
+				  <td>1</td>
+			   	  <td>0</td>			 
+                 <td><span style="color:#008000;">11%</span></td>
+                  <td><span style="color:#008000;">22%</span></td>
+                  			  				  								
+                </tr>
+									
+
+                <tr>
+                  <td class="tblteam"><a href="indianastandings.html">Indiana</a></td>
+																	
+				  <td>1</td>
+			   	  <td>0</td>			 
+                 <td><span style="color:#FF0000;">11%</span></td>
+                  <td><span style="color:#FF0000;">21%</span></td>
+                  			  				  								
+                </tr>
+									
+
+                <tr>
+                  <td class="tblteam"><a href="oregonstandings.html">Oregon</a></td>
+																	
+				  <td>1</td>
+			   	  <td>0</td>			 
+                 <td><span style="color:#FF0000;">10%</span></td>
+                  <td><span style="color:#FF0000;">21%</span></td>
+                  			  				  								
+                </tr>
+									
+
+                <tr>
+                  <td class="tblteam"><a href="ohiost_standings.html">Ohio St.</a></td>
+																	
+				  <td>1</td>
+			   	  <td>0</td>			 
+                 <td><span style="color:#008000;">9%</span></td>
+                  <td><span style="color:#008000;">17%</span></td>
+                  			  				  								
+                </tr>
+									
+
+                <tr>
+                  <td class="tblteam"><a href="wisconsinstandings.html">Wisconsin</a></td>
+																	
+				  <td>1</td>
+			   	  <td>0</td>			 
+                 <td><span style="color:#008000;">8%</span></td>
+                  <td><span style="color:#008000;">17%</span></td>
+                  			  				  								
+                </tr>
+									
+
+                <tr>
+                  <td class="tblteam"><a href="minnesotastandings.html">Minnesota</a></td>
+																	
+				  <td>1</td>
+			   	  <td>0</td>			 
+                 <td><span style="color:#008000;">6%</span></td>
+                  <td><span style="color:#008000;">13%</span></td>
+                  			  				  								
+                </tr>
+									
+
+                <tr>
+                  <td class="tblteam"><a href="uscstandings.html">USC</a></td>
+																	
+				  <td>1</td>
+			   	  <td>1</td>			 
+                 <td><span style="color:#FF0000;">5%</span></td>
+                  <td><span style="color:#FF0000;">9%</span></td>
+                  			  				  								
+                </tr>
+									
+
+                <tr>
+                  <td class="tblteam"><a href="michiganstandings.html">Michigan</a></td>
+																	
+				  <td>0</td>
+			   	  <td>1</td>			 
+                 <td><span style="color:#FF0000;">3%</span></td>
+                  <td><span style="color:#FF0000;">7%</span></td>
+                  			  				  								
+                </tr>
+									
+
+                <tr>
+                  <td class="tblteam"><a href="pennst_standings.html">Penn St.</a></td>
+																	
+				  <td>0</td>
+			   	  <td>1</td>			 
+                 <td><span style="color:#FF0000;">2%</span></td>
+                  <td><span style="color:#FF0000;">5%</span></td>
+                  			  				  								
+                </tr>
+									
+
+                <tr>
+                  <td class="tblteam"><a href="northwesternstandings.html"><span class="wide">Northwestern</span><span class="narrow">N. Western</span></a></td>
+																	
+				  <td>0</td>
+			   	  <td>1</td>			 
+                 <td><span style="color:#FF0000;">2%</span></td>
+                  <td><span style="color:#FF0000;">3%</span></td>
+                  			  				  								
+                </tr>
+									
+
+                <tr>
+                  <td class="tblteam"><a href="michiganst_standings.html">Michigan St.</a></td>
+																	
+				  <td>0</td>
+			   	  <td>1</td>			 
+                 <td><span style="color:#FF0000;">1%</span></td>
+                  <td><span style="color:#FF0000;">3%</span></td>
+                  			  				  								
+                </tr>
+									
+
+                <tr>
+                  <td class="tblteam"><a href="washingtonstandings.html">Washington</a></td>
+																	
+				  <td>0</td>
+			   	  <td>1</td>			 
+                 <td><span style="color:#FF0000;">1%</span></td>
+                  <td><span style="color:#FF0000;">2%</span></td>
+                  			  				  								
+                </tr>
+									
+
+                <tr>
+                  <td class="tblteam"><a href="illinoisstandings.html">Illinois</a></td>
+																	
+				  <td>0</td>
+			   	  <td>1</td>			 
+                 <td><span style="color:#FF0000;">1%</span></td>
+                  <td><span style="color:#FF0000;">2%</span></td>
+                  			  				  								
+                </tr>
+									
+
+                <tr>
+                  <td class="tblteam"><a href="marylandstandings.html">Maryland</a></td>
+																	
+				  <td>0</td>
+			   	  <td>1</td>			 
+                 <td><span style="color:#FF0000;">1%</span></td>
+                  <td><span style="color:#FF0000;">2%</span></td>
+                  			  				  								
+                </tr>
+									
+
+                <tr>
+                  <td class="tblteam"><a href="purduestandings.html">Purdue</a></td>
+																	
+				  <td>0</td>
+			   	  <td>1</td>			 
+                 <td><span style="color:#FF0000;">&lt;1%</span></td>
+                  <td><span style="color:#FF0000;">1%</span></td>
+                  			  				  								
+                </tr>
+									
+
+                <tr>
+                  <td class="tblteam"><a href="rutgersstandings.html">Rutgers</a></td>
+																	
+				  <td>0</td>
+			   	  <td>1</td>			 
+                 <td><span style="color:#FF0000;">&lt;1%</span></td>
+                  <td><span style="color:#FF0000;">&lt;1%</span></td>
+                  			  				  								
+                </tr>
+									
+								
+          
+              </table>
+							<div class="notes">
+							<ul>
+    							<li style="list-style-type: none"><strong>Notes</strong></li>
+   								 <li><span style="color:#008000;">^</span> means the team has already proceeded to the next playoff round</li>
+								 <li><span style="color:#FF0000;">X</span> means the team did not proceed to this playoff round</li>
+    							 <li><span style="color:#008000;">50%</span> - probability the team will proceed to this playoff round - green number indicates the team controls its destiny for this spot</li>
+    							 <li><span style="color:#FF0000;">50%</span> - probability the team will proceed to this playoff round - red number indicates the team does not control its destiny for this spot</li>									 
+							</ul>
+							</div>			
+
+</div>
+
+</div>
+
+
+<footer>
+	      <hr>
+		  <address><a href="mailto:contact@playoffstatus.com">Contact Us</a></address>Copyright &copy; 2026 All Rights Reserved
+</footer>    
+
+
+
+  
+    
+  </body>
+</html>
+

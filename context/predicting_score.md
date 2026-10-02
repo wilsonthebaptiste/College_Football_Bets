@@ -8,10 +8,14 @@
       in 38 files (from 821 in 37); `npm run verify` green. Details and the three
       departures from this plan are in
       [Phase 1 — Completion Notes](#phase-1--completion-notes).
-- [ ] **Phase 2 — The two probability sources.** ESPN's FPI projections through
-      the existing provider, playoffstatus.com's conference odds through a new
-      and separate one, both with fixtures, validation, and mock equivalents.
-      Cache rows and cron warmers. No routes.
+- [x] **Phase 2 — The two probability sources.** ✅ **Complete, 2026-10-02.**
+      ESPN's FPI projections through the existing provider, playoffstatus.com's
+      conference odds through a new and separate one, both with real captured
+      fixtures, validation, and mock equivalents. Cache rows, cron warmers, and
+      the two-way name join. No routes. 958 tests in 41 files (from 879 in 38);
+      `npm run verify` green and `format:check` clean. Details, the four
+      departures from this plan, and what it settled are in
+      [Phase 2 — Completion Notes](#phase-2--completion-notes).
 - [ ] **Phase 3 — The endpoints.** `GET /api/projections` (every board's total)
       and `GET /api/users/:userId/projection` (one board, per-team breakdown),
       with freshness envelopes and labelled degradation.
@@ -625,6 +629,166 @@ viewer's request path if the cron is running.
   every conference term.
 - Captured fixtures date: a page stamped Sep 26 will be in the repo forever.
   Name the capture date in the fixture, as the ESPN fixtures do.
+
+---
+
+## Phase 2 — Completion Notes
+
+Built 2026-10-01/10-02. Every exit criterion above passes, and both sources were
+verified **live** as well as against fixtures — the clients reach them, the
+parsers hold on today's data, and the two-way join resolves 67 of 67 rows with
+live data on both sides.
+
+Files as planned, with four additions the scope table did not name: a
+`playoffstatus` capture script, a `ConferenceOddsPage` type (see departure 1), a
+second `SwrCache` in `Services` (departure 2), and `conferenceStandingFor`,
+which is where the labelled FPI fallback actually lives.
+
+### What was measured, against the plan's own numbers
+
+Both sources behaved exactly as the plan recorded, two days later.
+
+| | Plan, 2026-09-30 | Fixture, 2026-10-01 | Live, 2026-10-02 |
+| --- | --- | --- | --- |
+| FPI teams / pages | 138 / 1 | 138 / 1 | 138 / 1 |
+| `probwintitle` sum | 100.0 | 99.8 | 99.8 |
+| `probmaketitlegame` sum | 200.3 | 200.1 | 199.9 |
+| `probmakeplayoffs` sum | 1200.6 | 1200.4 | 1200.0 |
+| `probwinconf` sum | 1000.3 | 1000.9 | 999.9 |
+| Rows, SEC / B1G / B12 / ACC | 16 / 18 / 16 / 17 | 16 / 18 / 16 / 17 | 16 / 18 / 16 / 17 |
+| Champions column sums | 100.0 / 101.0 / 102.5 / 101.0 | identical | identical |
+| Rows joined to a team id | 66 of 67 + 1 alias | 67 of 67 | 67 of 67 |
+
+The conference map captured the same day makes the join exact rather than
+approximate: ESPN's power four are **ACC 17, Big 12 16, Big Ten 18, SEC 16** —
+67 teams, which is precisely the 67 rows the four pages carry. Both directions
+of the join are empty.
+
+The plan's `~26 KB` for the FPI payload is the one measurement that was off: it
+is **about 830 KB**, because each team also carries `resume` and `efficiencies`
+categories and the document carries a `glossary`. It is one request behind a 6 h
+cache, so this cost nothing; it is only worth knowing before anybody budgets for
+it.
+
+### Four departures, each a decision
+
+**1. There is no single `computedLabel` for the document, because the four pages
+do not agree on one.** The plan assumed one stamp. Measured on both captures:
+SEC and Big 12 said `Sat Sep 26 11:30 pm` while Big Ten and ACC said
+`Sun Sep 27 2:45 am` — the pages are recomputed in batches. Nothing picks
+between two such strings, because ordering them needs a year and a timezone the
+publisher does not give, and inventing either to put a confident date on screen
+is the one thing this feature may not do (§39, §46).
+
+So `ConferenceOddsDocument` carries a `pages[]` of per-conference stamps, and
+its own `computedLabel` is non-null **only when all four agree**. A team's
+conference term is dated by its own conference's page. **Phase 4's "as of
+\<playoffstatus stamp\>" therefore needs the per-conference stamp, not one
+document-level string**, and on today's data the document-level one is null.
+
+**2. `Services` carries two `SwrCache`s over one `TieredCache`.** A `SwrCache`
+stamps every envelope it builds with one provider name. Reading the conference
+odds through `services.cache` would have dated playoffstatus's figures `espn` —
+§46's labelling mistake, moved into the freshness envelope where nobody would
+look for it. `services.oddsCache` is the same tiers, the same key space, and
+the same KV ledger, with the right name on it. It costs nothing.
+
+**3. `getTeamProjections()` returns a document, not an array.** The plan's
+signature was `Promise<TeamProjectionInputs[]>`. It needs to carry FPI's
+`lastUpdated` — Phase 4's vocabulary asks for "as of \<FPI date\>" — and the
+four field sums, so it is a `TeamProjectionsDocument`, symmetric with
+`ConferenceOddsDocument`. `probwinconf` sits beside `fpi` rather than inside it,
+because it is not part of the rubric's conference term; it is the labelled
+fallback, and keeping it outside the quoted block is what stops it being used as
+one by accident.
+
+**4. The field-sum warning is logged by the provider, not by `validate.ts`.**
+The plan's scope table put "the four field-sum warnings" in `validate.ts`, but
+every function in that file is total and silent by design — the whole point is
+that it returns `null` and never does anything. `validate.ts` computes the sums,
+`normalize.ts` carries them, and `provider.ts` compares them to the tolerances
+and warns. Each piece stays testable on its own.
+
+### Which field sum actually catches a truncation is not the obvious one
+
+**The FPI payload arrives sorted by rank**, so dropping the tail loses almost no
+title probability — the top half of the league holds ~100% of it between them.
+On a deliberately halved payload, `probwintitle` and `probmaketitlegame` stayed
+*inside* tolerance while `probmakeplayoffs` (1185 of 1200) and `probwinconf`
+(710 of 1000) broke.
+
+That is the argument for four checks rather than one, and it is why the test
+asserts *which* ones fire. A single check on the champion identity — the most
+obvious one to pick — would have passed a payload missing half the league.
+
+### Two name-matching facts, one of which cost an alias
+
+**Punctuation must be REMOVED, not replaced with a space.** `N.C. State`
+normalizes to `nc state` and matches ESPN's `NC State`; replacing punctuation
+with a space gives `n c state`, which matches nothing. Getting this wrong
+produced **two** unmatched rows instead of the plan's one, and the second would
+have been "fixed" by a second alias that was never needed.
+
+The order matters as well: `&` becomes "and" **before** the punctuation goes, or
+`Texas A&M` collapses to `texas am`.
+
+With both right, the alias table is the single entry the plan predicted —
+`pittsburgh → pitt` — and it is a nickname, not an abbreviation, which is why no
+rule reconciles it. **A growing alias table would be a sign the normalization is
+wrong, not a sign of thoroughness.**
+
+### Phase 1's open question, settled: the plan's table was right
+
+Phase 1 recorded the plan's Texas A&M row as internally inconsistent — 3%
+playoff odds for a team FPI ranks inside its own top 25 — and left it for the
+captured payload to settle. The payload says the row is fine: **Texas A&M is FPI
+rank 16 with 3.2% playoff odds**, unranked in the AP poll, on the same day.
+
+FPI rank is how good a team is; playoff odds are the path in front of it, and a
+strong team that has already lost is plausibly both. The suspicion was wrong and
+the plan's table needs no correction.
+
+The other two solved-for ranks were close: **Nebraska 14** (Phase 1 guessed ~20,
+pinned only to "≤ 25") and **Kansas 70** (Phase 1 solved ~70, exactly). All
+three are now the *measured* values in `scoring.test.ts`'s fixture, and because
+the baseline is capped at the `TOP25_AT_25` anchor for any rank inside the poll,
+swapping them in changed no expected value. A cross-check in
+`test/espn/fpi.test.ts` asserts the three against the captured payload, so a
+re-capture cannot stale the shared fixture in silence.
+
+### Things Phases 3–5 will get wrong if nobody says so
+
+- **The conference-odds cache read resolves the season, which is a third KV
+  write on a cold run.** `season_calendar` is shared with every other read in
+  the application and cron-warmed every six hours, so it is not a cost this
+  feature adds — but "at most two writes for a cold read of both documents" is
+  three if you count it, and the test says so explicitly rather than looking
+  wrong later.
+- **`isCacheEntry` in `cache/tiers.ts` narrows the stored provider against a
+  RUNTIME set**, which had to gain `playoffstatus` alongside the type. Miss that
+  and the symptom is not a type error but a permanent cache miss: every read
+  refetches and rewrites the key. Only a second isolate reading the first's KV
+  copy catches it, and there is now a test that does exactly that. **Any future
+  publisher needs both lines.**
+- **`CONFERENCE_ODDS_PROVIDER` is still `mock` in `[env.production.vars]`.**
+  Nothing reads it until Phase 3's routes exist, and leaving it mock means the
+  deployed Worker is not yet scraping anybody. **Phase 3 or 5 has to flip it**,
+  and that is the moment the courtesy budget becomes real.
+- **The FPI fallback sets `reachConferenceGame` equal to `winConference`**, so
+  `max(0, e − d)` comes out at exactly zero and the runner-up term is a quoted
+  zero rather than an invention. Phase 4 must not render that as "no chance of
+  finishing second" — it is "this publisher does not say". The term's `source`
+  is `espn_fpi` rather than `playoffstatus`, which is the signal to use.
+- **`conferenceStandingFor` treats a `null` conference as `unavailable`, not
+  `not_eligible`.** Not knowing a team's conference is not the same as knowing
+  it is outside the power four. If the conference map fails, every conference
+  term goes `unavailable` — including for teams that genuinely are ineligible —
+  and that is the correct, if pessimistic, answer.
+- **Phase 5 still owes `docs/playoffstatus-notes.md`.** Its raw material is in
+  three places: the three parsing traps and the stamp rule in
+  `providers/playoffstatus/parse.ts`, the integrity windows and their reasoning
+  in `provider.ts`, and the measured row counts, column sums, stamps and
+  `robots.txt` in `test/fixtures/playoffstatus/_manifest.json`.
 
 ---
 

@@ -11,11 +11,20 @@ import type {
   TeamRef,
 } from '@cfb/shared';
 import { resolveSeasonFromDate } from '@cfb/shared';
-import type { ProviderCompetitor, ProviderGame, ProviderSchedule } from '../types';
+import type {
+  FpiFieldSums,
+  ProviderCompetitor,
+  ProviderGame,
+  ProviderSchedule,
+  TeamProjectionInputs,
+  TeamProjectionsDocument,
+} from '../types';
 import type {
   RawCalendar,
   RawCompetitor,
   RawEvent,
+  RawFpiPage,
+  RawFpiTeam,
   RawPoll,
   RawRankings,
   RawRecordEntry,
@@ -449,4 +458,80 @@ export function easternSlateKey(kickoffUtc: string): string {
   const part = (type: Intl.DateTimeFormatPartTypes): string =>
     parts.find((entry) => entry.type === type)?.value ?? '';
   return `${part('year')}${part('month')}${part('day')}`;
+}
+
+// ─── Football Power Index (docs/espn-notes.md §12) ───────────────────────────
+
+/**
+ * A probability ESPN publishes as a percentage, as a probability.
+ *
+ * The division happens HERE, once, and never later. The domain types say 0–1
+ * throughout and `scoring.ts` clamps anything outside that range, so a
+ * forgotten division does not crash: it pins every team at 1.0 and fills the
+ * response with `probability_out_of_range` anomalies, which is a quiet wrong
+ * answer rather than a loud one. One place to divide is how that stays true.
+ *
+ * `null` in means the column was missing, and stays `null`: a missing
+ * probability is not a zero one.
+ */
+function toProbability(percent: number | null): number | null {
+  return percent === null ? null : percent / 100;
+}
+
+function validFpiRank(rank: number | null): number | null {
+  return rank !== null && Number.isInteger(rank) && rank >= 1 ? rank : null;
+}
+
+/** Percentages summed across the payload: FPI's four nesting identities. */
+function fieldSumsOf(teams: readonly RawFpiTeam[]): FpiFieldSums {
+  const sum = (read: (team: RawFpiTeam) => number | null): number =>
+    teams.reduce((total, team) => total + (read(team) ?? 0), 0);
+  return {
+    winTitle: sum((team) => team.winTitlePercent),
+    makeTitleGame: sum((team) => team.makeTitleGamePercent),
+    makePlayoffs: sum((team) => team.makePlayoffsPercent),
+    winConference: sum((team) => team.winConferencePercent),
+  };
+}
+
+/**
+ * The FPI page → the national half of every team's projection inputs.
+ *
+ * A team whose three national probabilities are all missing is dropped rather
+ * than carried as a row of nulls: the rubric's answer for "no figures at all"
+ * is an absent team, which the projection reports as `unavailable`. A team that
+ * has some of them is kept, and the missing ones stay `null`.
+ */
+export function toProjectionInputs(page: RawFpiPage): TeamProjectionsDocument {
+  const teams: TeamProjectionInputs[] = [];
+  for (const raw of page.teams) {
+    const winTitle = toProbability(raw.winTitlePercent);
+    const makeTitleGame = toProbability(raw.makeTitleGamePercent);
+    const makePlayoffs = toProbability(raw.makePlayoffsPercent);
+    if (winTitle === null && makeTitleGame === null && makePlayoffs === null) continue;
+
+    teams.push({
+      providerTeamId: raw.teamId,
+      fpi: {
+        // A single missing column among the three is a zero for that outcome's
+        // arithmetic only; the terms that ARE published still stand. Treating
+        // the whole team as unavailable because one field moved would throw
+        // away five good numbers for one bad one (§42).
+        winTitle: winTitle ?? 0,
+        makeTitleGame: makeTitleGame ?? 0,
+        makePlayoffs: makePlayoffs ?? 0,
+        fpiRank: validFpiRank(raw.fpiRank),
+        source: 'espn_fpi',
+      },
+      winConference: toProbability(raw.winConferencePercent),
+    });
+  }
+
+  return {
+    teams,
+    // Verbatim. It is ESPN's statement about when it last recomputed, and the
+    // screen shows it rather than our own read time (§23, §39).
+    computedLabel: page.lastUpdated,
+    fieldSums: fieldSumsOf(page.teams),
+  };
 }

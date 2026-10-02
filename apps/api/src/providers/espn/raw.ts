@@ -190,3 +190,47 @@ export interface RawGroup {
   /** `name`: "Southeastern Conference". */
   name: string | null;
 }
+
+// ─── Football Power Index (docs/espn-notes.md §12) ───────────────────────────
+
+/**
+ * One team's row of the `fpi` category, with every field already pulled out of
+ * the parallel `values` array BY NAME.
+ *
+ * The payload's shape is a table, not a record: each team carries
+ * `categories[name="fpi"].values`, a bare array of numbers aligned with the
+ * `names` array on the document's own `categories` entry. The sibling `labels`
+ * array has nulls in it and the order is ESPN's to change, so reading by index
+ * would eventually put "projected losses" where a probability belongs — a
+ * number that is still a plausible number, which is the dangerous kind of bug.
+ *
+ * Percentages here are still percentages (`27.800000000000004`). Dividing by
+ * 100 is `normalize.ts`'s job.
+ */
+export interface RawFpiTeam {
+  /** `teams[].team.id`, the same id space as every other ESPN payload. */
+  teamId: string;
+  /** `probwintitle` */
+  winTitlePercent: number | null;
+  /** `probmaketitlegame` */
+  makeTitleGamePercent: number | null;
+  /** `probmakeplayoffs` */
+  makePlayoffsPercent: number | null;
+  /** `probwinconf` — the labelled fallback for the conference champion term. */
+  winConferencePercent: number | null;
+  /** `fpirank`, 1-based. Carries the Top-25 estimate for a team the poll omits. */
+  fpiRank: number | null;
+}
+
+/** `powerindex?limit=…` */
+export interface RawFpiPage {
+  teams: RawFpiTeam[];
+  /** `lastUpdated`: a daily morning recompute, as `<yyyy>-MM-DDTHH:mmZ`. */
+  lastUpdated: string | null;
+  /** `pagination.count` — how many teams ESPN says it has. */
+  count: number | null;
+  /** `pagination.pages` — anything above 1 means the read was truncated. */
+  pages: number | null;
+  /** Entries that carried no usable id or no `fpi` category, and were skipped. */
+  droppedTeams: number;
+}

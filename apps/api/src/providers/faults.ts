@@ -1,5 +1,13 @@
 import type { Prediction, RankingsSnapshot, Season, TeamIdentity } from '@cfb/shared';
-import type { ConferenceMap, ProviderGame, ProviderSchedule, SportsDataProvider } from './types';
+import type {
+  ConferenceMap,
+  ConferenceOddsDocument,
+  ConferenceOddsProvider,
+  ProviderGame,
+  ProviderSchedule,
+  SportsDataProvider,
+  TeamProjectionsDocument,
+} from './types';
 import { ProviderError } from './types';
 
 /**
@@ -13,12 +21,30 @@ import { ProviderError } from './types';
  *   team:<id>    that team's schedule fails, and nothing else (§42 isolation)
  *   schedule     every schedule fails
  *   rankings | slate | game | prediction | calendar | teams | conferences
+ *   projections  ESPN's FPI table fails: the national half of a projection
+ *   odds         the conference odds publisher fails: the conference half
+ *
+ * `projections` and `odds` are separate tokens on purpose. The projected-points
+ * feature has two independent publishers, and the drill that matters is each
+ * one down while the other is up — the response has to degrade in labelled
+ * pieces rather than all at once (predicting_score.md, Phase 2).
+ *
+ * `all` covers both providers, so one variable still drills a total blackout.
  *
  * The failure is a retryable `unavailable`, the same as a real ESPN outage.
  */
 
 type Operation =
-  'schedule' | 'rankings' | 'slate' | 'game' | 'prediction' | 'calendar' | 'teams' | 'conferences';
+  | 'schedule'
+  | 'rankings'
+  | 'slate'
+  | 'game'
+  | 'prediction'
+  | 'calendar'
+  | 'teams'
+  | 'conferences'
+  | 'projections'
+  | 'odds';
 
 const OPERATIONS: readonly Operation[] = [
   'schedule',
@@ -29,6 +55,8 @@ const OPERATIONS: readonly Operation[] = [
   'calendar',
   'teams',
   'conferences',
+  'projections',
+  'odds',
 ];
 
 export interface FaultPlan {
@@ -121,5 +149,31 @@ export class FaultyProvider implements SportsDataProvider {
   async getPrediction(providerGameId: string): Promise<Prediction | null> {
     this.check('prediction');
     return this.inner.getPrediction(providerGameId);
+  }
+
+  async getTeamProjections(): Promise<TeamProjectionsDocument> {
+    this.check('projections');
+    return this.inner.getTeamProjections();
+  }
+}
+
+/**
+ * The same switch over the odds publisher, so "FPI down with odds up" and the
+ * reverse are each one token.
+ */
+export class FaultyConferenceOddsProvider implements ConferenceOddsProvider {
+  readonly name: ConferenceOddsProvider['name'];
+  private readonly inner: ConferenceOddsProvider;
+  private readonly plan: FaultPlan;
+
+  constructor(inner: ConferenceOddsProvider, plan: FaultPlan) {
+    this.inner = inner;
+    this.plan = plan;
+    this.name = inner.name;
+  }
+
+  async getConferenceOdds(season: Season): Promise<ConferenceOddsDocument> {
+    if (this.plan.all || this.plan.operations.has('odds')) throw injected('odds');
+    return this.inner.getConferenceOdds(season);
   }
 }

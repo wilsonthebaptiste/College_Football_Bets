@@ -1,9 +1,13 @@
 import { fixtureText } from './fixtures';
 
 /**
- * A fake ESPN, serving the Phase 1 captures by URL. Anything it has no
- * fixture for is a 404, so a test that forgets to stub something fails loudly
- * instead of reaching the real ESPN.
+ * A fake ESPN, serving the real captures by URL. Anything it has no fixture
+ * for is a 404, so a test that forgets to stub something fails loudly instead
+ * of reaching the real ESPN.
+ *
+ * All three host families it answers for are listed below in the order they
+ * were added: `site.api.espn.com` and `sports.core.api.espn.com` from Phase 2,
+ * and `site.web.api.espn.com` — the FPI tables — from projected points.
  */
 
 export interface EspnStubOptions {
@@ -72,6 +76,12 @@ export function espnResponse(url: URL, options: EspnStubOptions = {}): Response 
       const name = (options.schedules ?? DEFAULT_SCHEDULES)[schedule[1] ?? ''];
       return name === undefined ? notFound() : json(fixtureText(name));
     }
+    return notFound();
+  }
+
+  // The third host family: the Football Power Index tables (espn-notes §12).
+  if (url.hostname === 'site.web.api.espn.com') {
+    if (path.endsWith('/powerindex')) return json(fixtureText('fpi'));
     return notFound();
   }
 

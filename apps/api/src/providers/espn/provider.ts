@@ -1,12 +1,20 @@
 import type { Prediction, RankingsSnapshot, Season, TeamIdentity } from '@cfb/shared';
-import type { ConferenceMap, ProviderGame, ProviderSchedule, SportsDataProvider } from '../types';
+import type {
+  ConferenceMap,
+  FpiFieldSums,
+  ProviderGame,
+  ProviderSchedule,
+  SportsDataProvider,
+  TeamProjectionsDocument,
+} from '../types';
 import { ProviderError } from '../types';
-import { ESPN_CORE_API, ESPN_SITE_API, EspnClient } from './client';
+import { ESPN_CORE_API, ESPN_FITT_API, ESPN_SITE_API, EspnClient } from './client';
 import {
   easternSlateKey,
   hasInlinePrediction,
   scheduleSeasonTypes,
   toPrediction,
+  toProjectionInputs,
   toProviderGame,
   toRankings,
   toSchedule,
@@ -16,6 +24,7 @@ import {
 import type { RawSchedule } from './raw';
 import {
   readCalendar,
+  readFpiPage,
   readGroup,
   readRankings,
   readRefPage,
@@ -55,6 +64,62 @@ function safeId(value: string): string {
 
 function invalid(what: string): ProviderError {
   return new ProviderError('invalid_response', `ESPN ${what} payload failed validation`);
+}
+
+/**
+ * FPI covers 138 teams on one page. 200 leaves room for a conference
+ * realignment without a second request, and `pagination.pages` is checked so a
+ * silently truncated read can never be mistaken for a complete one.
+ */
+const FPI_LIMIT = 200;
+
+/**
+ * FPI's four nesting identities, and how far each may drift before it is worth
+ * saying so: one champion, two finalists, twelve playoff places, ten FBS
+ * conference titles, each a sum of percentages across every rated team.
+ *
+ * The tolerances are about 1% of each expected value. Measured sums have sat
+ * within a point of all four on every capture, and a dropped page or a
+ * misaligned column misses by far more than this.
+ */
+const FPI_IDENTITIES: readonly {
+  field: keyof FpiFieldSums;
+  expected: number;
+  tolerance: number;
+}[] = [
+  { field: 'winTitle', expected: 100, tolerance: 2 },
+  { field: 'makeTitleGame', expected: 200, tolerance: 3 },
+  { field: 'makePlayoffs', expected: 1200, tolerance: 12 },
+  { field: 'winConference', expected: 1000, tolerance: 10 },
+];
+
+/**
+ * Reports a field sum that has drifted out of tolerance, and keeps going.
+ *
+ * A warning rather than a throw, deliberately: a slightly-off sum is a
+ * publisher's rounding, and taking the whole feature down over it would turn a
+ * cosmetic drift into an outage. A sum that is wildly off will have broken the
+ * two-way join and the per-team figures as well, which is where it is caught.
+ */
+function warnOnFieldSums(sums: FpiFieldSums, teams: number): void {
+  const broken = FPI_IDENTITIES.filter(
+    ({ field, expected, tolerance }) => Math.abs(sums[field] - expected) > tolerance,
+  );
+  if (broken.length === 0) return;
+  console.warn(
+    JSON.stringify({
+      level: 'warn',
+      provider: 'espn',
+      event: 'fpi_field_sum_out_of_tolerance',
+      teams,
+      fields: broken.map(({ field, expected, tolerance }) => ({
+        field,
+        expected,
+        tolerance,
+        measured: sums[field],
+      })),
+    }),
+  );
 }
 
 /**
@@ -193,5 +258,31 @@ export class EspnProvider implements SportsDataProvider {
     );
     if (standalone.status === 404) return null;
     return toPrediction(summary, readStandalonePredictor(standalone.body), retrievedAt);
+  }
+
+  /**
+   * The Football Power Index table: one request for every team ESPN rates
+   * (docs/espn-notes.md §12). The national half of projected points.
+   *
+   * It is not season-scoped. The endpoint answers for whatever season ESPN is
+   * currently rating, and says so in `lastUpdated`; asking it for a past season
+   * is not something it supports.
+   */
+  async getTeamProjections(): Promise<TeamProjectionsDocument> {
+    const url = `${ESPN_FITT_API}/powerindex?region=us&lang=en&contentorigin=espn&limit=${String(FPI_LIMIT)}`;
+    const { body } = await this.client.getJson(url);
+    const raw = readFpiPage(body);
+    if (raw === null) throw invalid('power index');
+
+    // A second page means the limit no longer covers the league, and a partial
+    // table would quietly give every missing team no projection at all.
+    if (raw.pages !== null && raw.pages > 1) {
+      throw invalid(`power index (${String(raw.pages)} pages; limit ${String(FPI_LIMIT)})`);
+    }
+    if (raw.teams.length === 0) throw invalid('power index (no teams)');
+
+    const document = toProjectionInputs(raw);
+    warnOnFieldSums(document.fieldSums, document.teams.length);
+    return document;
   }
 }

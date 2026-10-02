@@ -16,7 +16,9 @@ export type CacheCategory =
   | 'upcoming_game'
   | 'live_game'
   | 'prediction'
-  | 'board_composite';
+  | 'board_composite'
+  | 'projection_inputs'
+  | 'conference_odds';
 
 export type CacheTier = 'l1' | 'l2' | 'l3';
 
@@ -111,6 +113,27 @@ const TABLE: Readonly<Record<CacheCategory, PolicyRow>> = {
     tiers: EPHEMERAL,
     kvWriteIntervalSeconds: 0,
   },
+  // ── Projected points (predicting_score.md, Phase 2) ───────────────────────
+  // Both documents are sized to how often their publishers recompute, not to
+  // how often a page is looked at. ESPN's FPI carries `lastUpdated` and moves
+  // once a morning; playoffstatus recomputes after a game day and was observed
+  // four days old mid-week. A 6 h TTL is already faster than either, and
+  // between them they are at most 8 KV writes a day against a 700-write warning.
+  projection_inputs: {
+    ttlSeconds: 6 * HOUR,
+    staleSeconds: DAY,
+    tiers: DURABLE,
+    kvWriteIntervalSeconds: 6 * HOUR,
+  },
+  // A longer stale window than FPI's, because the source is a scraped page: if
+  // it is redesigned, week-old odds labelled `stale` beat no conference terms
+  // at all, and the label is what keeps that honest (§39).
+  conference_odds: {
+    ttlSeconds: 6 * HOUR,
+    staleSeconds: 7 * DAY,
+    tiers: DURABLE,
+    kvWriteIntervalSeconds: 6 * HOUR,
+  },
 };
 
 /** Rankings move weekly in season and not at all out of it (plan §7: 1 h, 6 h offseason). */
@@ -165,7 +188,9 @@ export type CacheResource =
   | 'slate'
   | 'game'
   | 'prediction'
-  | 'board';
+  | 'board'
+  | 'projection_inputs'
+  | 'conference_odds';
 
 /** Bump when a cached value's shape changes, so KV never serves an old shape. */
 const KEY_VERSION = 'v2';

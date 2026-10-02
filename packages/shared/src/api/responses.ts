@@ -1,4 +1,4 @@
-import type { AppError, Envelope, Freshness, ProviderName } from '../envelope';
+import type { AppError, Envelope, Freshness, SportsProviderName } from '../envelope';
 import type { Season, SeasonSource } from '../season';
 import type {
   Game,
@@ -25,7 +25,8 @@ import type {
 export interface HealthResponse {
   status: 'ok';
   version: string;
-  provider: ProviderName;
+  /** The configured sports provider. The odds publisher is not a sports provider. */
+  provider: SportsProviderName;
   season: Season;
   seasonSource: SeasonSource;
   cache: {

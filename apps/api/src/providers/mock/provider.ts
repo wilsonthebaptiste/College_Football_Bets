@@ -1,6 +1,14 @@
 import type { Prediction, RankingsSnapshot, Season, TeamIdentity } from '@cfb/shared';
 import { resolveSeasonFromDate } from '@cfb/shared';
-import type { ConferenceMap, ProviderGame, ProviderSchedule, SportsDataProvider } from '../types';
+import type {
+  ConferenceMap,
+  ConferenceOddsDocument,
+  ConferenceOddsProvider,
+  ProviderGame,
+  ProviderSchedule,
+  SportsDataProvider,
+  TeamProjectionsDocument,
+} from '../types';
 import { ProviderError } from '../types';
 import {
   DEFAULT_CURRENT_WEEK,
@@ -9,6 +17,7 @@ import {
   hash,
   seasonOfGameId,
 } from './generate';
+import { mockConferenceOdds, mockTeamProjections } from './projections';
 import { ROSTER } from './roster';
 
 export const MOCK_PREDICTOR_LABEL = 'Mock predictor (synthetic data)';
@@ -142,5 +151,37 @@ export class MockProvider implements SportsDataProvider {
       },
       retrievedAt: new Date(this.now()).toISOString(),
     };
+  }
+
+  /** Synthetic FPI-shaped figures, labelled `mock_projection` (§46). */
+  async getTeamProjections(): Promise<TeamProjectionsDocument> {
+    return mockTeamProjections();
+  }
+}
+
+/**
+ * `CONFERENCE_ODDS_PROVIDER=mock`: conference odds with no network and nobody's
+ * site scraped.
+ *
+ * A separate class from `MockProvider` because the two interfaces are
+ * separate, which is the point of splitting them: a drill can leave the mock
+ * sports provider up and take only the odds down.
+ */
+export class MockConferenceOddsProvider implements ConferenceOddsProvider {
+  readonly name = 'mock' as const;
+  private readonly conferences: readonly string[];
+
+  /**
+   * Which conferences to publish. The caller passes the power four, so the
+   * mock pays out on exactly the conferences the rubric pays for and every
+   * other roster team is `not_eligible` — the state the real data produces for
+   * Notre Dame and Boise State.
+   */
+  constructor(conferences: readonly string[]) {
+    this.conferences = conferences;
+  }
+
+  async getConferenceOdds(_season: Season): Promise<ConferenceOddsDocument> {
+    return mockConferenceOdds(this.conferences);
   }
 }

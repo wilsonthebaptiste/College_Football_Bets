@@ -241,7 +241,7 @@ describe('runWarmers', () => {
   const SATURDAY = Date.parse('2026-09-19T18:00:00Z');
   const WEDNESDAY = Date.parse('2026-09-16T18:00:00Z');
 
-  it('warms the calendar, rankings, team list, and conferences, and touches Postgres', async () => {
+  it('warms every document it is responsible for, and touches Postgres', async () => {
     stub = installSupabaseStub({ appUsers: nineSeededUsers() });
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const kv = new FakeKv();
@@ -258,12 +258,28 @@ describe('runWarmers', () => {
       rankings: true,
       teams: true,
       conferences: true,
+      // Projected points' two documents. The conference odds are four HTML
+      // pages from somebody else's web server, and warming them is what keeps
+      // a viewer's request from ever being one of the four.
+      projections: true,
+      odds: true,
       database: true,
     });
     expect(report.results['database']?.detail).toBe('9 users');
     // The durable copies land in KV, which is the point: other isolates read them there.
     const categories = kv.writes.map((write) => write.key.split('|')[2]).sort();
-    expect(categories).toEqual(['conferences', 'rankings', 'season_calendar', 'team_list']);
+    expect(categories).toEqual([
+      'conference_odds',
+      'conferences',
+      'projection_inputs',
+      'rankings',
+      'season_calendar',
+      'team_list',
+    ]);
+    // Six documents, six writes a cron run — and the two new ones have 6 h
+    // write intervals, so they cost at most eight a day between them against
+    // a ledger that warns at 700 (project-notes §4).
+    expect(kv.writes).toHaveLength(6);
     // Postgres was asked as anon, with no token.
     expect(stub.restRequests[0]?.authorization).toBeNull();
   });

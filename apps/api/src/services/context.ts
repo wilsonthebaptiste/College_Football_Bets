@@ -3,8 +3,8 @@ import type { EdgeCache, KvStore } from '../cache/tiers';
 import { TieredCache } from '../cache/tiers';
 import { SwrCache } from '../cache/swr';
 import type { AppBindings, Env } from '../env';
-import { createProvider } from '../providers/registry';
-import type { SportsDataProvider } from '../providers/types';
+import { createConferenceOddsProvider, createProvider } from '../providers/registry';
+import type { ConferenceOddsProvider, SportsDataProvider } from '../providers/types';
 
 /**
  * Everything a service needs for one request: the provider, the cache in front
@@ -15,6 +15,22 @@ export interface Services {
   env: Env;
   provider: SportsDataProvider;
   cache: SwrCache;
+  /**
+   * The conference odds publisher (projected points). Separate from `provider`
+   * because it is a separate publisher with a separate failure mode.
+   */
+  oddsProvider: ConferenceOddsProvider;
+  /**
+   * The same tiered cache, labelling what it stores with the ODDS publisher's
+   * name rather than the sports provider's.
+   *
+   * Two `SwrCache` instances over one `TieredCache`, because a `SwrCache`
+   * carries the provider name it stamps on every envelope it builds. One
+   * instance would have dated playoffstatus's figures `espn`, which is the
+   * §46 labelling mistake moved into the freshness envelope. The tiers, the
+   * key space, and the KV ledger are shared, so this costs nothing.
+   */
+  oddsCache: SwrCache;
   /** Read at call time, so tests that pin the clock pin everything. */
   now: () => number;
   requestId: string | null;
@@ -62,16 +78,21 @@ export interface ServiceOptions {
 export function createServices(env: Env, options: ServiceOptions): Services {
   const now = (): number => Date.now();
   const provider = createProvider(env, now);
+  const oddsProvider = createConferenceOddsProvider(env);
   const tiers = new TieredCache({
     kv: kvStoreOf(env),
     edge: edgeCacheOf(),
     now,
     defer: options.defer,
   });
+  const swr = (name: SwrCache['provider']): SwrCache =>
+    new SwrCache({ tiers, provider: name, now, requestId: options.requestId });
   return {
     env,
     provider,
-    cache: new SwrCache({ tiers, provider: provider.name, now, requestId: options.requestId }),
+    cache: swr(provider.name),
+    oddsProvider,
+    oddsCache: swr(oddsProvider.name),
     now,
     requestId: options.requestId,
   };

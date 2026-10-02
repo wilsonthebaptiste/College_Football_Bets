@@ -8,6 +8,7 @@ export type {
   FreshnessSource,
   FreshnessState,
   ProviderName,
+  SportsProviderName,
 } from './envelope';
 export {
   appError,

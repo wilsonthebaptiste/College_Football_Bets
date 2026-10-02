@@ -1,0 +1,64 @@
+{
+  "capturedAt": "2026-10-01",
+  "note": "Captured by scripts/capture-playoffstatus-fixtures.ts. The four pages were stamped in two batches on the site itself: SEC and Big 12 said 'Sat Sep 26 11:30 pm', Big Ten and ACC said 'Sun Sep 27 2:45 am'. Both were 'Week 5 of 13'. That disagreement is why ConferenceOddsDocument carries a stamp per page and only reports a document-level one when all four agree.",
+  "robots": "User-agent: * / Disallow: — everything allowed, read 2026-10-01",
+  "entries": [
+    {
+      "name": "sec",
+      "conference": "SEC",
+      "url": "https://www.playoffstatus.com/secfootball/secfootballpostseasonprob.html",
+      "status": 200,
+      "bytes": 25385,
+      "rows": 16,
+      "championPercent": 100.0,
+      "participatePercent": 200.5,
+      "computedLabel": "Sat Sep 26 11:30 pm"
+    },
+    {
+      "name": "big-ten",
+      "conference": "Big Ten",
+      "url": "https://www.playoffstatus.com/big10football/big10footballpostseasonprob.html",
+      "note": "The path is 'big10', not 'bigten'. 'bigten' is a 404.",
+      "status": 200,
+      "bytes": 26165,
+      "rows": 18,
+      "championPercent": 101.0,
+      "participatePercent": 199.5,
+      "computedLabel": "Sun Sep 27 2:45 am"
+    },
+    {
+      "name": "big-12",
+      "conference": "Big 12",
+      "url": "https://www.playoffstatus.com/big12football/big12footballpostseasonprob.html",
+      "status": 200,
+      "bytes": 25352,
+      "rows": 16,
+      "championPercent": 102.5,
+      "participatePercent": 200.5,
+      "computedLabel": "Sat Sep 26 11:30 pm"
+    },
+    {
+      "name": "acc",
+      "conference": "ACC",
+      "url": "https://www.playoffstatus.com/accfootball/accfootballpostseasonprob.html",
+      "status": 200,
+      "bytes": 25735,
+      "rows": 17,
+      "championPercent": 101.0,
+      "participatePercent": 202.0,
+      "computedLabel": "Sun Sep 27 2:45 am"
+    },
+    {
+      "name": "conference-map",
+      "conference": null,
+      "url": "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/{year}/types/2/groups/80/children + two hops per conference",
+      "note": "Not a playoffstatus payload. ESPN's conference map, exactly as getConferences() returns it, captured the same day so the two-way join can be asserted against real membership. 11 conferences, 138 teams; the power four are ACC 17, Big 12 16, Big Ten 18, SEC 16 — which is the 67 rows the four pages carry.",
+      "status": 200,
+      "bytes": 2625,
+      "rows": 138,
+      "championPercent": null,
+      "participatePercent": null,
+      "computedLabel": null
+    }
+  ]
+}

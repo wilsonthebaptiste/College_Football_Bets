@@ -1,10 +1,12 @@
 import type {
   AppErrorKind,
+  FpiProjectionInputs,
   GameStatus,
   Prediction,
   ProviderName,
   RankingsSnapshot,
   Season,
+  SportsProviderName,
   TeamIdentity,
   TeamRecord,
   TeamRef,
@@ -41,7 +43,7 @@ import type {
  *     `services/perspective.ts`.
  */
 export interface SportsDataProvider {
-  readonly name: ProviderName;
+  readonly name: SportsProviderName;
 
   /**
    * Whose id space `providerTeamId` belongs to, which is what the `teams`
@@ -50,7 +52,7 @@ export interface SportsDataProvider {
    * mode, and says so here: a team the administrator adds in mock mode is the
    * same `teams` row as in ESPN mode, not a mock-only duplicate.
    */
-  readonly teamNamespace: ProviderName;
+  readonly teamNamespace: SportsProviderName;
 
   /** The provider's own calendar (§21). `null` when it has no opinion. */
   getCurrentSeason(): Promise<Season | null>;
@@ -85,6 +87,144 @@ export interface SportsDataProvider {
 
   /** The provider's own prediction, or `null` when it publishes none (§12, §46). */
   getPrediction(providerGameId: string): Promise<Prediction | null>;
+
+  /**
+   * Every team the provider publishes playoff and championship probabilities
+   * for: the national half of the projected-points rubric
+   * (context/predicting_score.md).
+   *
+   * One request for the lot, like `listTeams`, because it is one document.
+   * A team the publisher does not cover is simply absent — ESPN's FPI covers
+   * 138 of its own ~762 teams, so most of them have no projection at all. That
+   * is an `unavailable`, never a zero.
+   */
+  getTeamProjections(): Promise<TeamProjectionsDocument>;
+}
+
+// ─── Conference odds: a second publisher, deliberately separate ──────────────
+
+/**
+ * Conference championship odds for one season, as one publisher computes them.
+ *
+ * This is its own interface and its own registry entry rather than a method on
+ * `SportsDataProvider`, for the mirror of project rule 2: only
+ * `providers/espn/` may know ESPN exists, so only `providers/playoffstatus/`
+ * may know that site exists. Keeping them apart is also what lets the two fail,
+ * be faulted, and be mocked independently — the conference half of the rubric
+ * can be down while the national half is fine, and the screen says which.
+ */
+export interface ConferenceOddsProvider {
+  readonly name: ProviderName;
+  getConferenceOdds(season: Season): Promise<ConferenceOddsDocument>;
+}
+
+/**
+ * One team's conference odds, keyed by the publisher's OWN spelling.
+ *
+ * Resolving "Mississippi St." to a provider team id needs the team list, which
+ * belongs to the other provider, so the join lives in `services/projection.ts`
+ * and not in here. A publisher that had to know ESPN's ids would be a publisher
+ * this application had taught about ESPN.
+ */
+export interface ConferenceOddsRow {
+  /** Verbatim, as published: "Mississippi St.", "Texas A&M", "Pittsburgh". */
+  teamName: string;
+  /** The conference page this row came from, by its short name: `SEC`, `Big Ten`. */
+  conference: string;
+  /** P(wins its conference), 0–1. */
+  winConference: number;
+  /** P(plays in the conference championship game), 0–1. */
+  reachConferenceGame: number;
+}
+
+/**
+ * One conference's page: when the publisher says it computed it, and the two
+ * column sums that are the scrape's own integrity check.
+ *
+ * There is one champion and there are two finalists per conference, so the
+ * sums should be about 100 and about 200. A parse that drops a row — which a
+ * single regex over the whole table did, silently, one row per page — breaks
+ * both at once. HTML cannot be validated the way JSON can, so this, the row
+ * count, and the two-way join are the only warning a redesign will ever give.
+ */
+export interface ConferenceOddsPage {
+  conference: string;
+  /**
+   * This page's own stamp, verbatim: "Sat Sep 26 11:30 pm". NEVER parsed.
+   *
+   * Our `fetchedAt` would say "seconds ago" for a figure computed four days
+   * ago, which is §39's failure in a new costume. The string has no year and no
+   * timezone, so parsing it into an instant would mean inventing a zone; it is
+   * carried and displayed exactly as published instead.
+   */
+  computedLabel: string | null;
+  rows: number;
+  championPercent: number;
+  participatePercent: number;
+}
+
+export interface ConferenceOddsDocument {
+  rows: ConferenceOddsRow[];
+  /** One entry per conference page, in `POWER_FOUR` order. */
+  pages: ConferenceOddsPage[];
+  /**
+   * The one stamp to put on a screen — and `null` when the four pages do not
+   * agree on one, which is the normal case rather than the exceptional one.
+   *
+   * The plan assumed a single stamp for the feature. Measured: the pages are
+   * recomputed in batches, and two of the four said "Sat Sep 26 11:30 pm"
+   * while the other two said "Sun Sep 27 2:45 am". There is no way to tell
+   * which of two such strings is older without parsing them, and parsing them
+   * means inventing a timezone — so nothing here picks one. A team's
+   * conference term is dated by its OWN conference's page, which `pages`
+   * always carries.
+   */
+  computedLabel: string | null;
+}
+
+// ─── FPI, the national half ──────────────────────────────────────────────────
+
+/** One team's FPI figures, as probabilities in 0–1 (never percentages). */
+export interface TeamProjectionInputs {
+  providerTeamId: string;
+  fpi: FpiProjectionInputs;
+  /**
+   * `probwinconf`, 0–1. Not what the rubric's conference term is quoted from —
+   * the owner chose playoffstatus, and the two disagree by up to about 0.75
+   * projected points per team — but it arrives in the same payload for free.
+   *
+   * It is the documented fallback for the CHAMPION term when the scrape fails.
+   * There is no runner-up equivalent anywhere in FPI, which is exactly why that
+   * term then stays `unavailable` rather than being invented.
+   */
+  winConference: number | null;
+}
+
+/**
+ * FPI's four nesting identities, measured across every team in the payload, as
+ * percentages. One champion, two finalists, twelve playoff places, ten FBS
+ * conference titles.
+ *
+ * A dropped page, a truncated `limit`, or a column read by the wrong index
+ * breaks all four at once, and each is free to compute. They are a warning and
+ * not an error: a publisher's own rounding drift must not take the feature down.
+ */
+export interface FpiFieldSums {
+  winTitle: number;
+  makeTitleGame: number;
+  makePlayoffs: number;
+  winConference: number;
+}
+
+export interface TeamProjectionsDocument {
+  teams: TeamProjectionInputs[];
+  /**
+   * FPI's own `lastUpdated`, verbatim, as `<yyyy>-MM-DDTHH:mmZ`. Displayed,
+   * never parsed — it is ESPN's statement about when it last recomputed, and
+   * that is what a screen should show rather than our own read time.
+   */
+  computedLabel: string | null;
+  fieldSums: FpiFieldSums;
 }
 
 // ─── Provider-layer data shapes ──────────────────────────────────────────────

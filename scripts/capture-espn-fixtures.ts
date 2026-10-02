@@ -24,6 +24,8 @@ const OUT_DIR = resolve(HERE, '..', 'apps', 'api', 'test', 'fixtures', 'espn');
 
 const SITE = 'https://site.api.espn.com/apis/site/v2/sports/football/college-football';
 const CORE = 'https://sports.core.api.espn.com/v2/sports/football/leagues/college-football';
+/** The third host family, behind the Football Power Index tables (espn-notes §12). */
+const FITT = 'https://site.web.api.espn.com/apis/fitt/v3/sports/football/college-football';
 
 /**
  * ESPN sits behind Akamai, which throttles bursts from one IP with a bare 403
@@ -296,6 +298,16 @@ async function main(): Promise<void> {
     purpose: 'Bare scoreboard — carries the season/week calendar used by §21.',
   });
 
+  // Projected points, the national half (context/predicting_score.md). One
+  // page, every rated team. `limit=200` covers the 138 ESPN rates with room to
+  // spare; the normalizer refuses a payload that says it has more pages.
+  const fpi = await run({
+    name: 'fpi',
+    url: `${FITT}/powerindex?region=us&lang=en&contentorigin=espn&limit=200`,
+    purpose:
+      'Football Power Index: probwintitle / probmaketitlegame / probmakeplayoffs / probwinconf / fpirank, read by NAME from the categories[].names array (§12 of espn-notes).',
+  });
+
   // ── Discovered ────────────────────────────────────────────────────────────
   const found = discover(scoreboard, rankings);
   console.log('\nDiscovered from the slate:');
@@ -470,6 +482,7 @@ async function main(): Promise<void> {
   const teamCount = asArray(dig(teamList, ['sports', 0, 'leagues', 0, 'teams'])).length;
   console.log(`\nTeam list holds ${String(teamCount)} teams.`);
 
+  reportFpi(fpi);
   await reportByeWeeks();
 }
 
@@ -538,6 +551,48 @@ async function synthesizeLiveFixture(manifest: Manifest): Promise<void> {
     note: 'synthetic',
   });
   console.log(`  ${'game-live'.padEnd(30)} ok   ${String(bytes).padStart(8)} bytes  (SYNTHETIC)`);
+}
+
+/**
+ * FPI's four nesting identities, printed at capture time: one champion, two
+ * finalists, twelve playoff places, ten FBS conference titles.
+ *
+ * Worth seeing the moment a payload is captured, because all four break
+ * together when a column moves or a page is truncated — and a column read from
+ * the wrong index still looks like a perfectly ordinary probability.
+ */
+function reportFpi(payload: unknown): void {
+  const names = asArray(dig(payload, ['categories']))
+    .filter((category) => dig(category, ['name']) === 'fpi')
+    .flatMap((category) => asArray(dig(category, ['names'])));
+  const teams = asArray(dig(payload, ['teams']));
+  if (names.length === 0 || teams.length === 0) {
+    console.log('\nFPI: nothing captured.');
+    return;
+  }
+
+  const sums: Record<string, number> = {};
+  for (const column of ['probwintitle', 'probmaketitlegame', 'probmakeplayoffs', 'probwinconf']) {
+    const index = names.indexOf(column);
+    sums[column] =
+      index < 0
+        ? Number.NaN
+        : teams.reduce((total: number, team) => {
+            const values = asArray(dig(team, ['categories'])).find(
+              (category) => dig(category, ['name']) === 'fpi',
+            );
+            const value = dig(values, ['values', index]);
+            return total + (typeof value === 'number' ? value : 0);
+          }, 0);
+  }
+
+  console.log(
+    `\nFPI: ${String(teams.length)} teams, lastUpdated ${String(dig(payload, ['lastUpdated']))}`,
+  );
+  console.log('  column sums (expect ~100 / ~200 / ~1200 / ~1000):');
+  for (const [column, total] of Object.entries(sums)) {
+    console.log(`    ${column.padEnd(20)} ${total.toFixed(1)}`);
+  }
 }
 
 /** Bye weeks are gaps in the week sequence, not rows (§10). Report what we captured. */

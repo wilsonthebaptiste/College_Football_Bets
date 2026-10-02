@@ -3,6 +3,7 @@ import { listUsers } from '../db/queries';
 import type { Env } from '../env';
 import { resolveSeason } from '../season/resolve';
 import { createServices } from '../services/context';
+import { readConferenceOdds, readProjectionInputs } from '../services/projection';
 import { readConferences, readTeamList } from '../services/search';
 import { readRankings } from '../services/snapshot';
 
@@ -15,6 +16,11 @@ import { readRankings } from '../services/snapshot';
  *     refreshes it and the fresh copy lands in KV, so a viewer's request finds
  *     it there instead of fetching and parsing ESPN on the request path. The
  *     team list is the heaviest parse (about 6.6 ms of the 10 ms CPU budget).
+ *   - The two projected-points documents, for the same reason and one more:
+ *     the conference odds are four HTML pages from somebody else's web server,
+ *     and warming them is what keeps a viewer's request from ever being one of
+ *     the four. Both have 6 h TTLs, so between them they are at most eight KV
+ *     writes a day.
  *   - One `select` from Postgres, so the free Supabase project never sits
  *     idle long enough to be paused (about 7 days; §10 risk register).
  *
@@ -76,7 +82,7 @@ export async function runWarmers(env: Env, options: WarmOptions): Promise<WarmRe
     defer: options.defer,
   });
 
-  const [season, rankings, teams, conferences, database] = await Promise.all([
+  const [season, rankings, teams, conferences, projections, odds, database] = await Promise.all([
     attempt(async () => {
       const resolved = await resolveSeason(services);
       return `${String(resolved.season.year)} ${resolved.season.type} (${resolved.source})`;
@@ -92,13 +98,25 @@ export async function runWarmers(env: Env, options: WarmOptions): Promise<WarmRe
     attempt(
       async () => `${String(Object.keys(await readConferences(services)).length)} teams mapped`,
     ),
+    attempt(async () => {
+      const read = await readProjectionInputs(services);
+      const document = read.envelope.data;
+      if (document === null) throw new Error(read.envelope.error?.message ?? 'unavailable');
+      return `${String(document.teams.length)} teams rated (${read.status})`;
+    }),
+    attempt(async () => {
+      const read = await readConferenceOdds(services);
+      const document = read.envelope.data;
+      if (document === null) throw new Error(read.envelope.error?.message ?? 'unavailable');
+      return `${String(document.rows.length)} rows (${read.status})`;
+    }),
     attempt(async () => `${String((await listUsers(supabasePublic(env))).length)} users`),
   ]);
 
   const report: WarmReport = {
     cron: options.cron,
     skipped: false,
-    results: { season, rankings, teams, conferences, database },
+    results: { season, rankings, teams, conferences, projections, odds, database },
   };
   const failed = Object.values(report.results).some((result) => !result.ok);
   console[failed ? 'warn' : 'log'](

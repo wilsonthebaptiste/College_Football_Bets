@@ -2,6 +2,8 @@ import type {
   RawCalendar,
   RawCompetitor,
   RawEvent,
+  RawFpiPage,
+  RawFpiTeam,
   RawGroup,
   RawInlinePredictor,
   RawLogo,
@@ -441,4 +443,89 @@ export function readRankings(body: unknown): RawRankings | null {
   const polls = field(body, 'rankings');
   if (!Array.isArray(polls)) return null;
   return { polls: polls.map(readPoll).filter((poll): poll is RawPoll => poll !== null) };
+}
+
+// ─── Football Power Index (docs/espn-notes.md §12) ───────────────────────────
+
+/**
+ * The `fpi` columns this application reads, by ESPN's own name for each.
+ *
+ * Every one is REQUIRED: if a name is missing from the document's `names`
+ * array, the column has been renamed or removed, and the honest answer is that
+ * the payload failed validation. The alternative — reading whatever sits at the
+ * old index — would substitute one statistic for another silently, and the
+ * result would still look like a probability.
+ */
+const FPI_COLUMNS = [
+  'probwintitle',
+  'probmaketitlegame',
+  'probmakeplayoffs',
+  'probwinconf',
+  'fpirank',
+] as const;
+
+type FpiColumn = (typeof FPI_COLUMNS)[number];
+type FpiColumnIndex = Readonly<Record<FpiColumn, number>>;
+
+/** The document-level `categories[name="fpi"].names`: the column order, once per payload. */
+function readFpiColumns(body: unknown): FpiColumnIndex | null {
+  const category = list(field(body, 'categories')).find((entry) => field(entry, 'name') === 'fpi');
+  const names = list(field(category, 'names'));
+  const index: Record<string, number> = {};
+  for (const column of FPI_COLUMNS) {
+    const at = names.indexOf(column);
+    // `-1` is a renamed or dropped column; anything else would be read from the
+    // wrong place. Either way the payload is no longer the one this code reads.
+    if (at < 0) return null;
+    index[column] = at;
+  }
+  return index as FpiColumnIndex;
+}
+
+function readFpiTeam(entry: unknown, columns: FpiColumnIndex): RawFpiTeam | null {
+  const teamId = identifier(path(entry, ['team', 'id']));
+  if (teamId === null) return null;
+
+  const category = list(field(entry, 'categories')).find(
+    (candidate) => field(candidate, 'name') === 'fpi',
+  );
+  const values = list(field(category, 'values'));
+  // A team listed with no `fpi` category has no figures, which is different
+  // from a team whose figures are zero. It is dropped rather than zeroed.
+  if (values.length === 0) return null;
+  const at = (column: FpiColumn): number | null => finite(values[columns[column]]);
+
+  return {
+    teamId,
+    winTitlePercent: at('probwintitle'),
+    makeTitleGamePercent: at('probmaketitlegame'),
+    makePlayoffsPercent: at('probmakeplayoffs'),
+    winConferencePercent: at('probwinconf'),
+    fpiRank: at('fpirank'),
+  };
+}
+
+/** `powerindex?limit=…` — one page, every team ESPN rates. */
+export function readFpiPage(body: unknown): RawFpiPage | null {
+  const columns = readFpiColumns(body);
+  if (columns === null) return null;
+
+  const entries = field(body, 'teams');
+  if (!Array.isArray(entries)) return null;
+
+  const teams: RawFpiTeam[] = [];
+  let droppedTeams = 0;
+  for (const entry of entries) {
+    const team = readFpiTeam(entry, columns);
+    if (team === null) droppedTeams += 1;
+    else teams.push(team);
+  }
+
+  return {
+    teams,
+    lastUpdated: text(field(body, 'lastUpdated')),
+    count: finite(path(body, ['pagination', 'count'])),
+    pages: finite(path(body, ['pagination', 'pages'])),
+    droppedTeams,
+  };
 }

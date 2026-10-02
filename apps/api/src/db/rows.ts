@@ -1,4 +1,4 @@
-import type { ProviderName, Team, TeamOwner, UserTeamSelection } from '@cfb/shared';
+import type { SportsProviderName, Team, TeamOwner, UserTeamSelection } from '@cfb/shared';
 import { sizedLogoUrl, TEAM_LOGO_PX } from '../providers/logos';
 
 /**
@@ -66,7 +66,15 @@ export interface UserSummaryRow extends AppUserRow {
   user_team_selections: CountAggregate[] | null;
 }
 
-function toProviderName(value: string): ProviderName {
+/**
+ * `teams.provider` is a text column, so it is narrowed rather than trusted.
+ *
+ * The return type is `SportsProviderName`, not `ProviderName`: since projected
+ * points added `playoffstatus` to the envelope's publishers, the wide type has a
+ * member that publishes no team identities at all. A row claiming it would be a
+ * team whose id belongs to nobody's id space (§43).
+ */
+function toProviderName(value: string): SportsProviderName {
   return value === 'mock' ? 'mock' : 'espn';
 }
 
@@ -137,7 +145,7 @@ export function countOf(aggregate: CountAggregate[] | null): number {
  */
 export function toTeamOwners(
   rows: OwnerSelectionRow[],
-  namespace: ProviderName,
+  namespace: SportsProviderName,
 ): Record<string, TeamOwner[]> {
   const owners: Record<string, TeamOwner[]> = {};
 

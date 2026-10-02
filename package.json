@@ -23,6 +23,7 @@
     "smoke": "node scripts/smoke.mjs",
     "check:bundle": "node scripts/check-bundle-secrets.mjs apps/api/dist apps/web/dist",
     "capture:fixtures": "node --experimental-strip-types scripts/capture-espn-fixtures.ts",
+    "capture:odds": "node --experimental-strip-types scripts/capture-playoffstatus-fixtures.ts",
     "dev": "npm run dev --workspace @cfb/api",
     "dev:web": "npm run dev --workspace @cfb/web",
     "build:web": "npm run build --workspace @cfb/web",

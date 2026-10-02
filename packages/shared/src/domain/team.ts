@@ -1,11 +1,16 @@
-import type { ProviderName } from '../envelope';
+import type { SportsProviderName } from '../envelope';
 
 /**
  * A team as the provider knows it (§43). Selections store this, so a board stays
  * tied to a real sports entity even if the provider's display name drifts.
  */
 export interface TeamIdentity {
-  provider: ProviderName;
+  /**
+   * Whose id space `providerTeamId` belongs to. Deliberately the narrow type:
+   * only a sports-data provider publishes team identities, so a publisher of
+   * conference odds can never be recorded as a team's provider (§43).
+   */
+  provider: SportsProviderName;
   providerTeamId: string;
   /** The full provider name: "Alabama Crimson Tide". */
   name: string;

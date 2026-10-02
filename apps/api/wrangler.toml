@@ -11,6 +11,13 @@ workers_dev = true
 # real data (override locally with `--var SPORTS_PROVIDER:espn`).
 SPORTS_PROVIDER = "mock"
 
+# "playoffstatus" | "mock". Who supplies the conference championship odds the
+# projected-points rubric quotes its conference terms from. Separate from
+# SPORTS_PROVIDER on purpose: these are two publishers with two failure modes,
+# the projection has to degrade in labelled pieces, and SPORTS_PROVIDER=espn
+# alone must never start scraping somebody's site. "mock" needs no network.
+CONFERENCE_ODDS_PROVIDER = "mock"
+
 # Optional User-Agent for ESPN requests. Unset uses the descriptive default in
 # src/providers/espn/client.ts. ESPN's CDN answers 403 to that default, both from
 # local workerd and from the deployed Worker (docs/espn-notes.md §1), so ESPN
@@ -21,7 +28,12 @@ SPORTS_PROVIDER = "mock"
 
 # Development and test only: make chosen provider calls fail, to see stale and
 # unavailable states. Comma-separated: all, schedule, rankings, slate, game,
-# prediction, calendar, teams, team:<providerTeamId>. Never set in production.
+# prediction, calendar, teams, conferences, projections, odds,
+# team:<providerTeamId>. Never set in production.
+#
+# `projections` is ESPN's FPI table and `odds` is the conference odds
+# publisher, so the drill that matters for projected points — each publisher
+# down while the other is up — is one token either way.
 # SPORTS_PROVIDER_FAULT = ""
 
 # Comma-separated CORS allowlist. "*" is accepted for local development only.
@@ -84,6 +96,12 @@ workers_dev = true
 
 [env.production.vars]
 SPORTS_PROVIDER = "espn"
+# Projected points' conference half. Set to "playoffstatus" when Phase 3's
+# routes ship; until then nothing reads it, and leaving it "mock" means the
+# deployed Worker is not yet scraping anybody. robots.txt permits it
+# (docs/playoffstatus-notes.md), the four pages are read at most four times a
+# day behind a 6 h cache, and the cron warms them off the request path.
+CONFERENCE_ODDS_PROVIDER = "mock"
 # The deployed Pages origin. Nothing else.
 ALLOWED_ORIGINS = "https://cfb-board-pfc.pages.dev"
 LOG_LEVEL = "info"

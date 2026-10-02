@@ -19,7 +19,7 @@ URL, or status string (§26, §5).
 
 ## 1. Confirmed endpoints
 
-Two different ESPN API families are in play, and they do not share conventions.
+Three different ESPN API families are in play, and they do not share conventions.
 
 | Need                      | Endpoint                                                                                                       | Verified                    |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------- |
@@ -32,10 +32,13 @@ Two different ESPN API families are in play, and they do not share conventions.
 | Game detail               | `…/college-football/summary?event={gameId}`                                                                    | ✅                          |
 | Predictor (standalone)    | `sports.core.api.espn.com/v2/sports/football/leagues/college-football/events/{id}/competitions/{id}/predictor` | ✅                          |
 | Conference name           | `sports.core.api.espn.com/v2/…/seasons/{year}/types/2/groups/{groupId}`                                        | ✅ two-hop, see §7          |
+| Football Power Index      | `site.web.api.espn.com/apis/fitt/v3/sports/football/college-football/powerindex?limit=200`                     | ✅ 138 teams, see §12       |
 
 `site.api.espn.com` returns the browser-facing shapes; `sports.core.api.espn.com`
 returns a hypermedia API where related objects are `$ref` URLs you must resolve
-or parse. Both are needed.
+or parse; `site.web.api.espn.com` returns the shapes behind ESPN's own stats
+tables, where figures arrive in parallel `names`/`values` arrays rather than as
+named fields. All three are needed.
 
 ### Rate limiting — plan for it
 
@@ -442,6 +445,7 @@ records the URL, purpose, HTTP status, and byte count of every entry.
 | `scoreboard-20260918.json`        | A day's slate of scheduled (`pre`) games                | ✅           |
 | `scoreboard-postponed-slate.json` | 2020-11-21 — 7 postponed alongside 34 final             | ✅           |
 | `calendar.json`                   | Season/week calendar (§21)                              | ✅           |
+| `fpi.json`                        | 138 rated teams, projection probabilities (§12)         | ✅           |
 | `rankings.json`                   | 5 polls, no CFP in week 3 (§7)                          | ✅           |
 | `game-final.json`                 | Completed game, `winner` present (§9)                   | ✅           |
 | `game-upcoming.json`              | Scheduled, **no `score` key**, inline `predictor` (§10) | ✅           |
@@ -525,3 +529,89 @@ Found while building and running the adapter against live ESPN:
   with `displayValue`, `record[]` with `summary`, and `records[]` with
   `summary`. **Summary payloads carry `location` but no `shortDisplayName`.**
   `validate.ts` reads whichever of these is present.
+
+---
+
+## 12. The Football Power Index (projected points)
+
+Added for projected points (context/predicting_score.md). This is the source of
+every national probability in the rubric, and it is the one ESPN endpoint whose
+shape makes a silent wrong answer easy.
+
+`GET site.web.api.espn.com/apis/fitt/v3/sports/football/college-football/powerindex?region=us&lang=en&contentorigin=espn&limit=200`
+
+- **A third host family.** `site.web.api.espn.com` with an `/apis/fitt/v3`
+  prefix, nothing like the other two. `ESPN_FITT_API` is beside them in
+  `providers/espn/client.ts`, and it is reached with the same client and the
+  same `ESPN_USER_AGENT` — §1's User-Agent rule applies here too, so this call
+  must not be given headers of its own.
+- **One page, all of it.** `pagination: { count: 138, pages: 1 }` at
+  `limit=200`, about 830 KB. 138 of the provider's ~762 teams are rated, so
+  **an FCS team has no projection at all** — an `unavailable`, never a zero,
+  the same asymmetry search already accepted for conferences and schedules.
+  `pages > 1` is refused outright: a partial table would silently give every
+  team past the cut no projection.
+- **`lastUpdated` is a daily morning recompute** (observed `08:00Z` two days
+  running). It is carried verbatim to the screen; a projection is never called
+  "live", because its inputs move about once a day.
+
+### The columns are positional, and that is the trap
+
+Each team carries `categories[].name === 'fpi'` with a bare `values` array.
+What each slot means comes from the **`names`** array on the _document's_ own
+`categories` entry — not from the team's. The order observed was:
+
+```
+fpi, fpirank, rankchange7days, projectedw, projectedl, probwinout, prob6wins,
+probwindiv, probmakeplayoffs, probmaketitlegame, probwintitle, probwinconf,
+numwins, numlosses, numties
+```
+
+So `probwintitle` is the **eleventh** column, with projected wins and losses
+sitting a few places away. Three consequences, all of them enforced in
+`validate.ts`:
+
+- **Read by name, resolved once per payload.** The sibling `labels` array has
+  nulls in it and the order is ESPN's to change. An off-by-one here does not
+  crash: it puts "projected losses" where a probability belongs, and 1.6 is a
+  perfectly plausible-looking probability once divided by 100.
+- **A renamed column fails validation** rather than reading its old index.
+- **Values are percentages, with float noise** (`27.500000000000004`). They are
+  divided by 100 in `normalize.ts` and nowhere else.
+
+### Four field sums, which cost nothing and catch a broken read
+
+One champion, two finalists, twelve playoff places, ten FBS conference titles.
+Summed across every rated team:
+
+| Sum of              | Should be | 2026-10-01 | 2026-10-02 |
+| ------------------- | --------- | ---------- | ---------- |
+| `probwintitle`      | 100       | 99.8       | 99.8       |
+| `probmaketitlegame` | 200       | 200.1      | 199.9      |
+| `probmakeplayoffs`  | 1200      | 1200.4     | 1200.0     |
+| `probwinconf`       | 1000      | 1000.9     | 999.9      |
+
+They are a **warning**, not an error: a publisher's rounding drift must not take
+the feature down, and a sum that is wildly wrong will have broken the per-team
+figures too. Tolerances are about 1% of each expected value.
+
+**Which of the four actually catches a truncation is not the obvious one.** The
+payload arrives sorted by FPI, so dropping the tail loses almost no title
+probability — the top half of the league holds ~100% of it between them — and
+`probwintitle` sails through. Measured on a deliberately halved payload:
+`probwintitle` and `probmaketitlegame` stayed in tolerance while
+`probmakeplayoffs` (1185 of 1200) and `probwinconf` (710 of 1000) broke. That
+is the reason for four checks rather than one.
+
+### `fpirank` is not a playoff probability, and need not agree with one
+
+`fpirank` is ESPN's ordering of every rated team by strength. It carries the
+Top-25 finish estimate for a team the poll does not list, which is the only
+evidence such a team has.
+
+It is worth saying plainly that a high `fpirank` and low playoff odds are not a
+contradiction: measured on the same payload, Texas A&M was **FPI rank 16 with
+3.2% playoff odds**, unranked in the AP poll. FPI rank is how good a team is;
+playoff odds are the path in front of it. A strong team that has already lost
+is both. Phase 1 of projected points recorded this pair as an inconsistency in
+the plan's worked table, and the captured payload settled it the other way.

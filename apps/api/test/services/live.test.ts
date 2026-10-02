@@ -2,8 +2,15 @@ import type { Freshness, Prediction, RankingsSnapshot, Season, TeamIdentity } fr
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SwrCache, resetInflight } from '../../src/cache/swr';
 import { TieredCache, resetCacheTiers } from '../../src/cache/tiers';
-import type { ProviderGame, ProviderSchedule, SportsDataProvider } from '../../src/providers/types';
+import type {
+  ProviderGame,
+  ProviderSchedule,
+  SportsDataProvider,
+  TeamProjectionsDocument,
+} from '../../src/providers/types';
 import { ProviderError } from '../../src/providers/types';
+import { MockConferenceOddsProvider } from '../../src/providers/mock/provider';
+import { POWER_FOUR } from '../../src/providers/playoffstatus/conferences';
 import type { Services } from '../../src/services/context';
 import { composeFreshness, readLiveSchedule } from '../../src/services/live';
 import { buildSnapshot } from '../../src/services/snapshot';
@@ -84,6 +91,13 @@ class FakeProvider implements SportsDataProvider {
   async getPrediction(): Promise<Prediction | null> {
     return null;
   }
+  async getTeamProjections(): Promise<TeamProjectionsDocument> {
+    return {
+      teams: [],
+      computedLabel: null,
+      fieldSums: { winTitle: 0, makeTitleGame: 0, makePlayoffs: 0, winConference: 0 },
+    };
+  }
 }
 
 let now = NOW;
@@ -91,10 +105,13 @@ let now = NOW;
 function servicesWith(provider: SportsDataProvider): Services {
   const clock = (): number => now;
   const tiers = new TieredCache({ kv: null, edge: null, now: clock, defer: null });
+  const oddsProvider = new MockConferenceOddsProvider(POWER_FOUR);
   return {
     env: testEnv(),
     provider,
     cache: new SwrCache({ tiers, provider: provider.name, now: clock, requestId: 'req' }),
+    oddsProvider,
+    oddsCache: new SwrCache({ tiers, provider: oddsProvider.name, now: clock, requestId: 'req' }),
     now: clock,
     requestId: 'req',
   };

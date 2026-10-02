@@ -8,7 +8,31 @@
  * to the component that renders it.
  */
 
-export type ProviderName = 'espn' | 'mock';
+/**
+ * Every publisher whose data can travel in a freshness envelope.
+ *
+ * Projected points added a second publisher that is not a sports-data provider
+ * at all: playoffstatus.com supplies conference championship odds and nothing
+ * else (`providers/playoffstatus/`). Its figures carry their own freshness, so
+ * it has to be nameable here.
+ *
+ * It must NOT be nameable as a team's id namespace, which is what
+ * `SportsProviderName` is for. Widening one type for both would have let a
+ * `teams` row claim `provider: 'playoffstatus'` — a team identity from a site
+ * that publishes no team identities.
+ */
+export type ProviderName = 'espn' | 'mock' | 'playoffstatus';
+
+/**
+ * The configured sports-data provider: the one that answers for teams, games,
+ * schedules, rankings, and FPI, and whose id space `teams.provider` records
+ * (§43, §45).
+ *
+ * Narrower than `ProviderName` on purpose. Everywhere that means "whose team is
+ * this" uses this type, so a provider that only knows conference odds cannot
+ * end up owning a team.
+ */
+export type SportsProviderName = 'espn' | 'mock';
 
 /**
  * - `fresh`       — fetched from the provider within its TTL.

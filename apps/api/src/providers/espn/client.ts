@@ -25,6 +25,18 @@ export const ESPN_SITE_API =
   'https://site.api.espn.com/apis/site/v2/sports/football/college-football';
 export const ESPN_CORE_API =
   'https://sports.core.api.espn.com/v2/sports/football/leagues/college-football';
+/**
+ * A THIRD ESPN host family, found while building projected points: the one
+ * behind the Football Power Index tables (docs/espn-notes.md §12). It shares no
+ * conventions with the other two — a `pagination` envelope, and statistics in
+ * parallel `names`/`values` arrays rather than named fields.
+ *
+ * It is reached with the same client and the same `ESPN_USER_AGENT`. ESPN's CDN
+ * judges the User-Agent together with the TLS fingerprint (§1), and giving one
+ * call its own headers is how that gets broken for one endpoint only.
+ */
+export const ESPN_FITT_API =
+  'https://site.web.api.espn.com/apis/fitt/v3/sports/football/college-football';
 
 const TIMEOUT_MS = 6_000;
 const RETRY_BASE_MS = 250;

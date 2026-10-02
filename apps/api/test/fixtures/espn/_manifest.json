@@ -38,6 +38,15 @@
       "note": null
     },
     {
+      "name": "fpi",
+      "url": "https://site.web.api.espn.com/apis/fitt/v3/sports/football/college-football/powerindex?region=us&lang=en&contentorigin=espn&limit=200",
+      "purpose": "Football Power Index: probwintitle / probmaketitlegame / probmakeplayoffs / probwinconf / fpirank, read by NAME from categories[].names. The national half of projected points (espn-notes §12).",
+      "status": 200,
+      "ok": true,
+      "bytes": 833990,
+      "note": "Captured 2026-10-01, later than the rest of this directory. 138 teams on one page; lastUpdated 2026-10-01T08:00Z; column sums 99.8 / 200.1 / 1200.4 / 1000.9."
+    },
+    {
       "name": "team-ranked",
       "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams/251",
       "purpose": "A ranked team: rank + record field paths (§7, §8).",
