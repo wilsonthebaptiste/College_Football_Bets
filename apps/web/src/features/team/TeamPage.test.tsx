@@ -3,6 +3,7 @@ import type {
   PredictionResponse,
   TeamDetailResponse,
   TeamOwnersResponse,
+  TeamProjectionResponse,
   TeamScheduleResponse,
   TeamSnapshot,
 } from '@cfb/shared';
@@ -11,8 +12,10 @@ import { describe, expect, it } from 'vitest';
 import { queryKeys } from '../../lib/api';
 import { ApiError } from '../../lib/apiClient';
 import {
+  BIG_TEN_STAMP,
   envelope,
   finalGame,
+  inputDown,
   liveGame,
   makeBoard,
   makeBoardTeam,
@@ -23,10 +26,16 @@ import {
   makeTeam,
   ownersResponse,
   predictionResponse,
+  projectedTeam,
+  projectionSources,
   PROVIDER_DOWN,
   scheduleResponse,
+  SEC_STAMP,
   seasonItems,
   teamDetail,
+  teamProjection,
+  unprojectedTeam,
+  WORKED_TEAMS,
 } from '../../test/fixtures';
 import { RAW_VALUE, renderAt, spokenText, visibleText } from '../../test/render';
 import { SearchPage } from '../search/SearchPage';
@@ -115,6 +124,7 @@ describe('exit 1 — identity, rank, record, conference, previous, next, predict
       'h2:Previous game',
       'h2:Next game',
       'h2:Matchup prediction',
+      'h2:Projected points',
       'h2:2026 schedule',
     ]);
   });
@@ -527,6 +537,7 @@ describe('exit 2 — the line sits in the identity card, and moves nothing else'
       'h2:Previous game',
       'h2:Next game',
       'h2:Matchup prediction',
+      'h2:Projected points',
       'h2:2026 schedule',
     ]);
     expect(seen).not.toMatch(RAW_VALUE);
@@ -557,7 +568,7 @@ describe('exit 3 — the index is garnish here too: it degrades, it never fails 
     expect(markup).not.toContain('role="alert"');
     expect(seen).not.toContain('temporarily unreachable');
     expect(seen).not.toContain('req-db');
-    expect(headings(markup)).toHaveLength(5);
+    expect(headings(markup)).toHaveLength(6);
     expect(seen).not.toMatch(RAW_VALUE);
   });
 
@@ -568,6 +579,161 @@ describe('exit 3 — the index is garnish here too: it degrades, it never fails 
     expect(markup).not.toContain('role="alert"');
     // Nothing waits for it, so nothing announces waiting for it either.
     expect(heard).not.toMatch(/loading.*(board|picked|owner)/i);
+  });
+});
+
+// ─── Projected points (predicting_score.md, Phase 4) ────────────────────────
+
+describe('projected points: the same lines a board opens to, for one team', () => {
+  /** Texas's worked row of 2026-09-30, on Alabama's page — only the numbers matter. */
+  const [, TEXAS, TEXAS_TOTAL] = WORKED_TEAMS[0]!;
+
+  function renderWithProjection(
+    projection: TeamProjectionResponse | ApiError | undefined,
+    snapshot: TeamDetailResponse = detailWith(),
+  ) {
+    const client = new QueryClient({ defaultOptions: { queries: { retryOnMount: false } } });
+    client.setQueryData(queryKeys.team(team.id), snapshot);
+    client.setQueryData(queryKeys.schedule(team.id), scheduleResponse(team));
+    const key = queryKeys.teamProjection(team.id);
+    if (projection instanceof ApiError) seedError(client, key, projection);
+    else if (projection !== undefined) client.setQueryData(key, projection);
+    const markup = renderAt(`/teams/${team.id}`, '/teams/:teamId', <TeamPage />, client);
+    const panel =
+      markup.match(/<section[^>]*><div[^>]*><h2[^>]*>Projected points<\/h2>.*?<\/section>/)?.[0] ??
+      '';
+    return { markup, panel: visibleText(panel), heard: spokenText(panel), client };
+  }
+
+  it('shows the total, the six lines, and the meaning, beside the matchup prediction', () => {
+    const { markup, panel } = renderWithProjection(
+      teamProjection(team, projectedTeam(TEXAS, { total: TEXAS_TOTAL })),
+    );
+    expect(panel).toMatch(/^Projected points 5\.73 projected points 0\.73 National champion/);
+    expect(panel).toContain('+0.93 Final Top 25');
+    expect(panel).toContain('Not a result.');
+    expect(panel).toContain('Top-25 finish estimated from the current poll.');
+    const seen = visibleText(markup);
+    expect(seen.indexOf('Matchup prediction')).toBeLessThan(seen.indexOf('Projected points'));
+    expect(seen.indexOf('Projected points')).toBeLessThan(seen.indexOf('2026 schedule'));
+  });
+
+  it('dates the conference half by this team’s own conference page, and no other', () => {
+    const { panel } = renderWithProjection(
+      teamProjection(team, projectedTeam(TEXAS, { total: TEXAS_TOTAL })),
+    );
+    expect(panel).toContain(
+      `Projection · as of Sep 30 (ESPN FPI) and ${SEC_STAMP} (playoffstatus.com)`,
+    );
+    expect(panel).not.toContain(BIG_TEN_STAMP);
+  });
+
+  it('pays an independent a reasoned 0.00, and does not date a publisher it never used', () => {
+    const notreDame = { ...team, conference: 'FBS Independents' };
+    const { panel } = renderWithProjection(
+      teamProjection(notreDame, projectedTeam(WORKED_TEAMS[3]![1], { total: WORKED_TEAMS[3]![2] })),
+    );
+    expect(panel).toContain('0.00 Conference champion Not in a power-four conference');
+    expect(panel).toContain('Projection · as of Sep 30 (ESPN FPI)');
+    expect(panel).not.toContain('playoffstatus');
+  });
+
+  it('says plainly when nobody publishes about a team, rather than six dashes', () => {
+    const { panel } = renderWithProjection(teamProjection(team, unprojectedTeam()));
+    expect(panel).toContain('No projection for this team');
+    expect(panel).toContain('ESPN FPI rates FBS teams only.');
+    expect(panel).not.toContain('—');
+    expect(panel).not.toContain('0.00');
+  });
+
+  it('gives no total when only our own estimate is left, and says the publishers are down', () => {
+    // Found in Phase 4's API tests: our own estimate needs only the poll, so
+    // with both publishers down it is the one known line — and not a total.
+    const estimateOnly = projectedTeam([0, 0, 0, 0, 0, 0.73], {
+      unavailable: [
+        'national_champion',
+        'national_runner_up',
+        'playoff',
+        'conference_champion',
+        'conference_runner_up',
+      ],
+    });
+    const { panel } = renderWithProjection(
+      teamProjection(
+        team,
+        estimateOnly,
+        projectionSources({ fpi: inputDown(), conference_odds: inputDown() }),
+      ),
+    );
+    expect(estimateOnly.total).toBeNull();
+    expect(panel).toContain('No projection for this team');
+    expect(panel).toContain('Its sources couldn’t be loaded.');
+    expect(panel).toContain('Couldn’t load ESPN FPI and the conference odds.');
+    expect(panel).not.toMatch(/\d\.\d\d projected points/);
+  });
+
+  it('says how many lines are behind a partial total', () => {
+    const partial = projectedTeam([0, 0, 0, 0.42, 0.3, -0.5], {
+      unavailable: ['national_champion', 'national_runner_up', 'playoff'],
+    });
+    const { panel } = renderWithProjection(teamProjection(team, partial));
+    expect(panel).toContain('0.22 projected points from 3 of 6 lines');
+  });
+
+  it('keeps the rest of the page when the projection fails, and gives its reference', () => {
+    const { markup, panel } = renderWithProjection(
+      new ApiError(
+        {
+          kind: 'rate_limited',
+          message: 'Too many requests. Wait a moment and try again.',
+          requestId: 'r-t1',
+        },
+        429,
+      ),
+    );
+    expect(panel).toContain('Projected points unavailable');
+    expect(panel).toContain('Too many requests.');
+    expect(panel).toContain('Reference: r-t1');
+    const seen = visibleText(markup);
+    expectHeroAndPanels(seen);
+    expect(seen).toContain('W 34–17');
+    expect(markup.match(/<h1/g)).toHaveLength(1);
+  });
+
+  it('says it is loading, and nothing else waits for it', () => {
+    const { markup, heard } = renderWithProjection(undefined);
+    expect(heard).toContain('Loading projected points…');
+    expectHeroAndPanels(visibleText(markup));
+  });
+
+  it('stands on its own when the team’s sports data failed: a different read from different publishers', () => {
+    const { markup, panel } = renderWithProjection(
+      teamProjection(team, projectedTeam(TEXAS, { total: TEXAS_TOTAL })),
+      teamDetail(team, envelope(null, 'unavailable', PROVIDER_DOWN)),
+    );
+    expect(visibleText(markup)).toContain('Sports data temporarily unavailable.');
+    expect(panel).toContain('5.73 projected points');
+  });
+
+  it('starts its request on mount, keyed by the page’s own address', () => {
+    const { client } = renderWithProjection(undefined);
+    const keys = client
+      .getQueryCache()
+      .getAll()
+      .map((query) => query.queryKey)
+      .filter((key) => key[0] === 'projections');
+    expect(keys).toEqual([queryKeys.teamProjection(team.id)]);
+  });
+
+  it('never renders a raw value, a "-0.00", or the word live', () => {
+    const { panel, heard } = renderWithProjection(
+      teamProjection(team, projectedTeam(WORKED_TEAMS[6]![1], { total: WORKED_TEAMS[6]![2] })),
+    );
+    expect(panel).toContain('−0.07 projected points');
+    expect(panel).not.toMatch(RAW_VALUE);
+    expect(heard).not.toMatch(RAW_VALUE);
+    expect(panel).not.toContain('-0.00');
+    expect(panel).not.toMatch(/\blive\b/i);
   });
 });
 

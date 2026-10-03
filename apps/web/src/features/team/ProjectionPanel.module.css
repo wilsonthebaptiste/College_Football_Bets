@@ -1,0 +1,55 @@
+.panel {
+  gap: var(--space-3);
+}
+
+/* Wide enough for six lines on a tablet and up: it takes the whole row. */
+@media (min-width: 720px) {
+  .panel {
+    grid-column: 1 / -1;
+  }
+}
+
+/* The medium numeral, quieter than the hero's rank and record. */
+.total {
+  color: var(--color-ink-secondary);
+}
+
+.totalValue {
+  color: var(--color-ink);
+  font-family: var(--font-display);
+  font-size: var(--numeral-md);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.coverage {
+  color: var(--color-ink-muted);
+}
+
+.loading {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.unavailable {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-sunken);
+}
+
+.unavailableTitle {
+  font-weight: 600;
+}
+
+.reason {
+  color: var(--color-ink-secondary);
+  font-size: var(--text-sm);
+}
+
+.reference {
+  color: var(--color-ink-muted);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}

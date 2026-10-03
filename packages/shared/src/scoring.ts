@@ -215,9 +215,13 @@ export function projectTeamAtWeight(
   ];
 
   // A board of entirely `not_eligible` zeros must not read as a confident 0.00,
-  // so a total needs at least one quoted number behind it.
-  const anyKnown = terms.some((term) => term.state === 'known');
-  const total = anyKnown ? terms.reduce((sum, term) => sum + (term.contribution ?? 0), 0) : null;
+  // so a total needs at least one QUOTED number behind it — a publisher's. Our
+  // own finish estimate does not count: with both publishers down and the poll
+  // up it is the only known line, and a "total" made of nothing but our model
+  // is the invented sports number §4 forbids (found in Phase 4, where it put a
+  // 6-of-6 total on every home tile during a double outage).
+  const anyQuoted = terms.some((term) => term.state === 'known' && term.kind !== 'final_ranking');
+  const total = anyQuoted ? terms.reduce((sum, term) => sum + (term.contribution ?? 0), 0) : null;
 
   return {
     providerTeamId: inputs.providerTeamId,

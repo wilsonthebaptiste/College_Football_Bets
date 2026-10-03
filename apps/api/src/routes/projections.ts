@@ -1,4 +1,8 @@
-import type { BoardProjectionResponse, ProjectionsResponse } from '@cfb/shared';
+import type {
+  BoardProjectionResponse,
+  ProjectionsResponse,
+  TeamProjectionResponse,
+} from '@cfb/shared';
 import { Hono } from 'hono';
 import { supabasePublic } from '../db/client';
 import { isUuid } from '../db/queries';
@@ -6,7 +10,7 @@ import type { AppBindings } from '../env';
 import { cacheControlCapped, xCacheValue } from '../http/cache-headers';
 import { notFound } from '../http/errors';
 import { servicesFor } from '../services/context';
-import { getAllProjections, getBoardProjection } from '../services/projection';
+import { getAllProjections, getBoardProjection, getTeamProjection } from '../services/projection';
 
 /**
  * Projected points (context/predicting_score.md, Phase 3): two public reads,
@@ -14,6 +18,7 @@ import { getAllProjections, getBoardProjection } from '../services/projection';
  *
  *   GET /api/projections                   every board's total
  *   GET /api/users/:userId/projection      one board, per-team breakdown
+ *   GET /api/teams/:teamId/projection      one team, for the team page (Phase 4)
  *
  * ## Why this is not a field on the board response
  *
@@ -56,6 +61,25 @@ projectionRoutes.get('/projections', async (c) => {
   c.header('Cache-Control', cacheControlCapped(body.freshness, PROJECTION_MAX_AGE_SECONDS));
   c.header('X-Cache', xCacheValue(cacheStatus));
   return c.json(body satisfies ProjectionsResponse);
+});
+
+/**
+ * One team, by either of its addresses (Phase 4, for the team page). Id shapes
+ * and the 404 are `resolveTeam`'s business, as on the team route itself, and a
+ * provider-id address never builds a database client.
+ */
+projectionRoutes.get('/teams/:teamId/projection', async (c) => {
+  const teamId = c.req.param('teamId');
+  const services = servicesFor(c);
+  const { body, cacheStatus } = await getTeamProjection(
+    services,
+    () => supabasePublic(c.env),
+    teamId,
+  );
+
+  c.header('Cache-Control', cacheControlCapped(body.freshness, PROJECTION_MAX_AGE_SECONDS));
+  c.header('X-Cache', xCacheValue(cacheStatus));
+  return c.json(body satisfies TeamProjectionResponse);
 });
 
 projectionRoutes.get('/users/:userId/projection', async (c) => {

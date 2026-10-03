@@ -1,4 +1,4 @@
-import type { Game, GameStatus, Season, TeamIdentity } from '@cfb/shared';
+import type { Game, GameStatus, Points, Season, TeamIdentity } from '@cfb/shared';
 
 /**
  * Display formatting (§20). The data model holds ISO UTC timestamps only; every
@@ -248,6 +248,47 @@ const PERCENT = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 1 });
 /** `67%`, or `66.7%`: the provider's figure, to one decimal at most (§12). */
 export function formatPercent(value: number): string {
   return `${PERCENT.format(value)}%`;
+}
+
+/** U+2212. A hyphen is not a minus sign, and in a column of figures it is too short to see. */
+const MINUS = '−';
+
+/**
+ * A projected points value, as shown (predicting_score.md, Phase 4).
+ *
+ * Prints the server's own 2-dp string and never re-rounds the number: the
+ * route rounds once, at its edge, so that two clients cannot disagree in the
+ * last digit (`roundPoints` in `packages/shared` is also the only place `-0`
+ * is killed). All this adds is typography — a real minus sign, and, when
+ * `signed`, a plus on a positive value, for the one line that can go either
+ * way.
+ */
+export function formatPoints(
+  points: Pick<Points, 'display'>,
+  options: { signed?: boolean } = {},
+): string {
+  const { display } = points;
+  if (display.startsWith('-')) return `${MINUS}${display.slice(1)}`;
+  if (options.signed === true && /[1-9]/.test(display)) return `+${display}`;
+  return display;
+}
+
+const STAMP_DATE: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+
+/**
+ * A publisher's own "computed at" stamp, for "as of …".
+ *
+ * ESPN's is an instant (`<yyyy>-MM-DDTHH:mmZ`, a daily recompute), so it is
+ * shown as a date in the viewer's zone: a time of day would claim a precision
+ * the cadence does not have. playoffstatus's has no year and no zone ("Sat Sep
+ * 26 11:30 pm"), so it is shown verbatim — parsing it would mean inventing
+ * both (§39). Anything that is not an instant is therefore shown as given.
+ */
+export function formatStamp(label: string, options: ClockOptions = {}): string {
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(label)) return label;
+  const ms = Date.parse(label);
+  if (Number.isNaN(ms)) return label;
+  return formatter('stamp', STAMP_DATE, options.timeZone).format(ms);
 }
 
 /** What a card calls a team: "Alabama", falling back to the provider's full name. */

@@ -300,6 +300,24 @@ export interface BoardProjectionResponse {
   teams: ProjectedTeamEntry[];
 }
 
+// ─── GET /api/teams/:teamId/projection ───────────────────────────────────────
+
+/**
+ * One team's rubric lines, for the team page (Phase 4).
+ *
+ * `:teamId` is either of a team's two addresses, exactly as on the team route,
+ * so any team the provider lists has one — on a board or not. A team no
+ * publisher covers (most of the ~762) is a normal 200 whose total is `null`.
+ */
+export interface TeamProjectionResponse {
+  team: PageTeam;
+  season: Season;
+  generatedAt: string;
+  freshness: Freshness;
+  sources: ProjectionInputStatus[];
+  projection: ProjectedTeam;
+}
+
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
 /** The body of every non-2xx response from this API. */

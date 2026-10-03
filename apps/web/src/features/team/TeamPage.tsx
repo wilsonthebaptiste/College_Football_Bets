@@ -19,22 +19,25 @@ import { useTeamOwners } from '../../lib/useTeamOwners';
 import { unavailableMessage } from '../board/TeamCard';
 import { Panel } from './Panel';
 import { PredictionPanel } from './PredictionPanel';
+import { TeamProjectionPanel } from './ProjectionPanel';
 import { ScheduleSection } from './ScheduleSection';
 import styles from './TeamPage.module.css';
 import { useSchedule } from './useSchedule';
 import { useTeam } from './useTeam';
+import { useTeamProjection } from './useTeamProjection';
 
 /**
  * §16 — one team: identity, rank, record, and conference; the live game; the
  * previous and next games; the matchup prediction; and the full schedule.
  *
- * The page is three independent reads (§42). The team snapshot drives the
+ * The page is four independent reads (§42). The team snapshot drives the
  * hero and the game panels, the schedule is its own request, started on mount
  * alongside it (§27: never with the board), and the prediction follows once
- * the snapshot names the game. Any one of them can fail, and the others still
- * render.
+ * the snapshot names the game. Projected points (predicting_score.md, Phase 4)
+ * is the fourth, also started on mount, from two other publishers entirely.
+ * Any one of them can fail, and the others still render.
  *
- * The pick index is a fourth, and deliberately not counted among them: it has
+ * The pick index is a fifth, and deliberately not counted among them: it has
  * no state on this page at all. It says who has this team, renders nothing
  * when nobody does — which is the ordinary case, most of the ~762 teams — and
  * nothing when it is slow or broken either (plan-search-engine, Part Two).
@@ -47,6 +50,7 @@ export function TeamPage() {
   const from = readFromState(location.state);
   const team = useTeam(teamId);
   const schedule = useSchedule(teamId);
+  const projection = useTeamProjection(teamId);
   const ownersOf = useTeamOwners();
   const detail = team.data;
   useDocumentTitle(detail === undefined ? null : teamLabel(detail.team));
@@ -146,12 +150,16 @@ export function TeamPage() {
       </Card>
 
       {data === null ? (
-        <ErrorState
-          title={unavailableMessage(snapshot.error)}
-          message="The schedule below loads separately and may still be available."
-          headingLevel={2}
-          requestId={snapshot.error?.requestId ?? null}
-        />
+        <>
+          <ErrorState
+            title={unavailableMessage(snapshot.error)}
+            message="The schedule below loads separately and may still be available."
+            headingLevel={2}
+            requestId={snapshot.error?.requestId ?? null}
+          />
+          {/* A different read from different publishers: it does not fall with the snapshot. */}
+          <TeamProjectionPanel query={projection} />
+        </>
       ) : (
         <>
           {/* §11, §51: a game in progress comes before everything else. */}
@@ -176,6 +184,7 @@ export function TeamPage() {
               game={predictionTarget(data)}
               team={{ providerTeamId: identity.providerTeamId, name }}
             />
+            <TeamProjectionPanel query={projection} />
           </div>
         </>
       )}

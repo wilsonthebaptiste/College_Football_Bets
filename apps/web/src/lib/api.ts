@@ -3,13 +3,16 @@ import type {
   AdminBoardResponse,
   AdminSessionResponse,
   AdminUsersResponse,
+  BoardProjectionResponse,
   BoardResponse,
   CreateUserResponse,
   PredictionResponse,
+  ProjectionsResponse,
   RenameUserResponse,
   SelectionsResponse,
   TeamDetailResponse,
   TeamOwnersResponse,
+  TeamProjectionResponse,
   TeamScheduleResponse,
   TeamSearchResponse,
   UsersResponse,
@@ -49,6 +52,19 @@ export const api = {
    * at all, which is what keeps typing free of Postgres latency and outages.
    */
   teamOwners: (signal?: AbortSignal) => getPublic<TeamOwnersResponse>('/api/selections', signal),
+
+  /**
+   * Projected points (predicting_score.md, Phase 4). Three reads, each its own
+   * request and never a field on the board or the team (§42): a scrape that
+   * fails must cost the page it sits on nothing.
+   */
+  projections: (signal?: AbortSignal) => getPublic<ProjectionsResponse>('/api/projections', signal),
+
+  boardProjection: (userId: string, signal?: AbortSignal) =>
+    getPublic<BoardProjectionResponse>(`/api/users/${id(userId)}/projection`, signal),
+
+  teamProjection: (teamId: string, signal?: AbortSignal) =>
+    getPublic<TeamProjectionResponse>(`/api/teams/${id(teamId)}/projection`, signal),
 
   /**
    * "Is this session an administrator?" Asked by `RequireAdmin` and by the
@@ -121,15 +137,22 @@ export const adminApi = {
 /**
  * The public reads that ANY admin change can make stale, whichever board it
  * touched: the people list, and the pick index, which carries display names as
- * well as memberships — so a rename changes it too.
+ * well as memberships — so a rename changes it too. The projected leaderboard
+ * is the same kind of read: it names everybody and totals every board, so a
+ * rename, a new person, or any one board's change moves it.
  */
-export const PUBLIC_INDEX_PATHS: readonly string[] = ['/api/users', '/api/selections'];
+export const PUBLIC_INDEX_PATHS: readonly string[] = [
+  '/api/users',
+  '/api/selections',
+  '/api/projections',
+];
 
 /** The public reads an admin change can make stale: primed after every write (`refreshPublic`). */
 export const publicPathsFor = (userId: string): string[] => [
   ...PUBLIC_INDEX_PATHS,
   `/api/users/${id(userId)}`,
   `/api/users/${id(userId)}/board`,
+  `/api/users/${id(userId)}/projection`,
 ];
 
 /**
@@ -158,6 +181,14 @@ export const queryKeys = {
    * administrator's, and signing out sweeps that prefix.
    */
   owners: ['owners'] as const,
+  /**
+   * Projected points. All three share the `'projections'` prefix, so an admin
+   * write can sweep every one of them with a single invalidation; and none is
+   * under `'admin'`, for the reason `search` is not.
+   */
+  projections: ['projections'] as const,
+  boardProjection: (userId: string) => ['projections', 'board', userId] as const,
+  teamProjection: (teamId: string) => ['projections', 'team', teamId] as const,
   adminSession: ['admin', 'session'] as const,
   adminUsers: ['admin', 'users'] as const,
   adminBoard: (userId: string) => ['admin', 'board', userId] as const,

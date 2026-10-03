@@ -28,6 +28,10 @@ export function useAfterAdminWrite(): (userId: string | null) => void {
       void refreshPublic(userId === null ? PUBLIC_INDEX_PATHS : publicPathsFor(userId)).then(() => {
         void queryClient.invalidateQueries({ queryKey: queryKeys.users });
         void queryClient.invalidateQueries({ queryKey: queryKeys.owners });
+        // The leaderboard and this board's breakdown are both derived from the
+        // selections. The prefix also catches team projections, which do not
+        // depend on a board — harmless, and one line rather than three.
+        void queryClient.invalidateQueries({ queryKey: queryKeys.projections });
         if (userId !== null) {
           void queryClient.invalidateQueries({ queryKey: queryKeys.board(userId) });
         }

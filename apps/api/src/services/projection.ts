@@ -17,6 +17,7 @@ import type {
   Season,
   TeamIdentity,
   TeamProjection,
+  TeamProjectionResponse,
   UserTeamSelection,
 } from '@cfb/shared';
 import { formatPoints, projectBoard, projectTeam, unavailableFreshness } from '@cfb/shared';
@@ -37,6 +38,7 @@ import type { Services } from './context';
 import { composeFreshness } from './live';
 import { readConferenceMap, readTeamListRead } from './search';
 import { rankingOf, readRankings } from './snapshot';
+import { resolveTeam, type DbFactory } from './team';
 import { teamNameKey } from './teamNames';
 
 /**
@@ -739,6 +741,54 @@ export async function getAllProjections(
       boards: composite.boards,
     },
     cacheStatus: reportedStatus(sources, read.status),
+  };
+}
+
+// ─── GET /api/teams/:teamId/projection ───────────────────────────────────────
+
+export interface TeamProjectionResult {
+  body: TeamProjectionResponse;
+  cacheStatus: CacheStatus;
+}
+
+/**
+ * One team's projection, for the team page (Phase 4).
+ *
+ * Added in Phase 4 because Phase 3 shipped only the two board-shaped reads, and
+ * a team page has no board: fetching an owner's whole board to show one team
+ * would not work for the ~700 teams nobody has picked, and would tie the team
+ * page to the pick index, which is garnish there by design.
+ *
+ * No composite cache, unlike the two board reads. Those cache because they
+ * cost a Postgres round trip; this one costs none for a provider-id address,
+ * and its five reads are already cached documents whose own envelopes carry
+ * the right freshness — so a composite would only add a second clock to keep
+ * honest. It is also why nothing in `routes/admin.ts` needs to forget it: it
+ * does not depend on anybody's selections.
+ */
+export async function getTeamProjection(
+  services: Services,
+  db: DbFactory,
+  teamId: string,
+): Promise<TeamProjectionResult> {
+  const [team, sources] = await Promise.all([
+    resolveTeam(services, db, teamId),
+    readProjectionSources(services),
+  ]);
+
+  const projection = projectTeam(projectionInputsFor(team.providerTeamId, sources), sources.season);
+  logAnomalies(services, [projection]);
+
+  return {
+    body: {
+      team,
+      season: sources.season,
+      generatedAt: new Date(services.now()).toISOString(),
+      freshness: composeProjectionFreshness(services, sources.sources),
+      sources: sources.sources,
+      projection: teamOf(projection),
+    },
+    cacheStatus: reportedStatus(sources.sources, sources.cacheStatus),
   };
 }
 

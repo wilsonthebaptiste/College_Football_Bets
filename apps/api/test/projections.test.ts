@@ -4,6 +4,7 @@ import type {
   BoardResponse,
   ProjectedTeamEntry,
   ProjectionsResponse,
+  TeamProjectionResponse,
 } from '@cfb/shared';
 import { MAX_POINTS, MIN_POINTS, OUTCOME_ORDER, roundPoints } from '@cfb/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,8 +13,18 @@ import { resetInflight } from '../src/cache/swr';
 import { resetCacheTiers } from '../src/cache/tiers';
 import type { Env } from '../src/env';
 import { DEFAULT_READS_PER_MINUTE, resetRateLimits } from '../src/middleware/rate-limit';
+import { mockHasProjection } from '../src/providers/mock/projections';
+import { ROSTER } from '../src/providers/mock/roster';
 import { CONFERENCE_PAGES } from '../src/providers/playoffstatus/conferences';
-import { ALL_TEAM_ROWS, JORDAN, WILSON, WILSON_ID, uuidFor, userRow } from './helpers/boards';
+import {
+  ALL_TEAM_ROWS,
+  JORDAN,
+  WILSON,
+  WILSON_ID,
+  teamUuid,
+  uuidFor,
+  userRow,
+} from './helpers/boards';
 import { espnResponse } from './helpers/espn-stub';
 import { CAPTURED_AT, conferencePageFixture } from './helpers/fixtures';
 import { installSupabaseStub, testEnv, type SupabaseStub } from './helpers/supabase-stub';
@@ -352,6 +363,147 @@ describe('GET /api/users/:userId/projection', () => {
     expect(malformed.response.status).toBe(404);
     // The `DbFactory` lesson: a bad path segment costs no round trip at all.
     expect(stub.requests).toHaveLength(requestsBefore);
+  });
+});
+
+// ─── One team, for the team page (Phase 4) ───────────────────────────────────
+
+describe('GET /api/teams/:teamId/projection', () => {
+  /** Notre Dame: an independent, so both conference lines are a fact, not a gap. */
+  const INDEPENDENT = '87';
+  /** A roster team the mock FPI table deliberately leaves out, as FPI leaves out FCS. */
+  const UNRATED = ROSTER.find((team) => !mockHasProjection(team));
+
+  it('answers by the provider’s id with no database request at all', async () => {
+    stubWith();
+    const { response, body } = await get<TeamProjectionResponse>('/api/teams/333/projection');
+
+    expect(response.status).toBe(200);
+    expect(body.team.providerTeamId).toBe('333');
+    expect(body.team.id).toBeNull();
+    expect(body.projection.terms.map((term) => term.kind)).toEqual([...OUTCOME_ORDER]);
+    const summed = body.projection.terms.reduce(
+      (total, term) => total + (term.contribution?.value ?? 0),
+      0,
+    );
+    expect(body.projection.total?.value).toBeCloseTo(summed, 10);
+    expect(body.sources.map((source) => source.input)).toEqual([
+      'fpi',
+      'conference_odds',
+      'rankings',
+      'conferences',
+      'teams',
+    ]);
+    // The search route's posture: a provider-id address never builds a client.
+    expect(stub.restRequests).toHaveLength(0);
+    expect(response.headers.get('Cache-Control')).toBe('public, max-age=120');
+  });
+
+  it('answers the same projection by our uuid, at the cost of one identity read', async () => {
+    stubWith();
+    const byProvider = await get<TeamProjectionResponse>('/api/teams/333/projection');
+    const byUuid = await get<TeamProjectionResponse>(`/api/teams/${teamUuid('333')}/projection`);
+
+    expect(byUuid.response.status).toBe(200);
+    expect(byUuid.body.team.id).toBe(teamUuid('333'));
+    expect(byUuid.body.projection).toEqual(byProvider.body.projection);
+    expect(stub.restRequests).toHaveLength(1);
+    expect(stub.restRequests[0]?.path).toContain('/rest/v1/teams');
+  });
+
+  it('labels every figure as the mock publisher’s in mock mode (§46)', async () => {
+    stubWith();
+    const { body } = await get<TeamProjectionResponse>('/api/teams/333/projection');
+    const sources = new Set(body.projection.terms.map((term) => term.source));
+    expect([...sources]).toEqual(['mock_projection']);
+  });
+
+  it('pays an independent a structural 0.00 on both conference lines, never a dash', async () => {
+    stubWith();
+    const { body } = await get<TeamProjectionResponse>(`/api/teams/${INDEPENDENT}/projection`);
+    const conference = body.projection.terms.filter((term) => term.kind.startsWith('conference_'));
+    expect(conference.map((term) => term.state)).toEqual(['not_eligible', 'not_eligible']);
+    expect(conference.map((term) => term.contribution?.display)).toEqual(['0.00', '0.00']);
+    expect(conference.every((term) => term.source === null)).toBe(true);
+  });
+
+  it('answers 200 for a team FPI does not rate, with its national lines unavailable', async () => {
+    if (UNRATED === undefined) throw new Error('the mock roster always leaves one team unrated');
+    stubWith();
+    const { response, body } = await get<TeamProjectionResponse>(
+      `/api/teams/${UNRATED.id}/projection`,
+    );
+    expect(response.status).toBe(200);
+    const national = body.projection.terms.filter((term) =>
+      ['national_champion', 'national_runner_up', 'playoff'].includes(term.kind),
+    );
+    expect(national.every((term) => term.state === 'unavailable')).toBe(true);
+    expect(national.every((term) => term.contribution === null)).toBe(true);
+    expect(body.projection.complete).toBe(false);
+  });
+
+  it('is a 404 for a team the provider does not list, and for a malformed id', async () => {
+    stubWith();
+    const unknown = await get<ApiErrorBody>('/api/teams/999999/projection');
+    expect(unknown.response.status).toBe(404);
+    expect(unknown.body.error.kind).toBe('not_found');
+
+    const malformed = await get<ApiErrorBody>('/api/teams/not%20a%20team/projection');
+    expect(malformed.response.status).toBe(404);
+    expect(stub.restRequests).toHaveLength(0);
+  });
+
+  /**
+   * Found writing this test: with BOTH publishers down and the poll up, a
+   * ranked team still has one known line — our own Top-25 estimate, which needs
+   * only the poll. Phase 3's "both down" drill never saw it, because `all`
+   * takes the poll down too. Before Phase 4 that one line became the team's
+   * total, and every board on the leaderboard read "6 of 6" with a number made
+   * of nothing but our model. A total now needs a publisher's figure behind it.
+   */
+  it('with both publishers down and the poll up: our one line shown, but no total', async () => {
+    stubWith();
+    const { response, body } = await get<TeamProjectionResponse>(
+      '/api/teams/333/projection',
+      testEnv({ SPORTS_PROVIDER_FAULT: 'projections,odds' }),
+    );
+    expect(response.status).toBe(200);
+    const known = body.projection.terms.filter((term) => term.state === 'known');
+    expect(known.map((term) => term.kind)).toEqual(['final_ranking']);
+    expect(known[0]?.source).toBe('mock_projection');
+    expect(body.projection.total).toBeNull();
+    expect(body.freshness.state).toBe('unavailable');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+  });
+
+  it('with both publishers down and the poll up: no board on the leaderboard is "covered"', async () => {
+    stubWith([WILSON, JORDAN]);
+    const { body } = await get<ProjectionsResponse>(
+      '/api/projections',
+      testEnv({ SPORTS_PROVIDER_FAULT: 'projections,odds' }),
+    );
+    expect(body.boards.every((board) => board.total === null)).toBe(true);
+    expect(body.boards.every((board) => board.teamsCounted === 0)).toBe(true);
+  });
+
+  it('with everything down: 200, no total at all, never 0.00', async () => {
+    stubWith();
+    const { response, body } = await get<TeamProjectionResponse>(
+      '/api/teams/333/projection',
+      testEnv({ SPORTS_PROVIDER_FAULT: 'projections,odds,rankings' }),
+    );
+    expect(response.status).toBe(200);
+    expect(body.projection.total).toBeNull();
+    expect(body.projection.terms.every((term) => term.contribution === null)).toBe(true);
+  });
+
+  it('does not reach the team route’s own answers, which stay exactly as they were', async () => {
+    stubWith();
+    const team = await app.request('/api/teams/333', {}, testEnv());
+    const text = await team.text();
+    expect(team.status).toBe(200);
+    expect(text).not.toContain('projection');
+    expect(text).not.toContain('projected');
   });
 });
 

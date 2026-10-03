@@ -1,0 +1,83 @@
+/*
+ * Projected points. Deliberately quieter than a rank, a record, or a score: it
+ * is arithmetic over day-old probabilities, not a fact about a game (plan,
+ * Phase 4: "not in the same visual weight"). So the figures are the medium
+ * numeral in secondary ink, never the large one, and never the live colour.
+ */
+
+.lines {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+/* The number first, in a fixed column, then what it means. */
+.line {
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr);
+  column-gap: var(--space-3);
+  align-items: baseline;
+}
+
+.value {
+  justify-self: end;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums lining-nums;
+  white-space: nowrap;
+  color: var(--color-ink-secondary);
+}
+
+.gain {
+  color: var(--color-ink);
+}
+
+/* Negative, but a projection rather than a defeat: the loss colour would read
+   as a result, so the minus sign carries it. */
+.loss {
+  color: var(--color-ink);
+}
+
+.zero,
+.missing {
+  color: var(--color-ink-muted);
+  font-weight: 600;
+}
+
+.what {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.label {
+  font-weight: 600;
+}
+
+.detail,
+.source {
+  color: var(--color-ink-secondary);
+  font-size: var(--text-sm);
+}
+
+.source {
+  color: var(--color-ink-muted);
+}
+
+.note {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--color-ink-secondary);
+  font-size: var(--text-sm);
+}
+
+.asOf {
+  color: var(--color-ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.problem {
+  color: var(--color-stale);
+  font-weight: 600;
+}

@@ -106,11 +106,54 @@ describe('the paths an admin write re-fetches', () => {
     expect(publicPathsFor('u-1')).toContain('/api/selections');
   });
 
-  it('adds that board’s own two reads to the same list', () => {
+  it('adds that board’s own three reads to the same list', () => {
     expect(publicPathsFor('u-1')).toEqual([
       ...PUBLIC_INDEX_PATHS,
       '/api/users/u-1',
       '/api/users/u-1/board',
+      '/api/users/u-1/projection',
     ]);
+  });
+
+  /**
+   * The projected leaderboard names everybody and totals every board, so a
+   * rename, a new person, or any one board's change moves it — the same reason
+   * the pick index is in the list whatever changed. Without it the admin's own
+   * browser would hold the old totals for the route's two minutes.
+   */
+  it('includes the projected leaderboard whatever changed', () => {
+    expect(PUBLIC_INDEX_PATHS).toContain('/api/projections');
+  });
+});
+
+describe('projected points (predicting_score.md, Phase 4)', () => {
+  it('reads the three public routes, with no token', async () => {
+    await api.projections();
+    await api.boardProjection('u-1');
+    await api.teamProjection('333');
+    expect(urls).toEqual([
+      '/api/projections',
+      '/api/users/u-1/projection',
+      '/api/teams/333/projection',
+    ]);
+    expect(headers.every((sent) => !('authorization' in sent))).toBe(true);
+  });
+
+  it('keeps every key under one prefix that one invalidation sweeps, and out of the admin one', () => {
+    const client = new QueryClient();
+    client.setQueryData(queryKeys.projections, 1);
+    client.setQueryData(queryKeys.boardProjection('u-1'), 2);
+    client.setQueryData(queryKeys.teamProjection('333'), 3);
+
+    client.removeQueries({ queryKey: ['admin'] });
+    expect(client.getQueryData(queryKeys.boardProjection('u-1'))).toBe(2);
+
+    void client.invalidateQueries({ queryKey: queryKeys.projections });
+    const invalidated = client
+      .getQueryCache()
+      .getAll()
+      .filter((query) => query.state.isInvalidated)
+      .map((query) => query.queryKey);
+    expect(invalidated).toHaveLength(3);
   });
 });

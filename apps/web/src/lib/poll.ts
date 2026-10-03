@@ -27,6 +27,15 @@ export const POLL = {
    * at the idle pace. `Cache-Control` absorbs most of those rereads anyway.
    */
   predictionMs: 5 * 60_000,
+  /**
+   * Projected points. Their inputs are recomputed by their publishers about
+   * once a day and cached by the Worker for six hours; the response itself
+   * lives two minutes, for an admin's board change. The live pace here would be
+   * thousands of requests a day that could not change a digit, so a projection
+   * is reread at the idle pace and is fresh for as long (predicting_score.md,
+   * Phase 4).
+   */
+  projectionMs: 5 * 60_000,
 } as const;
 
 /** The game a snapshot is waiting on: the next game, or the one after a bye. */

@@ -52,6 +52,8 @@ function seeded(): QueryClient {
   const client = new QueryClient();
   client.setQueryData(queryKeys.owners, { owners: {} });
   client.setQueryData(queryKeys.users, []);
+  client.setQueryData(queryKeys.projections, {});
+  client.setQueryData(queryKeys.boardProjection('u-1'), {});
   return client;
 }
 
@@ -69,10 +71,28 @@ describe('a change to one board', () => {
     expect(urls).toEqual([
       '/api/users',
       '/api/selections',
+      '/api/projections',
       '/api/users/u-1',
       '/api/users/u-1/board',
+      '/api/users/u-1/projection',
     ]);
     expect(invalidated(client, queryKeys.users)).toBe(true);
+  });
+
+  /**
+   * Projected points are a second derivation of the same selections. Without
+   * this the administrator would add a team, watch the board change, and watch
+   * the projected total not change for the route's two minutes — and conclude
+   * the feature was broken (the server-side twin is `forgetProjections`).
+   */
+  it('re-fetches and invalidates the leaderboard and that board’s projection too', async () => {
+    const client = seeded();
+    afterWriteFor(client)('u-1');
+
+    await vi.waitFor(() => {
+      expect(invalidated(client, queryKeys.boardProjection('u-1'))).toBe(true);
+    });
+    expect(invalidated(client, queryKeys.projections)).toBe(true);
   });
 });
 
@@ -90,6 +110,8 @@ describe('a change with no board of its own — a rename, an added person', () =
     await vi.waitFor(() => {
       expect(invalidated(client, queryKeys.owners)).toBe(true);
     });
-    expect(urls).toEqual(['/api/users', '/api/selections']);
+    // A rename or a new person moves the leaderboard too: it names everybody.
+    expect(urls).toEqual(['/api/users', '/api/selections', '/api/projections']);
+    expect(invalidated(client, queryKeys.projections)).toBe(true);
   });
 });

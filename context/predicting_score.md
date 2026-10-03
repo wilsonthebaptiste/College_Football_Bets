@@ -26,9 +26,15 @@
       down" and "both down" drills with them. Details, the six departures, and
       the three labelling bugs this phase found are in
       [Phase 3 — Completion Notes](#phase-3--completion-notes).
-- [ ] **Phase 4 — The screens.** A total beside each name on the home page, a
-      breakdown panel on the board page, and the same arithmetic for one team on
-      the team page. Accessibility pass.
+- [x] **Phase 4 — The screens.** ✅ **Complete, 2026-10-02.** A total beside
+      each name on the home page (one request for the page), a breakdown panel
+      under the board's cards, and the same six lines on the team page, from a
+      new `GET /api/teams/:teamId/projection`. 1068 tests in 45 files (from 982
+      in 42); `npm run verify` green and `format:check` clean. 47 browser
+      checks in headless Edge, axe clean in light and dark at 320 and 1280 px,
+      and all three screens seen on the **real** publishers. Details, the seven
+      departures, the rubric fix this phase forced, and the Phase 5 handoff are
+      in [Phase 4 — Completion Notes](#phase-4--completion-notes).
 - [ ] **Phase 5 — Docs, drills, ship.** README, espn-notes, ops.md, fault
       drills, the deploy, and the KV counter the day after.
 
@@ -1114,6 +1120,173 @@ The vocabulary, fixed here so all three screens agree:
   day-old probabilities.
 - A six-team breakdown with six rubric lines each is 36 numbers. Design it as
   "team total, expandable to lines" rather than a 36-cell grid at phone width.
+
+---
+
+## Phase 4 — Completion Notes
+
+Built 2026-10-02. Every exit criterion passes except one, which cannot hold on
+the plan's own data and was replaced by its honest version (departure 2). The
+screens were checked three ways: static-markup component tests for every state,
+47 browser checks in headless Edge against the local Worker and the real nine
+boards, and one run against the **real publishers** (ESPN FPI plus the four
+playoffstatus pages, read once each).
+
+### What was built
+
+| File | What it is |
+| --- | --- |
+| `apps/web/src/lib/projection.ts` **(new)** | The vocabulary, fixed once: `PROJECTION_MEANING`, `ESTIMATE_NOTE`, `ROUNDING_NOTE`, outcome and source names, `lineView` (one rubric line → number, meaning, source, tone), `provenance` (the "as of" line and the problems list), `coverageNote`, `formatChance` |
+| `apps/web/src/lib/format.ts` | `formatPoints` (prints the server's `display`, typographic minus, optional sign; never re-rounds) and `formatStamp` (FPI's instant as a date; playoffstatus's stamp verbatim) |
+| `apps/web/src/components/Projection.tsx` **(new)** | `ProjectionLines` (the six lines) and `ProjectionNote` (meaning, estimate note, as-of, problems), shared by board and team |
+| `apps/web/src/features/home/HomePage.tsx` | One `['projections']` query; a total on every tile; the note once under the grid |
+| `apps/web/src/features/board/ProjectionPanel.tsx`, `useBoardProjection.ts` **(new)** | Board total, then one `<details>` row per team opening to its six lines |
+| `apps/web/src/features/team/ProjectionPanel.tsx`, `useTeamProjection.ts` **(new)** | The team's total and six lines, beside the matchup prediction |
+| `apps/web/src/lib/api.ts`, `poll.ts`, `features/admin/useAdminWrite.ts` | Three calls, three keys under one `'projections'` prefix, `POLL.projectionMs` (5 min), and admin-write priming |
+| `packages/shared/src/api/responses.ts` | `TeamProjectionResponse` |
+| `apps/api/src/services/projection.ts`, `routes/projections.ts` | `getTeamProjection` and `GET /api/teams/:teamId/projection` |
+| `packages/shared/src/scoring.ts` | The one-line rubric fix below |
+
+### Seven departures, each a decision
+
+**1. A third route: `GET /api/teams/:teamId/projection`.** The plan's scope for
+this phase was screens only, but Phase 3 shipped no per-team read and the team
+page had nothing to call. Fetching an owner's whole board to show one team would
+not work for the ~700 teams nobody has picked, and would tie the team page to
+the pick index, which is garnish there by design. The route accepts either of a
+team's two addresses through the existing `resolveTeam`, so a provider-id page
+makes **no** PostgREST request (asserted). It has **no composite cache**: the
+board reads cache because they cost a Postgres round trip, and this one's five
+reads are already cached documents whose envelopes carry the right freshness. It
+depends on nobody's selections, so `forgetProjections` needs no line for it.
+
+**2. "The panel's team rows sum to its total on screen" was replaced, as Phase 3
+predicted.** On the plan's eight worked teams the printed rows sum to **22.64**
+and the board total, summed unrounded and rounded once, is **22.65**. Texas's own
+six lines print as 5.74 against a 5.73 total. The panel prints the API's
+`total.display` and says, in a small line under the rows: *"Totals are added up
+before rounding, so the figures above can differ from them by a cent."* The tests
+pin both halves: the rows sum to 22.64, the total says 22.65, and every team's
+six printed lines are within three cents of its total.
+
+**3. The home tiles keep the people list's order, not the leaderboard's.** The
+tiles render before the projection arrives; reordering them when it lands would
+move every tile under the reader's finger, and would present someone as
+"winning", which the plan forbids. The leaderboard's sort is still the API's,
+for any later screen that wants it.
+
+**4. The board panel sits below the six cards, not between the header and
+them.** §51 puts what a team is doing now ahead of everything; on a phone, six
+rows of totals above the cards would push the live information down by a
+screen. The rows are native `<details>`/`<summary>`, so opening one needs no
+script, works from the keyboard (Enter tested in the browser), and every summary
+is ≥ 44 px tall.
+
+**5. An admin write now primes and invalidates the projections too.** Not in the
+plan's scope. `/api/projections` joined `PUBLIC_INDEX_PATHS` (a rename or a new
+person moves the leaderboard, which names everybody) and
+`/api/users/:id/projection` joined `publicPathsFor`. `useAfterAdminWrite`
+invalidates the whole `'projections'` prefix. It is the browser-side twin of
+Phase 3's `forgetProjections`: without it the administrator would add a team,
+watch the board change, and watch the projected total sit still for the route's
+two minutes.
+
+**6. The board's Refresh button refetches the projection as well.** "Let the
+page's existing refresh pick it up" read literally. Otherwise the projection is
+reread every five minutes (`POLL.projectionMs`), whatever the board is doing: a
+live game moves the board every 15 s and the projection not at all.
+
+**7. The home tile's accessible name had no spaces between its parts.** It was
+announced "Casey6 teams", a pre-existing bug the new tests exposed. Real spaces
+now separate the parts (a grid ignores them on screen).
+
+### The rubric fix this phase forced
+
+**With both publishers down and the poll up, every board got a total made of
+nothing but our own estimate.** The finish line needs only the poll, so it stays
+`known` when FPI and the scrape are both gone. `projectTeamAtWeight`'s
+`anyKnown` counted it, so each team "had" a total, `teamsCounted` read 6 of 6,
+and the home page would have shown nine confident totals during a double outage.
+Phase 3's "both down" drill never saw it because `SPORTS_PROVIDER_FAULT=all`
+also takes the poll down. It surfaced in this phase's first team-route test.
+
+The code's own comment already said *"a total needs at least one quoted number
+behind it"*. The check now requires a known line **other than** `final_ranking`,
+which matches the comment and §4's licence: nothing computed by us alone may be
+a projection. Two new tests in `scoring.test.ts` pin it, and one API test asserts
+no board is "covered" under `SPORTS_PROVIDER_FAULT=projections,odds`. No existing
+test relied on the old behaviour, and the eight worked rows are unaffected.
+
+### What the real publishers looked like on screen, 2026-10-02
+
+| | |
+| --- | --- |
+| Boards | 9, **all 6 of 6** on real data (mock mode shows 3 to 6 of 6, because the mock roster lacks real teams) |
+| Range | Jeremiah 11.78 down to Jon **−1.96**; two boards negative |
+| FPI stamp | `Oct 2` (its `lastUpdated` of the same morning) |
+| playoffstatus stamps | Still **Sat Sep 26 11:30 pm** (SEC, Big 12) and **Sun Sep 27 2:45 am** (ACC, Big Ten) on Oct 2: six days old, two pages behind the other two, exactly as Phase 2 described |
+| Labels | `ESPN FPI` on the national half, `playoffstatus.com` on the conference half, `Our estimate, from the current poll` on every finish line |
+| Texas | 5.77 (the plan's worked row said 5.73 three days earlier) |
+
+The home page's as-of line on real data reads: *"Projection · as of Oct 2 (ESPN
+FPI) and Sun Sep 27 2:45 am for ACC and Big Ten, Sat Sep 26 11:30 pm for Big 12
+and SEC (playoffstatus.com)"*. It is long, but it is true, and on a team page it
+shrinks to that team's own conference's stamp.
+
+### Exit criteria, as checked
+
+| Criterion | How it was checked |
+| --- | --- |
+| Home: a total on every tile, **one** projection request, a failure costs nothing | Component tests (one `['projections']` key; failed, 429 and loading leave all tiles and names); browser: one `/api/projections` request per load, and every projection route aborted leaves 9 tiles and a quiet line, no alert |
+| Board: rows sum to total | Replaced, see departure 2 |
+| Every state clean: loading, both down, one down, non-FBS team, no teams, 429 | Component tests for each, asserting no `undefined`/`NaN`/`null`/`-0.00` in seen **and** spoken text |
+| One `<h1>` in every state, including the waits | Component tests per state; browser on all three pages |
+| 320 px, 44 px targets, axe light/dark at 320/1280 | Browser: no sideways scroll at 320 px with **every** breakdown open; summaries 44–56 px; axe (WCAG 2.0/2.1 A, AA) clean on `/`, a board, and a team page in both schemes at both widths, breakdowns open |
+| Reading order: number, meaning, source | Spoken-text order asserted for the board total, a team row ("5.73 points: Texas") and a line ("0.73 National champion 14.6% chance × 5 pts ESPN FPI") |
+| `check:bundle` clean, no auth in viewer chunks | `check:bundle` clean on a fresh build; the only reference to the auth chunk is the existing lazy `import()` behind admin sign-in |
+
+The browser script is `phase4.mjs` in this session's scratchpad. Like every
+earlier browser run, it is outside the repo because it needs Edge, which CI does
+not have.
+
+### Things Phase 5 will get wrong if nobody says so
+
+- **A 200 that knows nothing carries no reference number the screen can show.**
+  The plan's Phase 5 exit criterion says every drill produces *"a labelled,
+  200-level degradation with a reference number"*. The request id travels only
+  in the `X-Request-Id` header, and `getPublic` does not expose headers on
+  success, so the "both down" panel names the dead publishers but cannot quote
+  a reference. Either add `requestId` to the three projection bodies (set per
+  response, **outside** the cached composite, or every cached read repeats the
+  builder's id) or accept "the header has it" and say so in `ops.md`.
+- **Use a free port for drills, and check it is free.** This phase lost time to
+  a workerd left over from **an earlier session** still holding 8788. Every
+  "`--var` doesn't work" symptom was that old process answering, and stopping
+  the `npx wrangler` wrapper from a tool does **not** always stop its workerd
+  child. Before trusting a drill, read `/api/health`'s `provider` and
+  `Get-NetTCPConnection -LocalPort <port> -State Listen`.
+  `--var SPORTS_PROVIDER:espn CONFERENCE_ODDS_PROVIDER:playoffstatus "ESPN_USER_AGENT:…"`
+  works; put the publishers in one `--var` list.
+- **Drill `projections,odds` as well as `all`.** `all` takes the poll down too
+  and hides the case the rubric fix above exists for. The four drills that
+  matter are `odds`, `projections`, `projections,odds` and `all`, and they
+  produce four different screens.
+- **`CONFERENCE_ODDS_PROVIDER` is still `mock` in `[env.production.vars]`.**
+  With production's current settings (real FPI, mock odds) the screens say
+  *"Projection · as of Oct 2 (ESPN FPI) and mock data (conference odds)"*, and
+  every conference line is labelled `Mock data`. That mixed case was found while
+  writing these notes; it is handled and tested, and it is honest. But it is
+  not the feature, so flip the setting in the same deploy as the site.
+- **The as-of line on the home page is long on real data**, because the four
+  pages carry two stamps. It wraps cleanly at 320 px (checked), but if the owner
+  finds it noisy, the per-conference list could move behind a `<details>`. The
+  team page already shows only its own conference's stamp.
+- **Prettier needed two passes on two of the new test files.** The first
+  `--write` left them failing `format:check`. Run `format:check` after
+  `format`, not instead of it.
+- **`docs/playoffstatus-notes.md` is still owed** (Phase 2's handoff), and
+  `ops.md` needs the third route, `POLL.projectionMs`, and the new
+  `PUBLIC_INDEX_PATHS` entry.
 
 ---
 

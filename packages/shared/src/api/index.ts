@@ -21,6 +21,7 @@ export type {
   TeamDetailResponse,
   TeamOwner,
   TeamOwnersResponse,
+  TeamProjectionResponse,
   TeamScheduleResponse,
   UserDetailResponse,
   UsersResponse,

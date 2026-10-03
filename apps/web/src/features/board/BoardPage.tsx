@@ -13,8 +13,10 @@ import { formatSeason, formatUpdatedAt } from '../../lib/format';
 import { rankingPollOf, summarizeBoardFreshness } from '../../lib/freshness';
 import { useDocumentTitle } from '../../lib/useDocumentTitle';
 import styles from './BoardPage.module.css';
+import { ProjectionPanel } from './ProjectionPanel';
 import { TeamCard, TeamCardFallback } from './TeamCard';
 import { useBoard } from './useBoard';
+import { useBoardProjection } from './useBoardProjection';
 
 /**
  * §13 — one person's six teams, compared at a glance, from one request (§27).
@@ -26,6 +28,8 @@ import { useBoard } from './useBoard';
 export function BoardPage() {
   const { userId = '' } = useParams();
   const board = useBoard(userId);
+  // Started with the board, not after it, and never waited on by it (§42).
+  const projection = useBoardProjection(userId);
   const data = board.data;
   useDocumentTitle(data === undefined ? null : `${data.user.displayName}'s board`);
 
@@ -73,7 +77,10 @@ export function BoardPage() {
         board={data}
         refreshing={board.isFetching}
         refreshFailed={board.isRefetchError}
-        onRefresh={() => void board.refetch()}
+        onRefresh={() => {
+          void board.refetch();
+          void projection.refetch();
+        }}
       />
 
       {data.teams.length === 0 ? (
@@ -95,6 +102,9 @@ export function BoardPage() {
           ))}
         </ul>
       )}
+
+      {/* After the cards, never before them (§51); absent when there is nothing to project. */}
+      {data.teams.length > 0 && <ProjectionPanel query={projection} />}
     </div>
   );
 }

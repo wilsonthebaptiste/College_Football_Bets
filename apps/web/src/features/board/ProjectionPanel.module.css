@@ -1,0 +1,136 @@
+.panel {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.title {
+  color: var(--color-ink-secondary);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+/* The board's total: the medium numeral, never the large one a rank or a
+   score uses (plan Phase 4, "not in the same visual weight"). */
+.total {
+  color: var(--color-ink-secondary);
+}
+
+.totalValue {
+  color: var(--color-ink);
+  font-family: var(--font-display);
+  font-size: var(--numeral-md);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.coverage {
+  color: var(--color-ink-muted);
+}
+
+.noTotal {
+  font-weight: 600;
+}
+
+.teams {
+  display: grid;
+  margin: 0;
+  border-top: 1px solid var(--color-rule);
+}
+
+.team {
+  border-bottom: 1px solid var(--color-rule);
+}
+
+/* A 44 px touch target, number first in the same fixed column as the lines. */
+.summary {
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr) auto;
+  column-gap: var(--space-3);
+  align-items: center;
+  min-height: 44px;
+  padding: var(--space-1) 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.summary::-webkit-details-marker {
+  display: none;
+}
+
+.summary:hover .teamName {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.teamValue {
+  justify-self: end;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums lining-nums;
+  white-space: nowrap;
+}
+
+.teamName {
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* "4 of 6 lines", "not projected": under the name, in the same column. */
+.teamStatus {
+  grid-column: 2;
+  grid-row: 2;
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+}
+
+.chevron {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  color: var(--color-ink-muted);
+  transform: rotate(180deg);
+  transition: transform 0.15s ease;
+}
+
+.team[open] .chevron {
+  transform: rotate(-90deg);
+}
+
+.lines {
+  padding: var(--space-2) 0 var(--space-4);
+}
+
+.rounding {
+  color: var(--color-ink-muted);
+  font-size: var(--text-xs);
+}
+
+.loading {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.unavailable {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-sunken);
+}
+
+.unavailableTitle {
+  font-weight: 600;
+}
+
+.reason {
+  color: var(--color-ink-secondary);
+  font-size: var(--text-sm);
+}
+
+.reference {
+  color: var(--color-ink-muted);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}

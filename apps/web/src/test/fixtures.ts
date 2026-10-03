@@ -21,7 +21,20 @@ import type {
   TeamScheduleResponse,
   TeamSearchResponse,
   TeamSnapshot,
+  BoardProjectionResponse,
+  BoardProjectionSummary,
+  OutcomeKind,
+  Points,
+  ProjectedTeam,
+  ProjectedTeamEntry,
+  ProjectedTerm,
+  ProjectionInputName,
+  ProjectionInputStatus,
+  ProjectionSource,
+  ProjectionsResponse,
+  TeamProjectionResponse,
 } from '@cfb/shared';
+import { formatPoints as formatSharedPoints, OUTCOME_ORDER, RUBRIC } from '@cfb/shared';
 
 /**
  * Builders for the board payload, shaped exactly like `packages/shared`'s
@@ -373,6 +386,215 @@ export function makePrediction(overrides: Partial<Prediction> = {}): Prediction 
     away: { providerTeamId: '333', name: 'Alabama Crimson Tide', abbreviation: 'ALA' },
     retrievedAt: '2026-10-01T17:30:00.000Z',
     ...overrides,
+  };
+}
+
+// ─── Projected points (predicting_score.md, Phase 4) ────────────────────────
+
+/** The six lines' contributions, in rubric order: `5a, 4(b−a), 3c, 3d, 2(e−d), 2p−1`. */
+export type Contributions = [number, number, number, number | null, number | null, number];
+
+function points(value: number): Points {
+  return { value, display: formatSharedPoints(value) };
+}
+
+/**
+ * One projected team, built from its six contributions the way the plan's
+ * worked table prints them. `null` in a conference slot means not eligible
+ * (a structural zero); `unavailable` lists the lines nobody could quote.
+ */
+export function projectedTeam(
+  contributions: Contributions,
+  options: {
+    unavailable?: readonly OutcomeKind[];
+    conferenceSource?: ProjectionSource;
+    total?: number;
+  } = {},
+): ProjectedTeam {
+  const unavailable = new Set(options.unavailable ?? []);
+  const sources: Record<OutcomeKind, ProjectionSource> = {
+    national_champion: 'espn_fpi',
+    national_runner_up: 'espn_fpi',
+    playoff: 'espn_fpi',
+    conference_champion: options.conferenceSource ?? 'playoffstatus',
+    conference_runner_up: options.conferenceSource ?? 'playoffstatus',
+    final_ranking: 'espn_poll_estimate',
+  };
+  const terms: ProjectedTerm[] = OUTCOME_ORDER.map((kind, index) => {
+    const value = contributions[index] ?? null;
+    const base = { kind, points: RUBRIC[kind] };
+    if (unavailable.has(kind)) {
+      return { ...base, state: 'unavailable', probability: null, contribution: null, source: null };
+    }
+    if (value === null) {
+      return {
+        ...base,
+        state: 'not_eligible',
+        probability: null,
+        contribution: points(0),
+        source: null,
+      };
+    }
+    const probability = kind === 'final_ranking' ? (value + 1) / 2 : value / RUBRIC[kind];
+    return {
+      ...base,
+      state: 'known',
+      probability,
+      contribution: points(value),
+      source: sources[kind],
+    };
+  });
+  // The rubric's rule: a total needs a publisher's figure, not only our estimate.
+  const known = terms.filter((term) => term.state === 'known' && term.kind !== 'final_ranking');
+  const sum = terms.reduce((total, term) => total + (term.contribution?.value ?? 0), 0);
+  return {
+    providerTeamId: '333',
+    terms,
+    total: known.length === 0 ? null : points(options.total ?? sum),
+    complete: terms.every((term) => term.state !== 'unavailable'),
+  };
+}
+
+/** A team nobody publishes about: six dashes and no total. */
+export function unprojectedTeam(): ProjectedTeam {
+  return projectedTeam([0, 0, 0, 0, 0, 0], { unavailable: OUTCOME_ORDER });
+}
+
+/** The two playoffstatus stamps of 2026-09-30, which the four pages split between. */
+export const SEC_STAMP = 'Sat Sep 26 11:30 pm';
+export const BIG_TEN_STAMP = 'Sun Sep 27 2:45 am';
+
+type SourceOverrides = Partial<Record<ProjectionInputName, Partial<ProjectionInputStatus>>>;
+
+/**
+ * The five inputs as the real publishers answer them: FPI's daily instant, and
+ * four conference pages that do not agree on one stamp, so the document-level
+ * one is null (Phase 2).
+ */
+export function projectionSources(overrides: SourceOverrides = {}): ProjectionInputStatus[] {
+  const entry = (
+    input: ProjectionInputName,
+    source: ProjectionSource | null,
+    computedLabel: string | null = null,
+    pages: ProjectionInputStatus['pages'] = [],
+  ): ProjectionInputStatus => ({
+    input,
+    source,
+    freshness: freshness('cached'),
+    computedLabel,
+    pages,
+    ...overrides[input],
+  });
+  return [
+    entry('fpi', 'espn_fpi', '2026-09-30T08:00Z'),
+    entry('conference_odds', 'playoffstatus', null, [
+      { conference: 'SEC', computedLabel: SEC_STAMP },
+      { conference: 'Big Ten', computedLabel: BIG_TEN_STAMP },
+      { conference: 'Big 12', computedLabel: SEC_STAMP },
+      { conference: 'ACC', computedLabel: BIG_TEN_STAMP },
+    ]),
+    entry('rankings', 'espn_poll_estimate'),
+    entry('conferences', null),
+    entry('teams', null),
+  ];
+}
+
+/** An input that could not be read at all. */
+export function inputDown(): Partial<ProjectionInputStatus> {
+  return { freshness: freshness('unavailable'), computedLabel: null, pages: [] };
+}
+
+/**
+ * The plan's eight worked teams of 2026-09-30, as printed. Their rounded
+ * totals sum to 22.64; the board, summed unrounded and rounded once, is 22.65.
+ */
+export const WORKED_TEAMS: ReadonlyArray<[string, Contributions, number]> = [
+  ['Texas', [0.73, 0.49, 2.68, 0.57, 0.34, 0.93], 5.7312],
+  ['Miami', [0.51, 0.38, 2.56, 0.66, 0.4, 0.85], 5.3687],
+  ['Georgia', [0.79, 0.48, 2.52, 0.33, 0.24, 0.9], 5.2611],
+  ['Notre Dame', [0.71, 0.46, 2.54, null, null, 0.88], 4.5904],
+  ['Boise State', [0.01, 0.02, 1.01, null, null, 0.41], 1.4506],
+  ['Nebraska', [0.04, 0.06, 0.77, 0.33, 0.22, -0.19], 1.2311],
+  ['Texas A&M', [0.01, 0.01, 0.09, 0.01, 0, -0.19], -0.0689],
+  ['Kansas', [0, 0, 0, 0.01, 0, -0.93], -0.9172],
+];
+
+export function projectedEntry(
+  name: string,
+  projection: ProjectedTeam,
+  order = 1,
+): ProjectedTeamEntry {
+  return {
+    selectionId: nextId(),
+    order,
+    team: makeTeam({ displayName: name, name: `${name} Full Name` }),
+    projection,
+  };
+}
+
+export function boardProjection(
+  teams: ProjectedTeamEntry[],
+  overrides: Partial<BoardProjectionResponse> = {},
+): BoardProjectionResponse {
+  const counted = teams.filter((entry) => entry.projection.total !== null);
+  const sum = counted.reduce((total, entry) => total + (entry.projection.total?.value ?? 0), 0);
+  return {
+    user: { id: nextId(), displayName: 'Wilson' },
+    season: SEASON,
+    generatedAt: '2026-10-01T18:00:00.000Z',
+    freshness: freshness('cached'),
+    sources: projectionSources(),
+    board: {
+      total: counted.length === 0 ? null : points(sum),
+      teamsCounted: counted.length,
+      teamsTotal: teams.length,
+    },
+    teams,
+    ...overrides,
+  };
+}
+
+export function teamProjection(
+  team: PageTeam,
+  projection: ProjectedTeam,
+  sources: ProjectionInputStatus[] = projectionSources(),
+): TeamProjectionResponse {
+  return {
+    team,
+    season: SEASON,
+    generatedAt: '2026-10-01T18:00:00.000Z',
+    freshness: freshness('cached'),
+    sources,
+    projection,
+  };
+}
+
+export function projectionsResponse(
+  boards: BoardProjectionSummary[],
+  sources: ProjectionInputStatus[] = projectionSources(),
+): ProjectionsResponse {
+  return {
+    season: SEASON,
+    generatedAt: '2026-10-01T18:00:00.000Z',
+    freshness: freshness('cached'),
+    sources,
+    boards,
+  };
+}
+
+export function boardSummary(
+  userId: string,
+  displayName: string,
+  total: number | null,
+  teamsCounted = 6,
+  teamsTotal = 6,
+): BoardProjectionSummary {
+  return {
+    userId,
+    displayName,
+    total: total === null ? null : points(total),
+    teamsCounted,
+    teamsTotal,
   };
 }
 

@@ -545,6 +545,32 @@ describe('degrading, in labelled pieces', () => {
     expect(projection.complete).toBe(false);
   });
 
+  /**
+   * Phase 4's finding. Both publishers down, the poll up: the only known line
+   * is our own Top-25 estimate. Totalling it would put a number made entirely
+   * of our model on screen as though a publisher stood behind it — and count
+   * the team as "covered" on the leaderboard.
+   */
+  it('refuses to total a team whose only known line is our own estimate', () => {
+    const projection = projectTeamAtWeight(
+      inputsFor({ fpi: null, conference: ODDS_MISSING, ranking: ranked(3) }),
+      0.3,
+    );
+
+    expect(termOf(projection, 'final_ranking').state).toBe('known');
+    expect(projection.terms.filter((term) => term.state === 'known')).toHaveLength(1);
+    expect(projection.total).toBeNull();
+    expect(projectBoard([projection]).teamsCounted).toBe(0);
+  });
+
+  it('refuses the same for an ineligible team: two structural zeros and our estimate', () => {
+    const projection = projectTeamAtWeight(
+      inputsFor({ fpi: null, conference: NOT_POWER_FOUR, ranking: ranked(20) }),
+      0.3,
+    );
+    expect(projection.total).toBeNull();
+  });
+
   it('refuses to total a team with nothing known at all', () => {
     const projection = projectTeamAtWeight(
       inputsFor({ fpi: null, conference: ODDS_MISSING, ranking: NO_POLL }),

@@ -5,8 +5,10 @@ import {
   formatKickoff,
   formatKickoffTime,
   formatPercent,
+  formatPoints,
   formatScore,
   formatSeason,
+  formatStamp,
   formatUpdatedAt,
   initials,
   liveSituation,
@@ -20,6 +22,40 @@ const CHICAGO = 'America/Chicago';
 const LA = 'America/Los_Angeles';
 /** Thursday 1 October, 1 PM in Chicago. */
 const NOW = Date.parse('2026-10-01T18:00:00Z');
+
+describe('formatPoints (projected points, Phase 4)', () => {
+  it('prints the server’s own string, with a real minus sign', () => {
+    expect(formatPoints({ display: '5.73' })).toBe('5.73');
+    expect(formatPoints({ display: '-0.92' })).toBe('−0.92');
+  });
+
+  it('never re-rounds: the string is printed even when the number would round otherwise', () => {
+    // The route rounded once; a second rounding here is how two clients disagree.
+    const total = { value: 22.6449, display: '22.65' };
+    expect(formatPoints(total)).toBe('22.65');
+  });
+
+  it('signs only a value that is not zero, so nothing reads "+0.00" or "-0.00"', () => {
+    expect(formatPoints({ display: '0.93' }, { signed: true })).toBe('+0.93');
+    expect(formatPoints({ display: '0.00' }, { signed: true })).toBe('0.00');
+    expect(formatPoints({ display: '-0.19' }, { signed: true })).toBe('−0.19');
+  });
+});
+
+describe('formatStamp (a publisher’s own "computed at")', () => {
+  it('shows FPI’s instant as a date only, in the viewer’s zone', () => {
+    expect(formatStamp('2026-09-30T08:00Z', { timeZone: CHICAGO })).toBe('Sep 30');
+    // 1 AM Pacific is still the 30th; 08:00Z is the morning recompute.
+    expect(formatStamp('2026-09-30T08:00Z', { timeZone: LA })).toBe('Sep 30');
+  });
+
+  it('shows playoffstatus’s stamp verbatim: no year and no zone to parse it with', () => {
+    expect(formatStamp('Sat Sep 26 11:30 pm')).toBe('Sat Sep 26 11:30 pm');
+    expect(formatStamp('Mock projection (synthetic data)')).toBe(
+      'Mock projection (synthetic data)',
+    );
+  });
+});
 
 describe('formatKickoff (§20: UTC in the data, local time on screen)', () => {
   it('shows weekday, date, and local time', () => {
