@@ -5,17 +5,16 @@ what it is, how it is put together, what was learned the hard way, what is
 deployed, and what is left.
 
 Written at the close of Phase 5, 2026-09-19, when the application went live.
-Updated 2026-09-24, when team search was deployed, and 2026-10-02, when Phases 1
-to 4 of projected points landed.
+Updated 2026-09-24, when team search was deployed, and 2026-10-02, when
+projected points was built and deployed.
 
-> **Work in flight.** Projected points — the first *computed* sports number in
-> the application — is being built now. Phases 1 to 4 of 5 are complete: the
-> rubric, both publishers, three public endpoints, and the three screens.
-> **Nothing is deployed yet**; Phase 5 is docs, drills, and the deploy.
-> **§12 is the handoff**, and it is the section to read before touching
-> `packages/shared/src/scoring.ts`, `apps/api/src/providers/playoffstatus/`,
-> `apps/api/src/services/projection.ts`, `apps/web/src/lib/projection.ts`, or
-> starting Phase 5.
+> **Projected points is live** (since 2026-10-02) — the first *computed* sports
+> number in the application, and the first feature that reads a publisher other
+> than ESPN. **§12 is its record**, and it is the section to read before
+> touching `packages/shared/src/scoring.ts`,
+> `apps/api/src/providers/playoffstatus/`, `apps/api/src/services/projection.ts`,
+> or `apps/web/src/lib/projection.ts`. What is left of it is the owner's: a
+> phone check and the KV counter the day after (§10).
 
 - The behaviour the app was built to (the specification) is
   [archive/spec.md](archive/spec.md). `§n` references throughout the code and
@@ -26,13 +25,15 @@ to 4 of projected points landed.
 - [archive/plan-search-engine.md](archive/plan-search-engine.md) — the public team search, so
   any team can be looked up and not only the 54 on boards. All four phases are
   built, verified, and live since 2026-09-24.
-- [predicting_score.md](predicting_score.md) — projected points, the feature in
-  flight. Five phases; Phases 1 to 4 are done and each carries its own
-  completion notes. That file holds the measured source data, the rubric, and
-  the plan; **§12 of this file holds what building them actually taught us.**
+- [predicting_score.md](predicting_score.md) — projected points. All five
+  phases built, each with its own completion notes, and live since 2026-10-02.
+  That file holds the measured source data, the rubric, and the plan; **§12 of
+  this file holds what building it actually taught us.**
 - Operations — deploying, configuration, limits, troubleshooting — is
   [../docs/ops.md](../docs/ops.md).
 - ESPN's undocumented API, as observed: [../docs/espn-notes.md](../docs/espn-notes.md).
+- playoffstatus.com, the scraped conference odds, as observed — and how to fix
+  the scrape when it breaks: [../docs/playoffstatus-notes.md](../docs/playoffstatus-notes.md).
 - Supabase setup: [../docs/supabase-setup.md](../docs/supabase-setup.md).
 - How to test each phase by hand: the [README](../README.md).
 
@@ -51,13 +52,14 @@ team and open them; only the administrator can change the boards.
 | API | <https://cfb-api.cfb-api.workers.dev> (Worker `cfb-api`, `--env production`) |
 | Database | Supabase Postgres: 9 people, 54 selections, 65 team rows (11 no longer on any board) |
 | Cost | Nothing. Every service is on a free tier, with no card on file |
-| Source | Branch `main`, on <https://github.com/wilsonthebaptiste/College_Football_Bets> (remote created 2026-09-20; Phases 1–7 pushed 2026-09-25) |
-| Tests | 1068, in 45 files. `npm run verify` runs typecheck, lint, tests, and the season check |
+| Source | Branch `main`, on <https://github.com/wilsonthebaptiste/College_Football_Bets> (remote created 2026-09-20; search pushed 2026-09-25, projected points 2026-10-02) |
+| Tests | 1073, in 45 files. `npm run verify` runs typecheck, lint, tests, and the season check |
+| Publishers | ESPN (everything, including FPI) and playoffstatus.com (four conference pages, for projected points only) |
 
 Built in five phases: foundation and contracts, the sports data layer, the
 website, the team page, then admin, hardening, and the deploy. Each phase's
 exit criteria and completion notes are in the archived plan. Two features came
-after the deploy: team search (live) and projected points (§12, in flight).
+after the deploy, both live: team search and projected points (§12).
 
 ## 2. The shape of the system
 
@@ -312,7 +314,7 @@ to fail, so failure states can be exercised on purpose.
 
 ## 6. How correctness was checked
 
-The suite is 1068 tests in 45 files. What carried the most weight:
+The suite is 1073 tests in 45 files. What carried the most weight:
 
 - **The authorization matrix** (90 tests). Every `/api/admin/*` route against
   every way of not being an administrator: no token, a non-Bearer header, an
@@ -370,6 +372,13 @@ The suite is 1068 tests in 45 files. What carried the most weight:
   Edge covered no sideways scroll at 320 px with every breakdown open, 44 px
   rows, Enter opening a row, every projection route aborted, and axe in light
   and dark at 320 and 1280 px. One more run used the real publishers.
+
+- **Projected points, drilled and deployed** (§12). Four fault drills on the
+  real runtime against both real publishers (`odds`, `projections`,
+  `projections,odds`, `all`), each reference matched to the log line it must
+  lead to; three changed-page drills (a redesigned page, a dropped row, a
+  renamed FPI column) driven through the route on the real captures; and 46
+  browser checks against the **deployed** site.
 
 **`npm run verify` does not check formatting.** `format:check` is a separate
 script. Prettier reformatted two of the five files Phase 1 touched *after* a
@@ -494,14 +503,34 @@ network. The test that now covers it reproduces the race directly.
   shared-team path (§27) and a team nobody selected. The live boards were
   replaced with the real nine people and their teams on 2026-09-19, through the
   admin API.
-- **Projected points carries its own limitations** — the one modelled number,
-  the eight worked rows that are tuned close to a rounding boundary, a scrape
-  whose only warning of a redesign is three integrity checks, and two
-  publishers that disagree about conference odds by up to ~0.75 points per
-  team. They are in §12 rather than here because nothing of the feature is
-  deployed yet. (The third limitation this list used to carry — one row of the
-  plan's table that real data appeared to contradict — was settled in Phase 2:
-  the row was right.)
+- **Projected points is a projection, and only as fresh as its slowest
+  publisher.** FPI recomputes daily; playoffstatus after game days, and its four
+  pages in two batches — on 2026-10-02 its stamps were six days old. The
+  screens print each publisher's own stamp and never say "live".
+- **One number in it is ours**: the chance of a Top-25 finish, from the poll
+  (and FPI's rank for an unranked team). It is labelled "Our estimate"
+  everywhere, its constants are a judgement (0.95 at #1, 0.55 at #25, decay 18),
+  and it alone never makes a total.
+- **The two publishers disagree about conference odds** by up to ~0.75 points
+  per team (Ohio State's champion line: 0.27 from playoffstatus, 1.23 from FPI,
+  measured on the live runtime). Never averaged; FPI is only the labelled
+  fallback.
+- **The scrape's only warning of a redesign is its integrity checks** — a row
+  count, two column sums, and the two-way name join. A refused page is served
+  stale for about a week, then falls back to FPI, labelled; the screen and the
+  logs both say so (docs/playoffstatus-notes.md §8).
+- **A fresh isolate's first leaderboard read used 24–39 ms of CPU**, the same
+  order as the cold board's 44 ms, against a documented 10 ms. Not enforced so
+  far; watch `/api/projections` for `exceededCpu` too.
+- **Under the FPI fallback a team reads `complete: true`**, because the
+  runner-up's quoted zero counts as known. The line's own words say FPI
+  publishes no runner-up odds; `complete` alone does not mean the whole rubric
+  was quoted.
+- **The eight worked rows in `scoring.test.ts` sit a few thousandths from a
+  rounding boundary.** Retuning a Top-25 constant will break some of them, on
+  purpose: re-solve the inputs, do not loosen the tolerance (§12).
+- **The team projection by provider id is a 503 when the team list is down**,
+  like the team page at that address. By our uuid it is a degraded 200.
 - **The CI deploy job is still untested.** The remote has existed since
   2026-09-20 and the `verify` job passes on every push; the `deploy` job is
   gated on a `DEPLOY_ENABLED` repository variable that is not set, and every
@@ -534,22 +563,21 @@ network. The test that now covers it reproduces the race directly.
 5. **Optional:** turn on the CI deploy job — the remote exists and `main` is
    pushed, so all that is left is the token, the variables, and
    `DEPLOY_ENABLED` (docs/ops.md, "Continuous deployment"); a screen-reader pass.
-6. **Projected points, Phase 5 of 5**: docs, drills, the deploy, and the KV
-   counter the day after. Start from the plan's
-   [Phase 4 completion notes](predicting_score.md#phase-4--completion-notes),
-   whose last section is the Phase 5 handoff, and from §12 below. Remember §9:
-   a green local `main` proves nothing about what the remote has verified.
-7. **Flip `CONFERENCE_ODDS_PROVIDER` to `playoffstatus`** in
-   `[env.production.vars]` in the same deploy as the site. It is deliberately
-   still `mock`, so the deployed Worker is not yet scraping anybody's site.
-   Until it flips, the screens honestly say "mock data (conference odds)" beside
-   real FPI figures. That is correct, but it is not the feature.
+6. **Projected points, the owner's two checks.** Open the live site on a phone,
+   read a total, open a board and a team's row, and confirm the screen alone
+   says where each number came from and how old it is. Then read the **KV write
+   counter** the day after (2026-10-03): `projection_inputs` and
+   `conference_odds` should be about four writes a day each, from the cron.
+   [ops.md, "The projected-points release"](../docs/ops.md#the-projected-points-release-2026-10-02)
+   records what it looked like on the day.
+7. ~~Flip `CONFERENCE_ODDS_PROVIDER` to `playoffstatus`.~~ Done in the
+   2026-10-02 deploy; the deployed Worker has read the four pages since.
 
 ## 11. Commands worth remembering
 
 | Command | What it does |
 | --- | --- |
-| `npm run verify` | Typecheck, lint, 1068 tests, season check. The one to run |
+| `npm run verify` | Typecheck, lint, 1073 tests, season check. The one to run |
 | `npm run format:check` | Prettier. **Not** part of `verify`, but CI runs it |
 | `npm run dev` / `npm run dev:web` | The API on 8787 (mock data) and the site on 5173 |
 | `npm run verify:rls` | Attacks the live database directly, as `anon` and as a non-admin |
@@ -560,11 +588,59 @@ network. The test that now covers it reproduces the race directly.
 | `npm run capture:fixtures` | Re-downloads the ESPN sample payloads, FPI included |
 | `npm run capture:odds` | Re-downloads the four conference pages and the ESPN conference map |
 
-## 12. Projected points — the handoff after Phase 4
+## 12. Projected points
 
-Phases 1 to 4 of five, built 2026-09-30 to 10-02. **The rubric, both
-publishers, three endpoints and three screens exist; nothing is deployed.**
-`npm run verify` green: 1068 tests in 45 files, up 247 from 821.
+All five phases, built 2026-09-30 to 10-02 and **deployed 2026-10-02** (Worker
+`a178469a`, Pages `cbbac44c`, `CONFERENCE_ODDS_PROVIDER = "playoffstatus"`).
+`npm run verify` green: 1073 tests in 45 files, up 252 from 821. The release
+record is in [ops.md](../docs/ops.md#the-projected-points-release-2026-10-02);
+the drills and departures are in the plan's
+[Phase 5 completion notes](predicting_score.md#phase-5--completion-notes).
+
+### What Phase 5 taught us (the drills and the deploy)
+
+**A reference number is only worth quoting if it leads to a log line.** A
+degraded projection is a 200, so there is no error body to carry one, and the
+plan's first idea — the request id on each response — points at the wrong
+request: the board and leaderboard answers are cached for two minutes and the
+Worker writes no access log, so the request being answered may have logged
+nothing at all. The id worth quoting is the one the failure was logged under.
+Every failed envelope already carried it in `error.requestId`, and the
+assembly was dropping it. Now `ProjectionInputStatus.error` keeps it, the
+screens print it, and a test asserts each response's reference is one a logged
+`cache_refresh_failed_*` line carries — across two requests sharing one cached
+answer. **The general lesson: test a reference by following it, not by checking
+it is present.**
+
+**The leftover-process trap is worse on Windows than Phase 4 knew.** Three
+drill Workers from earlier sessions were still running, and one held the port
+this phase then chose. `wrangler dev` bound the same address anyway, printed
+"Ready", and the **old** process answered — a mock Worker with the odds fault
+armed, posing as a cold real one. Checking the port was free beforehand would
+have missed it on a different port; what caught it was `/api/health`'s
+`provider` and the mock labels on figures that should have been real. Check
+what answers, not what listens. Stopping a stray drill afterwards by matching
+`--port N` on command lines also matches the shell that ran the command, so a
+stop script should exclude its own ancestry.
+
+**A fault drill tests the combination it names — so name all four.** The
+four runtime drills produce four different screens (the plan's table in the
+Phase 5 notes): `odds` falls back to FPI, labelled; `projections` keeps the
+conference half and loses unranked teams' finish lines; `projections,odds` is
+the case the Phase 4 rubric fix exists for, and on the real runtime Texas showed
+its own finish line and no total; `all` takes the identity of a provider-id team
+down with it, which makes that one route a 503 rather than a degraded 200.
+
+**Production matched local to the cent**, on the same publishers the same
+evening, and the cron fetched both documents within a minute of the deploy,
+before any viewer did. The measurement worth carrying forward is the CPU: a
+fresh isolate's first leaderboard read is 24–39 ms, the same order as the cold
+board, and the likely cost is the 762-team list the name join parses.
+
+### Before Phase 5
+
+The handoff written after Phase 4 follows, unchanged except where marked: it is
+still the best account of why the feature is shaped the way it is.
 
 ### What Phase 4 taught us (the screens)
 

@@ -35,8 +35,16 @@
       and all three screens seen on the **real** publishers. Details, the seven
       departures, the rubric fix this phase forced, and the Phase 5 handoff are
       in [Phase 4 — Completion Notes](#phase-4--completion-notes).
-- [ ] **Phase 5 — Docs, drills, ship.** README, espn-notes, ops.md, fault
-      drills, the deploy, and the KV counter the day after.
+- [x] **Phase 5 — Docs, drills, ship.** ✅ **Deployed, 2026-10-02.** Worker
+      `a178469a`, Pages `cbbac44c`, and `CONFERENCE_ODDS_PROVIDER` flipped to
+      `playoffstatus`. A degraded projection now quotes the reference its
+      failure was logged under. 1073 tests in 45 files (from 1068 in 45);
+      `npm run verify` green and `format:check` clean. Four fault drills on the
+      real runtime, three changed-page drills through the route, smoke 35/35
+      and `verify:rls` 44/44 live, and 46 browser checks against the deployed
+      site. Still open, and the owner's: the phone check and the KV counter the
+      day after. Details, three departures, and what the deploy found are in
+      [Phase 5 — Completion Notes](#phase-5--completion-notes).
 
 Phases are sequential, each ends at a verifiable state, and `npm run verify`
 must be green before the next one starts. The feature starts from **821 tests in
@@ -1328,6 +1336,152 @@ not have.
   and can tell from the screen alone where each number came from and how old it
   is.
 - `docs/ops.md` records the measured KV writes and CPU for the new reads.
+
+---
+
+## Phase 5 — Completion Notes
+
+Built and deployed 2026-10-02. Worker version
+`a178469a-0453-4fc0-8cdd-5f4ad19d397f`, Pages deployment `cbbac44c`, and one
+configuration change: `CONFERENCE_ODDS_PROVIDER = "playoffstatus"` in
+`[env.production.vars]`. The deployed Worker has been reading the four pages
+since that deploy.
+
+### Exit criteria, as checked
+
+| Criterion                                                                   | Result                                                                                                                                                                                       |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run verify` green; smoke green against the deployed Worker; RLS 44/44  | ✅ 1073 tests in 45 files; smoke **35/35** against the live API and site; `verify:rls` **44/44**, probe rows cleaned up                                                                      |
+| Every drill a labelled, 200-level degradation with a reference; no `0.00`   | ✅ with one documented exception (departure 3). Four fault drills on the real runtime and three changed-page drills through the route, below                                                |
+| The owner reads a total on a phone and can tell where and how old           | ⏳ the owner's. 46 browser checks on the **deployed** site cover what can be automated: both publishers named with their own stamps, no "mock" anywhere, the finish line labelled ours       |
+| `docs/ops.md` records the measured KV writes and CPU for the new reads      | ✅ at the release (below and in ops.md). ⏳ The 24-hour dashboard numbers are the owner's, as on every release                                                                              |
+
+### What was built
+
+| File                                                       | Change                                                                                                                                                                           |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/shared/src/api/responses.ts`                     | `ProjectionInputStatus.error: AppError \| null` — a failed input's reason and the reference it was logged under                                                                  |
+| `apps/api/src/services/projection.ts`                      | `sourceEntry` carries each read's `envelope.error` through                                                                                                                       |
+| `apps/web/src/lib/projection.ts`, `components/Projection.tsx` | `provenance` returns a `reference`; `ProjectionNote` prints "Reference: …" under the problems, on all three screens                                                           |
+| `apps/api/test/projections.test.ts`                        | The reference asserted on the both-down drill and against the log line it must lead to; three changed-page drills on the real captures                                           |
+| `scripts/smoke.mjs`                                        | The team route and its agreement with the breakdown; the Top-25 line's label; each input's label and reference printed                                                           |
+| `apps/api/wrangler.toml`                                   | `CONFERENCE_ODDS_PROVIDER = "playoffstatus"` in production                                                                                                                       |
+| `docs/playoffstatus-notes.md` **(new)**                    | The four URLs, the markup, the three traps, the integrity windows, the join and its one alias, the stamp, `robots.txt`, what breaking looks like, and how to fix it            |
+| `docs/ops.md`, `README.md`, `context/project-notes.md`     | Costs, configuration, cron, troubleshooting, the release record; "Testing projected points"; the distilled notes                                                                |
+
+`docs/espn-notes.md` §12 (FPI) was written in Phase 2 and needed only a line
+confirming the deployed read.
+
+### Three departures, each a decision
+
+**1. The reference travels on each failed input, not on the response.** The
+Phase 4 handoff offered two options: a `requestId` on each body, set outside the
+cached composite, or "the header has it". Both point at the wrong request. The
+board and leaderboard answers are cached for two minutes, and the Worker writes
+no access log, so the id of the request being answered may lead to **nothing**
+in the logs. The id worth quoting is the one the failure was logged under
+(`cache_refresh_failed_*`), and the failed envelope already carried it — the
+assembly was dropping it. A test drives two requests through one cached answer
+and asserts that each response's reference is one a logged failure carries. A
+stale copy has no reference, because nothing was lost; it says "may be out of
+date" instead.
+
+**2. The three changed-page drills are route tests, not runtime drills.** A
+redesigned page, a dropped row, and a renamed column have no fault token, and
+faking a publisher's response inside `wrangler dev` would mean code that exists
+only for drilling. Each parser refusal already had a unit test (Phase 2); what
+was missing was the **whole answer**. So all three run through
+`GET /api/users/:id/projection` on the real captured payloads with one page or
+one column changed, and assert the labelled degradation, the reference, the
+other publisher's half intact, and no `0.00`. The four fault drills ran on the
+real runtime as the plan asked.
+
+**3. Under `all`, the team route by the provider's id is a 503, not a 200.**
+`/api/teams/<providerTeamId>/projection` resolves the team's identity from the
+provider's team list, and `all` takes that list down. It answers a clean 503
+with "Team information is temporarily unavailable." and a reference — exactly
+what the team page itself does at that address, which is the asymmetry
+project-notes §9 already accepts. By our uuid (the board's own links) it is a
+200 with `no-store`, no total, and a reference. Recorded rather than worked
+around: a projection for a team we cannot name is not one to show.
+
+### The four fault drills, on the real runtime
+
+`wrangler dev` on real ESPN and real playoffstatus, a cold `--persist-to` per
+drill, the fault armed with `--var` and confirmed in the startup binding list.
+The board read is the nine real boards through the live Supabase project.
+
+| `SPORTS_PROVIDER_FAULT` | Projection                                                                                                                                                                                                | Board route |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| none (baseline)         | 200, `max-age=120`, `fresh`. Jeremiah 11.78 down to Jon −1.96, all 6 of 6. Labels `espn_fpi`, `playoffstatus`, `espn_poll_estimate`                                                                       | `fresh`     |
+| `odds`                  | 200, `max-age=10`, `stale`, reference. Champion lines fall back to FPI, labelled `espn_fpi`; runner-ups a labelled `0.00`. Ohio State's champion line **0.27 → 1.23**: the two publishers' gap, in the flesh | `fresh`     |
+| `projections`           | 200, `max-age=10`, `stale`, reference. National lines `—`, conference lines `playoffstatus`, finish line kept for ranked teams and `—` for Kansas State (unranked, FPI rank gone). Boards 2 to 6 of 6         | `fresh`     |
+| `projections,odds`      | 200, `no-store`, `unavailable`, reference. **Every board `—` at 0 of 6.** Texas still shows our finish line (`+0.93`), and it makes no total — the Phase 4 rubric fix, on the real runtime                    | `fresh`     |
+| `all`                   | 200, `no-store`, every line `—`, one reference for all five inputs. Team route by provider id: 503 (departure 3)                                                                                           | cards down  |
+
+Each drill's references were checked against the Worker's own output: every one
+is the `requestId` of a `cache_refresh_failed_nothing_cached` line for the input
+that failed.
+
+### What the deploy found
+
+- **The cron fetched both documents before any viewer did.** It was Saturday
+  in UTC, so the ten-minute schedule fired within a minute of the deploy: all
+  seven warmers `ok`, FPI "138 teams rated (miss)", odds "67 rows (miss)", 29 ms
+  of CPU for the run.
+- **Production matched the local run to the cent**, on the same publishers the
+  same evening: Jeremiah 11.78, Wilson 8.92, Steph 7.74, Oliver 6.88, Eli 6.58,
+  Harmless 5.57, Axel 5.56, Jalen −1.80, Jon −1.96. Two boards negative, as in
+  Phase 4.
+- **playoffstatus still had not recomputed.** On 2026-10-02 the stamps were
+  still "Sun Sep 27 2:45 am" (ACC, Big Ten) and "Sat Sep 26 11:30 pm" (Big 12,
+  SEC): six days old, and the screens say so. FPI's was that morning's.
+- **CPU, from `wrangler tail`:** `/api/projections` is bimodal — **0–1 ms** when
+  the isolate holds the assembled answer, **24–39 ms** when a fresh isolate
+  assembles it from KV. The team route: median 4 ms, max 18 ms. Every outcome
+  `ok`. The cold leaderboard is the same order as the cold board (44 ms) and
+  above the documented 10 ms; the likely cost is parsing the 762-team list for
+  the name join, and the remedy if Cloudflare ever enforces the limit is to
+  cache the join's 67 rows instead. Measured in Node, a cold refresh of the FPI
+  table is ~5.8 ms (almost all `JSON.parse` on 830 KB) and the four pages
+  ~0.5 ms, which is why the cron warming them matters.
+- **KV: one write per document on a cold read**, `projection_inputs 1` and
+  `conference_odds 1`, exactly the plan's budget. The 24-hour number is the
+  owner's to read.
+
+### Two things worth knowing that no test would have shown
+
+**On Windows, a leftover Worker can answer on the port you just started yours
+on.** Phase 4 recorded that a `workerd` from an earlier session held 8788. This
+phase found the worse version: three leftover drill Workers from that morning
+were still running (mock mode, faults armed), and one held 8791 — which this
+phase's own `wrangler dev` then bound **as well**, printing "Ready on
+http://127.0.0.1:8791". Windows allowed both sockets, and the **old** process
+answered every request. The first baseline drill therefore reported
+`provider=mock` with the conference odds "down" — a mock Worker with
+`SPORTS_PROVIDER_FAULT=odds`, not the real publishers. Two checks caught it:
+`/api/health`'s `provider`, and the drill's own mock labels on figures that
+should have been real. **"Is the port free" is not enough here; check what is
+answering.** The README's drill section now says so.
+
+**Under the FPI fallback a team reads `complete: true`.** The runner-up line's
+quoted zero is `known`, so with the scrape refused every line is known and the
+team is "complete", although one rubric line is, in truth, unanswered. This is
+Phase 2's deliberate choice (a quoted zero labelled `espn_fpi` rather than an
+invented figure), and the screen carries it: the line says "ESPN FPI publishes
+no runner-up odds, so this line counts nothing". But `complete` alone is not a
+signal that the whole rubric was quoted, and nothing should be built on it
+that assumes so. A drill test now pins the behaviour so a change to it is
+deliberate.
+
+### What is left
+
+1. **The owner's phone check** — read a total, open a board, open a team's row,
+   and say from the screen alone where each number came from and how old it is.
+2. **The KV counter the day after** (2026-10-03): `projection_inputs` and
+   `conference_odds` at about four writes a day each, from the cron. Nothing else
+   in the feature writes KV.
+3. **Watch `/api/projections` for `exceededCpu`** alongside the cold board.
 
 ---
 

@@ -81,3 +81,9 @@
   color: var(--color-stale);
   font-weight: 600;
 }
+
+.reference {
+  color: var(--color-ink-muted);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}

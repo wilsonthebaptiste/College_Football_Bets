@@ -4,7 +4,7 @@ How to deploy, run, and change the College Football Team Board. Written for
 the owner. Everything here is on free tiers; nothing needs a card on file.
 
 - [What runs where](#what-runs-where)
-- [Free-tier limits](#free-tier-limits) · [What team search costs](#what-team-search-costs) · [What "who has this team" costs](#what-who-has-this-team-costs)
+- [Free-tier limits](#free-tier-limits) · [What team search costs](#what-team-search-costs) · [What "who has this team" costs](#what-who-has-this-team-costs) · [What projected points costs](#what-projected-points-costs)
 - [Configuration reference](#configuration-reference)
 - [Deploying (the first time)](#deploying-the-first-time)
 - [Continuous deployment](#continuous-deployment)
@@ -26,14 +26,15 @@ the owner. Everything here is on free tiers; nothing needs a card on file.
 
 ## What runs where
 
-| Piece    | Service                         | What it holds                                                  |
-| -------- | ------------------------------- | -------------------------------------------------------------- |
-| Website  | Cloudflare Pages                | The built React app (`apps/web/dist`). Static files only       |
-| API      | Cloudflare Workers              | `apps/api`. Public reads, admin writes, the cron warmers       |
-| Cache    | Workers KV (`SPORTS_KV`)        | The durable copy of sports data, and the Supabase signing keys |
-| Database | Supabase Postgres               | People, teams, and board selections. Nothing from ESPN (§45)   |
-| Sign-in  | Supabase Auth                   | The administrator's account, and nobody else's (plan §11.1)    |
-| Sports   | ESPN's public JSON, or the mock | Read through the Worker only. The browser never calls ESPN     |
+| Piece    | Service                         | What it holds                                                                                 |
+| -------- | ------------------------------- | --------------------------------------------------------------------------------------------- |
+| Website  | Cloudflare Pages                | The built React app (`apps/web/dist`). Static files only                                      |
+| API      | Cloudflare Workers              | `apps/api`. Public reads, admin writes, the cron warmers                                      |
+| Cache    | Workers KV (`SPORTS_KV`)        | The durable copy of sports data, and the Supabase signing keys                                |
+| Database | Supabase Postgres               | People, teams, and board selections. Nothing from ESPN (§45)                                  |
+| Sign-in  | Supabase Auth                   | The administrator's account, and nobody else's (plan §11.1)                                   |
+| Sports   | ESPN's public JSON, or the mock | Read through the Worker only. The browser never calls ESPN                                    |
+| Odds     | playoffstatus.com, or the mock  | Four conference pages, scraped by the Worker for projected points. The browser never calls it |
 
 The website calls the Worker directly (`VITE_API_BASE_URL`). The Worker calls
 Supabase with the public key: as `anon` for reads, and with the
@@ -119,24 +120,66 @@ is better written down here than discovered. The same asymmetry means a
 conference curated by hand on a stored row does not appear on the provider-id
 URL.
 
+### What projected points costs
+
+Each person's expected total under the owner's scoring rubric
+([context/predicting_score.md](../context/predicting_score.md)). Three public
+routes, all with no token:
+
+| Route                               | What it answers                                                                                      |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `GET /api/projections`              | Every board's projected total, for the home page. One PostgREST request for all nine boards          |
+| `GET /api/users/:userId/projection` | One board, with each team's six rubric lines, for the panel under the board's cards                  |
+| `GET /api/teams/:teamId/projection` | One team, by either of its addresses, for the team page. By the provider's id it touches no Postgres |
+
+None of them makes a per-team provider call. Each is assembled from five
+cached reads — ESPN's FPI table, the four playoffstatus pages, the poll, the
+conference map, and the team list — plus the selections, so a nine-board
+leaderboard costs the same provider work as one board.
+
+|                               |                                                                                                                                                                                                                                     |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New KV categories             | `projection_inputs` (FPI, one ~830 KB request) and `conference_odds` (four ~25 KB pages). Both 6 h TTL, written to KV at most every 6 h: **at most four writes a day each**, eight together, and the cron does them                 |
+| The assembled answers         | `projection_board`: 2 minutes, **L1 only, never KV**. The leaderboard and each board's breakdown add nothing to the write budget                                                                                                    |
+| A cold read of both documents | **One KV write each** (measured locally, 2026-10-02: `projection_inputs 1`, `conference_odds 1`), plus `season_calendar` if that was cold too — it is shared with everything else and cron-warmed                                   |
+| CPU of a refresh              | Measured in Node on the captured payloads: the FPI table **~5.8 ms**, almost all of it `JSON.parse` on 830 KB; the four pages **~0.5 ms** together. A warm read only does the arithmetic. This is why the cron warms both documents |
+| Cache-Control                 | `public, max-age=120` when whole; `max-age=10` when one input is out of date or down; `no-store` when both publishers are down                                                                                                      |
+| How often a browser asks      | Every **5 minutes** (`POLL.projectionMs` in `apps/web/src/lib/poll.ts`), and on a board's Refresh. Never at the live-score cadence: the inputs move about once a day                                                                |
+| The courtesy budget           | Four requests to playoffstatus.com, ~100 KB, at most four times a day, by a User-Agent that names the project. `robots.txt` allows everything. See [docs/playoffstatus-notes.md](playoffstatus-notes.md)                            |
+
+**An admin write moves the projections too.** It drops three L1 keys in the
+Worker (the board, that board's projection, and the leaderboard), and in the
+admin's browser `/api/projections` is in `PUBLIC_INDEX_PATHS` and
+`/api/users/:id/projection` in `publicPathsFor`, so the administrator sees a
+changed board's projected total at once and everyone else within about two
+minutes.
+
+**A degraded answer carries its own reference.** A projection with a
+publisher down is a 200, not an error, so the reference number travels on the
+failed input itself (`sources[].error.requestId`) and the screens print it
+under the as-of line. It is the id the failure was **logged under**, which on a
+cached answer is not the id of the request being answered — search the logs for
+it, not for that response's `X-Request-Id`.
+
 ---
 
 ## Configuration reference
 
 ### The Worker (`apps/api/wrangler.toml`, `[env.production]`)
 
-| Name                         | Kind   | Value                                                                                                                |
-| ---------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
-| `SUPABASE_URL`               | secret | The project URL, `https://<ref>.supabase.co`, with no `/rest/v1`                                                     |
-| `SUPABASE_ANON_KEY`          | secret | The anon or publishable key. Public by design, but kept out of git with the URL                                      |
-| `SPORTS_PROVIDER`            | var    | `espn` in production, `mock` locally                                                                                 |
-| `ESPN_USER_AGENT`            | var    | The User-Agent sent to ESPN: `curl/8.9.1 college-football-bets/0.5`. See [The ESPN User-Agent](#the-espn-user-agent) |
-| `ALLOWED_ORIGINS`            | var    | The Pages origin, `https://cfb-board-pfc.pages.dev`. Nothing else                                                    |
-| `READ_RATE_LIMIT_PER_MINUTE` | var    | Optional. Public reads per address per minute per isolate. Default 120; `off` disables                               |
-| `SEASON_OVERRIDE`            | var    | Optional. Pins the season, e.g. `2026:regular:5`. Leave unset                                                        |
-| `LOG_LEVEL`                  | var    | `info`                                                                                                               |
-| `SPORTS_PROVIDER_FAULT`      | var    | Development only. **Never set it in production**                                                                     |
-| `SPORTS_KV`                  | KV     | The namespace id, from `wrangler kv namespace create`                                                                |
+| Name                         | Kind   | Value                                                                                                                                                                                        |
+| ---------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SUPABASE_URL`               | secret | The project URL, `https://<ref>.supabase.co`, with no `/rest/v1`                                                                                                                             |
+| `SUPABASE_ANON_KEY`          | secret | The anon or publishable key. Public by design, but kept out of git with the URL                                                                                                              |
+| `SPORTS_PROVIDER`            | var    | `espn` in production, `mock` locally                                                                                                                                                         |
+| `CONFERENCE_ODDS_PROVIDER`   | var    | `playoffstatus` in production, `mock` locally. Who publishes the conference odds projected points quotes. `mock` stops all scraping at once, and every conference line then says "Mock data" |
+| `ESPN_USER_AGENT`            | var    | The User-Agent sent to ESPN: `curl/8.9.1 college-football-bets/0.5`. See [The ESPN User-Agent](#the-espn-user-agent)                                                                         |
+| `ALLOWED_ORIGINS`            | var    | The Pages origin, `https://cfb-board-pfc.pages.dev`. Nothing else                                                                                                                            |
+| `READ_RATE_LIMIT_PER_MINUTE` | var    | Optional. Public reads per address per minute per isolate. Default 120; `off` disables                                                                                                       |
+| `SEASON_OVERRIDE`            | var    | Optional. Pins the season, e.g. `2026:regular:5`. Leave unset                                                                                                                                |
+| `LOG_LEVEL`                  | var    | `info`                                                                                                                                                                                       |
+| `SPORTS_PROVIDER_FAULT`      | var    | Development only. **Never set it in production**                                                                                                                                             |
+| `SPORTS_KV`                  | KV     | The namespace id, from `wrangler kv namespace create`                                                                                                                                        |
 
 Top-level `[vars]` are **not** inherited by `[env.production]`, which is why
 the production block restates each one. Secrets are per environment too.
@@ -385,15 +428,59 @@ And afterwards, on real ESPN data:
 | KV writes from this feature                  | **None, confirmed in production.** That isolate's ledger read `{schedule 11, prediction 5}` and was unchanged by a dozen live searches. Zero from `team_list`, `conferences` or `season_calendar` — the cron had already warmed them. **No new category** |
 | Requests and KV writes over 24 hours         | _Owner: read after 24 hours ([Watching usage](#watching-usage)). Watch `schedule`, as with the search release_                                                                                                                                            |
 
+### The projected-points release (2026-10-02)
+
+The fourth deploy: Worker version `a178469a-0453-4fc0-8cdd-5f4ad19d397f`, and
+Pages deployment `cbbac44c` to the same project. Three new public routes
+([What projected points costs](#what-projected-points-costs)) and **one
+configuration change**: `CONFERENCE_ODDS_PROVIDER` went from `mock` to
+`playoffstatus` in `[env.production.vars]`, which is the moment the deployed
+Worker started reading somebody else's web pages. No new secret, no new
+binding; wrangler's dry-run binding table showed exactly that change and
+nothing else. So: steps 5 and 7, with no step 8. Deployed by hand, as before —
+`DEPLOY_ENABLED` is still unset.
+
+Verified before deploying:
+
+| Question                                    | Answer                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `npm run verify`                            | **1073 tests in 45 files**, green; `format:check` clean                                                                                                                                                                                                                                                            |
+| The live Worker before                      | `/api/projections` was **404**: none of the feature had ever been deployed                                                                                                                                                                                                                                         |
+| `npm run smoke` against a local Worker      | **33 of 33** on the real publishers, including the three new lines: the team route, its total matching the board's breakdown, and the Top-25 line labelled as our estimate                                                                                                                                         |
+| Four fault drills, cold, on real ESPN       | `odds`, `projections`, `projections,odds`, `all`: every projection route a labelled 200 with a reference, never a `0.00`, and the board itself untouched — see the README's drill table. The one exception is documented: under `all`, the team route **by provider id** is a clean 503, like the team page itself |
+| KV writes for a cold read of both documents | **One each**: `projection_inputs 1`, `conference_odds 1`                                                                                                                                                                                                                                                           |
+
+And afterwards, on the live Worker:
+
+| Question                                       | Answer                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Did the routes arrive?                         | Yes. `/api/projections` **404 before, 200 after**, nine boards, `public, max-age=120`                                                                                                                                                                                                                                                                                     |
+| The first cron run                             | Fired within a minute of the deploy (a Saturday, UTC, so the ten-minute schedule). All **seven** warmers `ok`: FPI **138 teams rated (miss)**, odds **67 rows (miss)**. Both documents were first fetched by that cron run, off the request path                                                                                                                          |
+| Real numbers                                   | Jeremiah **11.78** down to Jon **−1.96**, all nine boards 6 of 6 — identical to the local run on the same publishers. FPI as of `2026-10-02T08:00Z`; playoffstatus still **Sun Sep 27 2:45 am** (ACC, Big Ten) and **Sat Sep 26 11:30 pm** (Big 12, SEC)                                                                                                                  |
+| `npm run smoke` against the API and the site   | **35 passed, 0 failed**, both CORS checks included                                                                                                                                                                                                                                                                                                                        |
+| `npm run verify:rls` after the release         | **44 passed, 0 failed, 0 skipped**, probe rows cleaned up                                                                                                                                                                                                                                                                                                                 |
+| The browser, against the **deployed** site     | **46 of 46** in headless Edge: totals on all nine tiles with **one** projection request, the as-of line naming both real publishers and no "mock" anywhere, no sideways scroll at 320 px with every breakdown open, 44 px summaries, axe clean light and dark at 320 and 1280 px on a board and a team page, and the both-down reference printed by the production bundle |
+| Worker CPU for the new reads (`wrangler tail`) | `/api/projections`: **0–1 ms** when the isolate holds the assembled answer, **24–39 ms** when a fresh isolate assembles it from KV (14 reads: median 7, max 39). `/api/teams/:id/projection`: median **4 ms**, max **18 ms** (13 reads). A board's breakdown, 8 ms. The cron run that fetched and parsed both documents, 29 ms. Every outcome `ok`, none `exceededCpu`    |
+| Requests and KV writes over 24 hours           | _Owner: read after 24 hours ([Watching usage](#watching-usage)). Expect `projection_inputs` and `conference_odds` at about four writes a day each, from the cron_                                                                                                                                                                                                         |
+
+**The CPU number to watch is the same one as before.** A fresh isolate's first
+leaderboard read is 24–39 ms against the documented 10 ms, the same order as a
+cold board (44 ms), and for the same reason: it parses cached documents — here
+most likely the 762-team list the name join needs — before it can answer.
+Cloudflare let every one through. If `exceededCpu` ever appears on
+`/api/projections`, the remedy is to cache the join's result (67 rows) rather
+than the whole team list on that path.
+
 ---
 
 ## Continuous deployment
 
 `.github/workflows/ci.yml` has a `deploy` job that runs after the checks pass
-on every push to `main`. It is **off** until you turn it on, and it needs a
-GitHub remote, which does not exist yet.
+on every push to `main`. It is **off** until you turn it on. The GitHub remote
+exists (since 2026-09-20) and `verify` runs on every push, so only the steps
+below are left.
 
-1. Create the repository on GitHub and push `main`.
+1. ~~Create the repository on GitHub and push `main`.~~ Done.
 2. In Cloudflare, **My Profile → API Tokens → Create Token**, template **Edit
    Cloudflare Workers**, and add **Account → Cloudflare Pages → Edit**. Scope
    it to your account.
@@ -420,10 +507,17 @@ Two schedules in `wrangler.toml` (plan §5.4, `src/cron/warm.ts`):
 | `0 * * * *`                   | Hourly; skipped when the first is also firing          |
 
 Each run refreshes, through the normal cache, whatever has expired of: the
-season calendar, the rankings, the team list, and the conference map. The fresh
+season calendar, the rankings, the team list, the conference map, and — since
+projected points — ESPN's FPI table and the four playoffstatus pages. The fresh
 copies land in KV, where every isolate finds them, so a viewer's request rarely
-has to fetch and parse ESPN. It also runs one `select` against Supabase, which
-is what keeps the free project from pausing.
+has to fetch and parse a publisher. It also runs one `select` against Supabase,
+which is what keeps the free project from pausing. That is seven warmers, and a
+`cron_warm` log line names each one's result.
+
+The two projection documents have 6-hour TTLs, so the cron refetches each at
+most four times a day however often it runs. On a game-day weekend it fires
+every ten minutes; nearly every one of those runs finds them inside their TTL
+and does nothing.
 
 It deliberately does **not** warm schedules (fifty teams hourly would be about
 1,200 KV writes a day, over the limit) or live scores (those live in one
@@ -490,6 +584,34 @@ and stale data is served, labelled, meanwhile. Fixing it is a change in
 `apps/api/src/providers/espn/` only. `npm run capture:fixtures` re-downloads
 real payloads to test against.
 
+ESPN's FPI table (the national half of projected points) is read **by column
+name**, so a reordered table still reads correctly and a renamed column is
+refused rather than read from its neighbour. Either way the three national
+lines go to `—` and the conference half stands. See `docs/espn-notes.md` §12.
+
+### When the conference odds scrape breaks
+
+playoffstatus.com is a web page, not an API, so a redesign is the likeliest
+failure this application has. It is designed to be loud and to degrade in
+labelled pieces, and **there is nothing to switch on**:
+
+1. For up to about a week, the last good copy is served, marked "may be out of
+   date", with its own old page stamps. The Worker logs
+   `cache_refresh_failed_serving_stale` with the integrity check that failed.
+2. After that, each power-four team's conference-champion line falls back to
+   ESPN FPI's own figure, labelled **ESPN FPI**, and the runner-up line reads
+   `0.00` with "ESPN FPI publishes no runner-up odds". Screens say "Couldn’t
+   load the conference odds" and print a reference.
+3. To fix it, follow [docs/playoffstatus-notes.md §8](playoffstatus-notes.md#8-when-it-breaks):
+   `npm run capture:odds`, read the manifest's row counts and sums, and change
+   `apps/api/src/providers/playoffstatus/` only.
+
+To stop scraping entirely — because the site asks, or because the fallback is
+preferred — set `CONFERENCE_ODDS_PROVIDER = "mock"` and redeploy the Worker.
+That labels every conference line "Mock data" rather than using FPI; an
+FPI-only mode does not exist yet, and would be a small provider that always
+declines.
+
 ---
 
 ## Rotating secrets
@@ -523,6 +645,10 @@ Plan §5 asks for 24 hours of normal use measured against the free tiers.
   [What team search costs](#what-team-search-costs).
 - `GET /api/health` shows this isolate's KV writes today, by category. It is a
   floor, not the total: each isolate counts only its own.
+- **After the projected-points release**, the two new categories should be
+  small and flat: `projection_inputs` and `conference_odds` at about four writes
+  a day each, nearly all from the cron. Anything more than that means the 6 h
+  KV interval is not holding. Nothing else in the feature writes KV.
 - **Usage alert.** In **Notifications → Add**, look for a Workers usage or
   daily-limit notification and point it at your email. If your plan offers
   none, check the metrics above weekly during the season: a crawl shows up as
@@ -536,18 +662,22 @@ allowlists and a site password were deliberately not built (plan §5.3).
 
 ## Troubleshooting a deployment
 
-| Symptom                                                    | Cause and fix                                                                                                                                                                                                                  |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| The site loads but every board says "Unable to load"       | `VITE_API_BASE_URL` is wrong, or `ALLOWED_ORIGINS` doesn't match the site origin exactly. The browser console shows a CORS error. Fix, redeploy, rerun smoke                                                                   |
-| Every card says "Sports data temporarily unavailable"      | ESPN is refusing the Worker. See [The ESPN User-Agent](#the-espn-user-agent). Meanwhile, `SPORTS_PROVIDER = "mock"` keeps the site working                                                                                     |
-| `/api/users` is a 500                                      | The secrets are missing: `wrangler secret list --env production`. The Worker's log names the missing one                                                                                                                       |
-| Admin sign-in says "isn't set up"                          | The site was built without `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`. Rebuild with them and redeploy                                                                                                                      |
-| `wrangler deploy` complains about the KV namespace         | `REPLACE_WITH_KV_NAMESPACE_ID` is still in `wrangler.toml` (step 2)                                                                                                                                                            |
-| `wrangler deploy` fails with error 10034                   | The Cloudflare account's email address isn't verified. Verify it from the dashboard banner, then deploy again                                                                                                                  |
-| `pages project create` fails at the workspace root         | wrangler tried the newer Workers-based Pages. Add `--force` to `project create`, once (step 7)                                                                                                                                 |
-| Worker errors with outcome `exceededCpu` (error 1102)      | A request went over the CPU limit. On a Saturday that is a cold board parsing six schedules and the scoreboard. See the plan's risk register                                                                                   |
-| Error 1027 from the Worker                                 | The daily request limit. It resets at 00:00 UTC. Check the metrics for a crawler                                                                                                                                               |
-| KV writes climbing after the search deploy                 | Look at the category in `/api/health`. `schedule` means team pages, not searching: see [What team search costs](#what-team-search-costs). Lower `READ_RATE_LIMIT_PER_MINUTE` if it does not settle                             |
-| Search says "Team information is temporarily unavailable." | ESPN's team list could not be read. It is the same read the admin console's search and the cron warmer use, so check `/api/health` and the User-Agent. A board team still shows its identity, because that comes from Postgres |
-| Everything failed after a quiet week                       | Supabase paused the project. Restore it in the dashboard, then check the cron is running (its hourly `select` should prevent this)                                                                                             |
-| A reload of `/u/…` shows a Pages 404                       | A `404.html` has appeared in `apps/web/dist`, which turns off Pages' single-page-app behaviour. Remove it                                                                                                                      |
+| Symptom                                                     | Cause and fix                                                                                                                                                                                                                  |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The site loads but every board says "Unable to load"        | `VITE_API_BASE_URL` is wrong, or `ALLOWED_ORIGINS` doesn't match the site origin exactly. The browser console shows a CORS error. Fix, redeploy, rerun smoke                                                                   |
+| Every card says "Sports data temporarily unavailable"       | ESPN is refusing the Worker. See [The ESPN User-Agent](#the-espn-user-agent). Meanwhile, `SPORTS_PROVIDER = "mock"` keeps the site working                                                                                     |
+| `/api/users` is a 500                                       | The secrets are missing: `wrangler secret list --env production`. The Worker's log names the missing one                                                                                                                       |
+| Admin sign-in says "isn't set up"                           | The site was built without `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`. Rebuild with them and redeploy                                                                                                                      |
+| `wrangler deploy` complains about the KV namespace          | `REPLACE_WITH_KV_NAMESPACE_ID` is still in `wrangler.toml` (step 2)                                                                                                                                                            |
+| `wrangler deploy` fails with error 10034                    | The Cloudflare account's email address isn't verified. Verify it from the dashboard banner, then deploy again                                                                                                                  |
+| `pages project create` fails at the workspace root          | wrangler tried the newer Workers-based Pages. Add `--force` to `project create`, once (step 7)                                                                                                                                 |
+| Worker errors with outcome `exceededCpu` (error 1102)       | A request went over the CPU limit. On a Saturday that is a cold board parsing six schedules and the scoreboard. See the plan's risk register                                                                                   |
+| Error 1027 from the Worker                                  | The daily request limit. It resets at 00:00 UTC. Check the metrics for a crawler                                                                                                                                               |
+| KV writes climbing after the search deploy                  | Look at the category in `/api/health`. `schedule` means team pages, not searching: see [What team search costs](#what-team-search-costs). Lower `READ_RATE_LIMIT_PER_MINUTE` if it does not settle                             |
+| Search says "Team information is temporarily unavailable."  | ESPN's team list could not be read. It is the same read the admin console's search and the cron warmer use, so check `/api/health` and the User-Agent. A board team still shows its identity, because that comes from Postgres |
+| Everything failed after a quiet week                        | Supabase paused the project. Restore it in the dashboard, then check the cron is running (its hourly `select` should prevent this)                                                                                             |
+| A reload of `/u/…` shows a Pages 404                        | A `404.html` has appeared in `apps/web/dist`, which turns off Pages' single-page-app behaviour. Remove it                                                                                                                      |
+| Every conference line says "ESPN FPI" and runner-ups `0.00` | The scrape has been failing for about a week. See [When the conference odds scrape breaks](#when-the-conference-odds-scrape-breaks) and `docs/playoffstatus-notes.md` §8                                                       |
+| Every conference line says "Mock data" in production        | `CONFERENCE_ODDS_PROVIDER` is `mock` in `[env.production.vars]`. Set it to `playoffstatus` and redeploy the Worker                                                                                                             |
+| Projected totals show "—" everywhere                        | Both FPI and the conference odds are down (a projection never totals our own Top-25 estimate alone). Quote the reference under the as-of line and search the Worker's logs for it                                              |
+| The projection's "as of" date is days old                   | Usually correct. playoffstatus recomputes after game days, not daily, and the screen prints the publisher's own stamp, never our read time                                                                                     |

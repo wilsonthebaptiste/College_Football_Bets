@@ -26,7 +26,7 @@ import {
   userRow,
 } from './helpers/boards';
 import { espnResponse } from './helpers/espn-stub';
-import { CAPTURED_AT, conferencePageFixture } from './helpers/fixtures';
+import { CAPTURED_AT, conferencePageFixture, fixture } from './helpers/fixtures';
 import { installSupabaseStub, testEnv, type SupabaseStub } from './helpers/supabase-stub';
 
 /**
@@ -614,7 +614,48 @@ describe('each publisher fails on its own', () => {
     // the viewer can quote when they report it.
     expect(body.freshness.state).toBe('unavailable');
     expect(response.headers.get('Cache-Control')).toBe('no-store');
-    expect(response.headers.get('X-Request-Id')).toBeTruthy();
+    // In the BODY, not only the header: a 200 is not an error, so a screen
+    // reading it has no other way to quote one (Phase 5).
+    const requestId = response.headers.get('X-Request-Id');
+    expect(requestId).toBeTruthy();
+    for (const input of ['fpi', 'conference_odds'] as const) {
+      const entry = body.sources.find((source) => source.input === input);
+      expect(entry?.error?.requestId).toBe(requestId);
+      expect(entry?.error?.kind).toBe('provider_unavailable');
+    }
+  });
+
+  /**
+   * The reference is only worth quoting if it leads to a log line. The board
+   * and leaderboard answers are cached for two minutes, so the request being
+   * answered may have logged nothing; the reference must be the one the
+   * failure was logged under, whichever request reads it.
+   */
+  it('quotes a reference that a logged failure carries, even from a cached answer', async () => {
+    stubWith();
+    const env = testEnv({ SPORTS_PROVIDER_FAULT: 'odds' });
+    const path = `/api/users/${WILSON_ID}/projection`;
+    const first = await get<BoardProjectionResponse>(path, env, { 'x-request-id': 'req-first' });
+    const second = await get<BoardProjectionResponse>(path, env, { 'x-request-id': 'req-second' });
+
+    // `console.warn` is spied for the whole file (see `beforeEach`).
+    const logged = new Set(
+      vi
+        .mocked(console.warn)
+        .mock.calls.map(
+          ([line]) => JSON.parse(String(line)) as { event?: string; requestId?: string },
+        )
+        .filter((entry) => entry.event?.startsWith('cache_refresh_failed') === true)
+        .map((entry) => entry.requestId),
+    );
+    for (const { body } of [first, second]) {
+      const odds = body.sources.find((source) => source.input === 'conference_odds');
+      expect(odds?.error?.requestId).toBeTruthy();
+      expect(logged.has(odds?.error?.requestId ?? undefined)).toBe(true);
+      // Inputs that did not fail carry nothing to quote.
+      const fpi = body.sources.find((source) => source.input === 'fpi');
+      expect(fpi?.error).toBeNull();
+    }
   });
 
   it('answers the leaderboard with both publishers down, with no totals rather than zeros', async () => {
@@ -696,24 +737,49 @@ describe('end to end on real data', () => {
     return testEnv({ SPORTS_PROVIDER: 'espn', CONFERENCE_ODDS_PROVIDER: 'playoffstatus' });
   }
 
+  /**
+   * Both publishers answering with their real captures, except where a drill
+   * swaps one out: `pages` replaces a conference's HTML, `fpi` the FPI JSON.
+   */
+  function installReal(changed: { pages?: Record<string, string>; fpi?: unknown } = {}): void {
+    stub = installSupabaseStub({
+      appUsers: [SEC_BOARD],
+      teams: ALL_TEAM_ROWS,
+      external: (url) => {
+        if (url.hostname.endsWith('playoffstatus.com')) {
+          const conference = conferenceOfPage(url.pathname);
+          return new Response(changed.pages?.[conference] ?? conferencePageFixture(conference), {
+            status: 200,
+            headers: { 'Content-Type': 'text/html' },
+          });
+        }
+        return espnResponse(url, {
+          override: (candidate) =>
+            changed.fpi !== undefined && candidate.pathname.endsWith('/powerindex')
+              ? new Response(JSON.stringify(changed.fpi), {
+                  status: 200,
+                  headers: { 'Content-Type': 'application/json' },
+                })
+              : null,
+        });
+      },
+    });
+  }
+
   beforeEach(() => {
     // The ESPN fixtures' own moment, so "this season" means what it meant when
     // they were captured. The conference pages were captured a fortnight later;
     // their stamps are strings we display and never parse, so nothing here
     // depends on the two dates agreeing.
     vi.setSystemTime(new Date(CAPTURED_AT));
-    stub = installSupabaseStub({
-      appUsers: [SEC_BOARD],
-      teams: ALL_TEAM_ROWS,
-      external: (url) =>
-        url.hostname.endsWith('playoffstatus.com')
-          ? new Response(conferencePageFixture(conferenceOfPage(url.pathname)), {
-              status: 200,
-              headers: { 'Content-Type': 'text/html' },
-            })
-          : espnResponse(url, {}),
-    });
+    installReal();
   });
+
+  /** Swaps the default captures for a drill's changed ones. */
+  function changeUnderUs(changed: { pages?: Record<string, string>; fpi?: unknown }): void {
+    stub.restore();
+    installReal(changed);
+  }
 
   it('projects a real board from both publishers’ own captured payloads', async () => {
     const { response, body } = await get<BoardProjectionResponse>(
@@ -757,6 +823,118 @@ describe('end to end on real data', () => {
     // being checked here is that two real payloads reach a total at all.
     expect(body.board.total!.value).toBeGreaterThan(0);
     expect(body.board.teamsCounted).toBe(6);
+  });
+
+  // ─── Phase 5's drills: a publisher changes its page under us ──────────────
+  //
+  // The parser refuses each of these on its own (`providers/playoffstatus.test.ts`,
+  // `espn/fpi.test.ts`). What is drilled here is the whole answer: that a
+  // refusal reaches the screen as a labelled, 200-level degradation carrying a
+  // reference, with the other publisher's half intact — and never as a 0.00.
+
+  /** What every one of the three drills must hold, whichever half it breaks. */
+  function expectLabelledDegradation(
+    response: Response,
+    body: BoardProjectionResponse,
+    broken: 'fpi' | 'conference_odds',
+  ): void {
+    expect(response.status).toBe(200);
+    expect(body.freshness.state).toBe('stale');
+    expect(response.headers.get('Cache-Control')).toBe('public, max-age=10');
+
+    const entry = body.sources.find((source) => source.input === broken);
+    expect(entry?.freshness.state).toBe('unavailable');
+    // A redesign will not fix itself on a retry: invalid, not an outage.
+    expect(entry?.error?.kind).toBe('provider_invalid_response');
+    expect(entry?.error?.requestId).toBe(response.headers.get('X-Request-Id'));
+
+    // Every team still has a total, and nothing reads as a confident zero.
+    expect(body.board.teamsCounted).toBe(6);
+    expect(body.board.total).not.toBeNull();
+    for (const team of body.teams) {
+      expect(team.projection.total, team.team.name).not.toBeNull();
+      expect(team.projection.total?.display, team.team.name).not.toBe('0.00');
+    }
+  }
+
+  /** The conference half, after the scrape is refused: FPI's figure, labelled as FPI's. */
+  function expectFpiStandsInForTheScrape(body: BoardProjectionResponse): void {
+    for (const team of body.teams) {
+      const kind = (name: string) => team.projection.terms.find((term) => term.kind === name);
+      expect(kind('national_champion')?.source).toBe('espn_fpi');
+      expect(kind('conference_champion')?.state).toBe('known');
+      expect(kind('conference_champion')?.source).toBe('espn_fpi');
+      // FPI publishes no runner-up figure: a quoted zero, labelled, not invented.
+      expect(kind('conference_runner_up')?.contribution?.value).toBe(0);
+      expect(kind('conference_runner_up')?.source).toBe('espn_fpi');
+      // `playoffstatus` appears on no term at all once its document is refused.
+      expect(team.projection.terms.some((term) => term.source === 'playoffstatus')).toBe(false);
+      // Every line is `known`, so the team reads `complete` — the runner-up's
+      // quoted zero counts as known. The line's own words ("ESPN FPI publishes
+      // no runner-up odds") are what tell a viewer it is not the whole rubric.
+      expect(team.projection.complete).toBe(true);
+    }
+  }
+
+  it('drill: a redesigned conference page is refused, and FPI stands in, labelled', async () => {
+    changeUnderUs({
+      pages: { SEC: '<html><body><h1>SEC Football</h1><p>Coming soon.</p></body></html>' },
+    });
+    const { response, body } = await get<BoardProjectionResponse>(
+      `/api/users/${SEC_BOARD_ID}/projection`,
+      realEnv(),
+    );
+    expectLabelledDegradation(response, body, 'conference_odds');
+    expectFpiStandsInForTheScrape(body);
+  });
+
+  it('drill: a conference page with a row dropped is refused, not half-read', async () => {
+    const dropped = conferencePageFixture('SEC').replace(
+      /<tr>\s*<td class="tblteam"><a href="texasstandings\.html">Texas<\/a><\/td>[\s\S]*?<\/tr>/i,
+      '',
+    );
+    expect(dropped).not.toContain('texasstandings.html');
+    changeUnderUs({ pages: { SEC: dropped } });
+
+    const { response, body } = await get<BoardProjectionResponse>(
+      `/api/users/${SEC_BOARD_ID}/projection`,
+      realEnv(),
+    );
+    // Not "fifteen SEC teams with odds and Texas with none": the whole document
+    // is refused, so no team is paid from a table that is known to be wrong.
+    expectLabelledDegradation(response, body, 'conference_odds');
+    expectFpiStandsInForTheScrape(body);
+  });
+
+  it('drill: a renamed FPI column is refused, and the scrape’s half stands', async () => {
+    const fpi = fixture('fpi') as Record<string, unknown>;
+    const categories = fpi['categories'] as Array<Record<string, unknown>>;
+    const names = categories.find((category) => category['name'] === 'fpi')!['names'] as string[];
+    names[names.indexOf('probwintitle')] = 'probwinnatty';
+    changeUnderUs({ fpi });
+
+    const { response, body } = await get<BoardProjectionResponse>(
+      `/api/users/${SEC_BOARD_ID}/projection`,
+      realEnv(),
+    );
+    expectLabelledDegradation(response, body, 'fpi');
+
+    for (const team of body.teams) {
+      expect(team.projection.complete, team.team.name).toBe(false);
+      const terms = team.projection.terms;
+      // FPI's three lines are FPI's and nobody else's: gone, not borrowed.
+      for (const kind of ['national_champion', 'national_runner_up', 'playoff']) {
+        const term = terms.find((candidate) => candidate.kind === kind);
+        expect(term?.state, `${team.team.name} ${kind}`).toBe('unavailable');
+        expect(term?.contribution).toBeNull();
+      }
+      // The conference half is the scrape's, untouched.
+      expect(
+        terms
+          .filter((term) => term.kind.startsWith('conference_'))
+          .every((term) => term.state === 'known' && term.source === 'playoffstatus'),
+      ).toBe(true);
+    }
   });
 });
 

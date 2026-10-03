@@ -205,7 +205,11 @@ check(
 );
 for (const source of projections.body?.sources ?? []) {
   const stamp = source.computedLabel ?? source.pages?.[0]?.computedLabel ?? 'none';
-  console.log(`      ${source.input}: ${source.freshness.state}, as of ${stamp}`);
+  const label = source.source === null ? '' : ` (${source.source})`;
+  const reference = source.error?.requestId ? `, reference ${source.error.requestId}` : '';
+  console.log(
+    `      ${source.input}${label}: ${source.freshness.state}, as of ${stamp}${reference}`,
+  );
 }
 
 const projected = withTotal[0] ?? boards[0];
@@ -254,6 +258,40 @@ if (projected !== undefined) {
     '  Cache-Control set',
     breakdown.headers.get('cache-control') ?? '',
   );
+  // The one number this application models is labelled as ours, in every mode:
+  // the finish line must never wear a publisher's name (§46). This is the label
+  // Phase 3 found wearing ESPN's, and mock mode alone could not have shown it.
+  const finishSources = new Set(
+    entries
+      .flatMap((entry) => entry.projection.terms)
+      .filter((term) => term.kind === 'final_ranking' && term.source !== null)
+      .map((term) => term.source),
+  );
+  check(
+    [...finishSources].every((source) =>
+      ['espn_poll_estimate', 'mock_projection'].includes(source),
+    ),
+    '  the Top-25 line is labelled as our estimate, never a publisher’s',
+    [...finishSources].join(', ') || 'no finish line known',
+  );
+
+  // The team page's own read (Phase 4), by the provider's id: no database
+  // request on that path, and the same total the board's breakdown gives.
+  const first = entries.find((entry) => entry.projection.total !== null) ?? entries[0];
+  if (first !== undefined) {
+    const providerId = first.team.providerTeamId;
+    const single = await get(`/api/teams/${providerId}/projection`);
+    check(
+      single.status === 200 && single.body?.projection?.terms?.length === 6,
+      `GET /api/teams/${providerId}/projection`,
+      `${single.body?.team?.name ?? '?'}, ${single.ms} ms`,
+    );
+    check(
+      single.body?.projection?.total?.display === first.projection.total?.display,
+      '  the same total the board’s breakdown gives',
+      `${single.body?.projection?.total?.display ?? 'none'} and ${first.projection.total?.display ?? 'none'}`,
+    );
+  }
 }
 
 const shortQuery = await get('/api/search/teams?q=a');

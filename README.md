@@ -7,12 +7,13 @@ was learned, what is deployed, and what is left. The original specification and
 the phase-by-phase build plan are archived in
 [context/archive/](context/archive/).
 
-**Status: the five build phases are complete and team search is deployed. The
-site is live at <https://cfb-board-pfc.pages.dev>, on real ESPN data, and you
-can now look up any team the provider lists, not only the 54 on boards** (see
-[Testing the search](#testing-the-search-on-your-machine)). What is still
-outstanding is yours: 24 hours of usage numbers (see
-[Testing Phase 5](#testing-phase-5-on-your-machine) and
+**Status: the five build phases are complete, and team search and projected
+points are deployed. The site is live at <https://cfb-board-pfc.pages.dev>, on
+real ESPN data; you can look up any team the provider lists, and every board
+now shows each person's projected points under the owner's scoring rules** (see
+[Testing projected points](#testing-projected-points)). What is still
+outstanding is yours: 24 hours of usage numbers and a look on your phone (see
+[Testing projected points](#testing-projected-points), Level C, and
 [docs/ops.md](docs/ops.md)). The website has a home page listing every board,
 each person's board of six team cards, a full team page (rank, record, the
 live game, the previous and next games, the matchup prediction, and the whole
@@ -32,11 +33,14 @@ the page.
 packages/shared/     Types and pure logic shared by the API and the browser
 apps/api/            Cloudflare Worker: the application API
   src/               Router, middleware, auth, database client
-    providers/       ESPN adapter, mock provider, fault injection
+    providers/       ESPN adapter, playoffstatus.com scrape, mock providers,
+                     fault injection
     cache/           TTL policy, the three cache tiers, stale-while-revalidate
-    services/        Board, team, game, and search logic
-    cron/            Cron warmers (calendar, rankings, team list, conferences)
-  test/              Tests, plus test/fixtures/espn/ (20 real ESPN payloads)
+    services/        Board, team, game, search, and projection logic
+    cron/            Cron warmers (calendar, rankings, team list, conferences,
+                     FPI, conference odds)
+  test/              Tests, plus test/fixtures/espn/ (21 real ESPN payloads) and
+                     test/fixtures/playoffstatus/ (the four scraped pages)
 apps/web/            The website: React + Vite + TypeScript
   src/app/           Routes, page frame, not-found page
   src/features/      home (board picker), board (cards), team (detail, schedule,
@@ -50,8 +54,9 @@ supabase/            SQL migrations, RLS policies, seed data, and test/ (the
                      security model, verb by verb, on real Postgres)
 scripts/             ESPN fixture capture, RLS verifier, season-literal check,
                      bundle secret scan, smoke test for a running Worker
-docs/                espn-notes.md (API findings), supabase-setup.md (setup
-                     guide), ops.md (deploying and running it)
+docs/                espn-notes.md (API findings), playoffstatus-notes.md (the
+                     scrape), supabase-setup.md (setup guide), ops.md
+                     (deploying and running it)
 context/             project-notes.md (the whole project, distilled), and
                      archive/ (the original spec and the build plan)
 ```
@@ -73,6 +78,7 @@ Run all of these from the repo root.
 | `npm run smoke -- <url>`   | Read-only checks against a running Worker, local or deployed          |
 | `npm run check:bundle`     | Fails if a privileged key is in the built Worker or site              |
 | `npm run capture:fixtures` | Re-downloads ESPN sample payloads                                     |
+| `npm run capture:odds`     | Re-downloads the four playoffstatus pages and ESPN's conference map   |
 | `npm run format`           | Auto-formats all code                                                 |
 
 ---
@@ -1291,6 +1297,193 @@ completion notes in
 
 ---
 
+## Testing projected points
+
+Each person's **projected points**: the expected value of their six teams under
+the owner's scoring rubric (national champion 5, runner-up 4, playoff 3,
+power-four conference champion 3 and runner-up 2, Top-25 finish +1, unranked
+−1). A total sits beside each name on the home page, a breakdown panel sits
+under a board's cards, and the same six lines are on every team page. The plan,
+the rubric, and every phase's notes are in
+[context/predicting_score.md](context/predicting_score.md).
+
+It is arithmetic over two publishers' probabilities — **ESPN FPI** for the
+national lines and **playoffstatus.com** for the conference lines — plus one
+number that is ours, the chance of a Top-25 finish, estimated from the current
+poll and labelled "Our estimate" wherever it appears. It is never called
+"live": its inputs move about once a day, and the screens print each
+publisher's own stamp.
+
+**Restart both servers first** (`npm run dev`, `npm run dev:web`), and read the
+terminal for the ports they actually take.
+
+**Worth knowing before you test:**
+
+- **In mock mode every figure says "Mock data"**, and the as-of line says
+  "mock data: synthetic figures, not from any publisher". That is the mock
+  publishers being honest about themselves, not a bug. Level B3 runs the real
+  ones.
+- **In mock mode some boards count fewer than six teams** ("from 4 of 6
+  teams"). Local development reads the live database's real nine boards, and the
+  mock season does not know every real team. On real data all nine boards are
+  6 of 6.
+- **`—` and `0.00` are different claims.** `—` means nobody could say (a
+  publisher is down, or does not cover the team). `0.00` with "Not in a
+  power-four conference" means the rubric cannot pay that line. They never look
+  alike.
+- **The rows will not always add up to the total by a cent.** Totals are summed
+  before rounding, and the panel says so.
+- **The as-of line on the home page is long** on real data: playoffstatus
+  recomputes its four pages in two batches, and each stamp is printed with the
+  conferences it covers. A team page shows only its own conference's stamp.
+
+### Level A — Automated checks
+
+```powershell
+npm run verify
+```
+
+The result should be **45 test files and 1073 tests**. Projected points added
+252 to the 821 before it, in five phases:
+
+- **The rubric** (58). The scoring table as data, the expected-points
+  arithmetic, and the Top-25 estimate, in `packages/shared`. At the end of the
+  season it must produce the rubric's own integers exactly (12, 11, −1); its
+  bounds hold over 2,500 randomized inputs; and the plan's eight real teams of
+  2026-09-30 reproduce their published totals.
+- **The two publishers** (79). ESPN's FPI table read by column **name**, so a
+  reordered table still reads and a renamed column is refused; the four
+  conference pages parsed, held to a row count and two column sums, and joined
+  to team ids in both directions; mock equivalents labelled as mock; cache rows
+  and cron warmers.
+- **The three routes** (24 at first). One database read for nine boards, every
+  way of losing an input degrading in a labelled piece, never a `0.00` and never
+  a 500, and the board response byte-identical to before.
+- **The screens** (86). Every state of all three — loading, failed, a 429, one
+  publisher down, both down, a team nobody publishes about, a board with no
+  teams — with one `<h1>` and no raw value in seen or spoken text.
+- **Phase 5** (5): a degraded answer quotes the reference its failure was
+  logged under, even from a cached answer, and three drills drive a **changed
+  page** through the route on the real captured payloads — a redesigned
+  conference page, a conference page with a row dropped, and a renamed FPI
+  column.
+
+### Level B — The website (mock data)
+
+Open <http://localhost:5173>.
+
+1. **The home page.** Every tile has a total under the name, in smaller, quieter
+   type than a score. Under the grid: "Expected points from the published odds,
+   using the board’s scoring rules. Not a result." and a line beginning
+   "Projection ·". With the Network tab open, a reload makes **one**
+   `/api/projections` request.
+2. **A board.** Under the six cards (not above them), **Projected points** and
+   the board's total, then one row per team. Press a row: it opens to six lines,
+   each reading number, then what it means, then who said so.
+3. **The finish line.** Every team's last line is **Final Top 25**, signed
+   (`+0.83`, `−0.51`), with its chance to finish ranked and "+1 if it does, −1
+   if not".
+   It is the only line that can be negative.
+4. **A team page.** Press a card. The same six lines sit beside the matchup
+   prediction, and the as-of line shows this team's conference only.
+5. **An admin change moves it.** Sign in at `/login`, add a team to a board,
+   then open that board: the projected total has moved at once.
+6. **Phone width.** At 320 px, open every row on a board: nothing scrolls
+   sideways, and each row's summary is at least 44 px tall.
+
+### Level B2 — Break things on purpose
+
+Each drill needs the fault **armed and reachable**: set it with `--var`, not as
+a shell variable, and give it a state directory of its own, or a warm cache
+answers and the drill looks like it passed. Stop `npm run dev`, then in
+`apps/api`:
+
+```powershell
+npx wrangler dev --port 8787 --persist-to .wrangler/drill-odds --var SPORTS_PROVIDER_FAULT:odds
+```
+
+On 8787 the website's dev server reaches it as usual. Use a new
+`--persist-to` directory for each drill. The four drills that matter, and what
+each produces:
+
+| `SPORTS_PROVIDER_FAULT` | What you should see                                                                                                                                                                                                                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `odds`                  | Totals still on every board. Each power-four team's **Conference champion** line now says **ESPN FPI**, and **Conference runner-up** reads `0.00` with "ESPN FPI publishes no runner-up odds". "Couldn’t load the conference odds." and a **Reference**. The board's cards are untouched |
+| `projections`           | The three national lines are `—`. The conference lines stand, from playoffstatus.com. The finish line stays for a ranked team and is `—` for an unranked one (its FPI rank is gone). Some boards count fewer teams                                                                       |
+| `projections,odds`      | **No total anywhere**, and no `0.00` total: every tile says no projected total. A ranked team still shows its finish line, which is ours, but our estimate alone never makes a total. "Couldn’t load ESPN FPI and the conference odds." and a **Reference**                              |
+| `all`                   | The same, with the finish line gone too. The board's own cards are also unavailable, because `all` takes schedules down                                                                                                                                                                  |
+
+**`all` is not the worst case for the projection; `projections,odds` is.**
+`all` also takes the poll down, which hides the case where our own estimate is
+the only thing left standing. Drill both.
+
+The reference under a degraded projection is the id its failure was **logged
+under** — search the Worker's output for it. On a cached answer it is not the
+`X-Request-Id` of the response you are looking at.
+
+**Check the Worker answering is the one you started.** Read `/api/health`'s
+`provider` first. On Windows a second `workerd` can bind a port an older one
+still holds, and the **older** one keeps answering — wrangler prints "Ready" all
+the same. A Worker left over from an earlier session spoiled the first drill of
+Phase 5 exactly this way. `Get-NetTCPConnection -State Listen` lists every
+listener and its process; stop old `workerd` processes before drilling.
+
+### Level B3 — The real publishers, on your machine
+
+```powershell
+npx wrangler dev --port 8795 --persist-to .wrangler/real --var SPORTS_PROVIDER:espn CONFERENCE_ODDS_PROVIDER:playoffstatus "ESPN_USER_AGENT:curl/8.9.1 college-football-bets/0.5"
+```
+
+(In `apps/api`. Put all three in one `--var` list.) This reads ESPN's FPI table
+and the four playoffstatus pages once each, then caches them for six hours —
+please do not run it in a loop; it is somebody's website. `/api/health` should
+say `"provider":"espn"`, every board should be 6 of 6, and the lines should say
+**ESPN FPI**, **playoffstatus.com**, and **Our estimate, from the current
+poll** — never "Mock data".
+
+### Level C — The live site
+
+Deployed 2026-10-02. Smoke is 35/35, `verify:rls` is 44/44, and 46 browser
+checks pass against the deployed site; what is left here is yours.
+
+1. **On your phone.** Open <https://cfb-board-pfc.pages.dev>. Read a total on
+   the home page, open that person's board, scroll past the cards, and open a
+   team's row. From the screen alone you should be able to say where each number
+   came from (ESPN FPI, playoffstatus.com, or our estimate) and how old it is
+   (the "as of" line).
+2. **Smoke.**
+
+   ```powershell
+   npm run smoke -- https://cfb-api.cfb-api.workers.dev https://cfb-board-pfc.pages.dev
+   ```
+
+   Every line should pass, including the projection lines: the leaderboard, a
+   breakdown whose lines sum to its total, the Top-25 line labelled as our
+   estimate, and the team route agreeing with the breakdown. It also prints each
+   input with its label — `conference_odds (playoffstatus)` means the scrape is
+   live; `(mock_projection)` means `CONFERENCE_ODDS_PROVIDER` is still `mock`.
+
+3. **The day after.** Look at the KV write counter
+   ([Watching usage](docs/ops.md#watching-usage)). `projection_inputs` and
+   `conference_odds` should be about four writes a day each, from the cron.
+
+### Projected points exit criteria and how each is checked
+
+| Exit criterion (predicting_score.md, Phase 5)                                       | Checked by         | Status                                                    |
+| ----------------------------------------------------------------------------------- | ------------------ | --------------------------------------------------------- |
+| `npm run verify` green; smoke green against the deployed Worker; `verify:rls` 44/44 | Level A, Level C 2 | ✅ 1073 tests · ✅ smoke 35/35 · ✅ 44/44                 |
+| Every drill a labelled 200-level degradation with a reference, and none a `0.00`    | Level A, Level B2  | ✅ automated · ✅ four drills on the real runtime         |
+| A redesigned page, a renamed FPI column, a dropped conference row                   | Level A            | ✅ automated, through the route on real captures          |
+| From the screen alone, where each number came from and how old it is                | Level B, Level C 1 | ✅ automated browser run on the live site · ⏳ your phone |
+| `docs/ops.md` records the measured KV writes and CPU for the new reads              | docs/ops.md        | ✅ recorded at the release · ⏳ 24-hour numbers           |
+
+"Automated browser run" means 46 checks in headless Edge against the
+**deployed** site on the real publishers, including axe in light and dark at 320
+and 1280 px with every breakdown open. Details are in the Phase 5 completion
+notes in [context/predicting_score.md](context/predicting_score.md).
+
+---
+
 ## Troubleshooting
 
 | Problem                                                         | Fix                                                                                                                                                                                                                                                                                            |
@@ -1314,6 +1507,8 @@ completion notes in
 | No **Picked by** line on a team you expected one on             | Most of the ~762 teams are on nobody's board. Check `/api/selections` directly: if the team's provider id is not a key in it, nobody has it. If the whole answer is `{"owners":{}}`, the database is empty or every row is in another provider's namespace                                     |
 | The names under a search result are people you do not recognise | Local development runs against the **live** database, whose nine boards are the real people — not the nine placeholders in `supabase/seed.sql`. Not a bug                                                                                                                                      |
 | A fault drill "passes" — search still works with the fault set  | Two ways to arm it wrong. Set it with `npx wrangler dev --var SPORTS_PROVIDER_FAULT:teams`, not as a shell variable, and check wrangler's startup binding list names it; then delete `apps\api\.wrangler\state`, or the day-old cached team list answers without the provider ever being asked |
+| Every projected figure says "Mock data"                         | Expected in local development: both publishers default to `mock`. Level B3 of [Testing projected points](#testing-projected-points) runs the real ones                                                                                                                                         |
+| A projection drill "passes" with the fault set                  | Either the fault is not armed (use `--var`, and check the startup binding list) or not reachable (give it its own `--persist-to`). Or another Worker is answering: read `/api/health`'s `provider` and check `Get-NetTCPConnection -State Listen` for an old `workerd`                         |
 | Anything about deploying                                        | See the troubleshooting table at the end of [docs/ops.md](docs/ops.md#troubleshooting-a-deployment)                                                                                                                                                                                            |
 
 For database-side problems, the full table is at the bottom of

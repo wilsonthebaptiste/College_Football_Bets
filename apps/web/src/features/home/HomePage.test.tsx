@@ -169,6 +169,7 @@ describe('a failed or slow projection costs the page nothing (§42)', () => {
     );
     expect(tile(markup, ID.avery)).toBe('Avery 6 teams No projected total');
     expect(seen).toContain('Couldn’t load ESPN FPI and the conference odds.');
+    expect(seen).toContain('Reference: req-input-down');
     expect(seen).not.toContain('0.00');
   });
 

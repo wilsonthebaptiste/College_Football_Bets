@@ -75,7 +75,7 @@ export function ProjectionNote({
   withEstimateNote = false,
   className,
 }: ProjectionNoteProps) {
-  const { asOf, problems } = provenance(sources, conference);
+  const { asOf, problems, reference } = provenance(sources, conference);
   return (
     <div className={cx(styles.note, className)}>
       <p>{PROJECTION_MEANING}</p>
@@ -86,6 +86,7 @@ export function ProjectionNote({
           {problem}
         </p>
       ))}
+      {reference !== null && <p className={styles.reference}>Reference: {reference}</p>}
     </div>
   );
 }

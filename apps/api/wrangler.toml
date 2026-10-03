@@ -96,12 +96,13 @@ workers_dev = true
 
 [env.production.vars]
 SPORTS_PROVIDER = "espn"
-# Projected points' conference half. Set to "playoffstatus" when Phase 3's
-# routes ship; until then nothing reads it, and leaving it "mock" means the
-# deployed Worker is not yet scraping anybody. robots.txt permits it
+# Projected points' conference half, live since the projected-points release
+# (predicting_score.md, Phase 5). robots.txt permits it
 # (docs/playoffstatus-notes.md), the four pages are read at most four times a
-# day behind a 6 h cache, and the cron warms them off the request path.
-CONFERENCE_ODDS_PROVIDER = "mock"
+# day behind a 6 h cache, and the cron warms them off the request path. Set it
+# back to "mock" to stop scraping at once: every conference line then says
+# "Mock data", which is honest, and nothing else changes.
+CONFERENCE_ODDS_PROVIDER = "playoffstatus"
 # The deployed Pages origin. Nothing else.
 ALLOWED_ORIGINS = "https://cfb-board-pfc.pages.dev"
 LOG_LEVEL = "info"

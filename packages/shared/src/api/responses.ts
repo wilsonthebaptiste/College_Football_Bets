@@ -215,6 +215,16 @@ export interface ProjectionInputStatus {
    * on real data is the exceptional case rather than the normal one.
    */
   pages: ProjectionPageStamp[];
+  /**
+   * Why the read failed, with the reference it was logged under (§38). `null`
+   * unless the read broke: a stale copy carries none, because nothing was lost.
+   *
+   * Per input rather than one id per response, and deliberately so. The board
+   * and leaderboard answers are cached for two minutes, so the id of the request
+   * being answered may have no log line at all; the failure was logged by the
+   * request that tried the read, and this is that request's id.
+   */
+  error: AppError | null;
 }
 
 /**

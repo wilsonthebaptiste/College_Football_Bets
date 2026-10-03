@@ -230,6 +230,8 @@ describe('every state renders cleanly, with one h1 and no raw value', () => {
     const text = visibleText(panel);
     expect(text).toContain('No projected total.');
     expect(text).toContain('Couldn’t load ESPN FPI and the conference odds.');
+    // A 200 that knows nothing still quotes the reference its failure was logged under.
+    expect(text).toContain('Reference: req-input-down');
     expect(text).not.toMatch(/\d\.\d\d/);
     expect(rows(panel)[0]).toBe('— Texas not projected');
     expect(markup.match(/<article/g)).toHaveLength(6);

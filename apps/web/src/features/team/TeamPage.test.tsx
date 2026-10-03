@@ -669,6 +669,7 @@ describe('projected points: the same lines a board opens to, for one team', () =
     expect(panel).toContain('No projection for this team');
     expect(panel).toContain('Its sources couldn’t be loaded.');
     expect(panel).toContain('Couldn’t load ESPN FPI and the conference odds.');
+    expect(panel).toContain('Reference: req-input-down');
     expect(panel).not.toMatch(/\d\.\d\d projected points/);
   });
 

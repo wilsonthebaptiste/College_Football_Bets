@@ -171,10 +171,34 @@ describe('provenance — "Projection · as of …"', () => {
   });
 
   it('says when an input is being served from an older copy', () => {
-    const { problems } = provenance(
+    const { problems, reference } = provenance(
       projectionSources({ rankings: { freshness: freshness('stale') } }),
     );
     expect(problems).toEqual(['The poll may be out of date.']);
+    // A stale copy lost nothing, so there is no failure to quote.
+    expect(reference).toBeNull();
+  });
+
+  /**
+   * Phase 5's exit criterion: every drill is a labelled degradation "with a
+   * reference number". A 200 has no error body, so the reference travels on the
+   * failed input itself — the id the failure was logged under.
+   */
+  it('quotes the reference a failed input was logged under', () => {
+    expect(provenance(projectionSources()).reference).toBeNull();
+    expect(
+      provenance(projectionSources({ conference_odds: inputDown('req-odds') })).reference,
+    ).toBe('req-odds');
+    // Both down: one reference, the first failed input's.
+    expect(
+      provenance(
+        projectionSources({ fpi: inputDown('req-fpi'), conference_odds: inputDown('req-odds') }),
+      ).reference,
+    ).toBe('req-fpi');
+    // A failure with no id to quote (a cron-built read) is still named, just not referenced.
+    const unreferenced = provenance(projectionSources({ fpi: inputDown(null) }));
+    expect(unreferenced.problems).toHaveLength(1);
+    expect(unreferenced.reference).toBeNull();
   });
 
   /**

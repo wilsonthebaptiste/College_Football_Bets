@@ -554,6 +554,11 @@ shape makes a silent wrong answer easy.
 - **`lastUpdated` is a daily morning recompute** (observed `08:00Z` two days
   running). It is carried verbatim to the screen; a projection is never called
   "live", because its inputs move about once a day.
+- **The deployed Worker reads it too**, with production's `ESPN_USER_AGENT` and
+  no headers of its own: the first cron run after the projected-points release
+  (2026-10-02) reported "138 teams rated", and production's totals matched a
+  local run to the cent. Parsing it costs ~5.8 ms in Node, almost all of it
+  `JSON.parse` on 830 KB, which is why the cron, not a viewer, refreshes it.
 
 ### The columns are positional, and that is the trap
 

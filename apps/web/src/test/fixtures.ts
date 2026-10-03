@@ -483,6 +483,7 @@ export function projectionSources(overrides: SourceOverrides = {}): ProjectionIn
     freshness: freshness('cached'),
     computedLabel,
     pages,
+    error: null,
     ...overrides[input],
   });
   return [
@@ -499,9 +500,23 @@ export function projectionSources(overrides: SourceOverrides = {}): ProjectionIn
   ];
 }
 
-/** An input that could not be read at all. */
-export function inputDown(): Partial<ProjectionInputStatus> {
-  return { freshness: freshness('unavailable'), computedLabel: null, pages: [] };
+/**
+ * An input that could not be read at all, carrying the reference its failure
+ * was logged under — as every failed read in a request does.
+ */
+export function inputDown(
+  requestId: string | null = 'req-input-down',
+): Partial<ProjectionInputStatus> {
+  return {
+    freshness: freshness('unavailable'),
+    computedLabel: null,
+    pages: [],
+    error: {
+      kind: 'provider_unavailable',
+      message: 'Sports data temporarily unavailable.',
+      requestId,
+    },
+  };
 }
 
 /**

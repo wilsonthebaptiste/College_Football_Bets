@@ -1,4 +1,5 @@
 import type {
+  AppError,
   BoardProjectionResponse,
   BoardProjectionSummary,
   ConferenceStanding,
@@ -300,14 +301,26 @@ function estimateSourceFor(services: Services): ProjectionSource {
   return services.provider.name === 'mock' ? 'mock_projection' : 'espn_poll_estimate';
 }
 
+/**
+ * One input's entry. `envelope.error` travels with it, so a failed read keeps
+ * the reference it was logged under — the only id a degraded 200 can quote,
+ * since a cached composite answers later requests that logged nothing.
+ */
 function sourceEntry(
   input: ProjectionInputName,
   source: ProjectionSource | null,
-  freshness: Freshness,
+  envelope: { freshness: Freshness; error: AppError | null },
   computedLabel: string | null,
   pages: ProjectionInputStatus['pages'] = [],
 ): ProjectionInputStatus {
-  return { input, source, freshness, computedLabel, pages };
+  return {
+    input,
+    source,
+    freshness: envelope.freshness,
+    computedLabel,
+    pages,
+    error: envelope.error,
+  };
 }
 
 /**
@@ -366,16 +379,11 @@ export async function readProjectionSources(services: Services): Promise<Project
     oddsSource,
     estimateSource,
     sources: [
-      sourceEntry(
-        'fpi',
-        fpiSource,
-        fpiRead.envelope.freshness,
-        fpiRead.envelope.data?.computedLabel ?? null,
-      ),
+      sourceEntry('fpi', fpiSource, fpiRead.envelope, fpiRead.envelope.data?.computedLabel ?? null),
       sourceEntry(
         'conference_odds',
         oddsSource,
-        oddsRead.envelope.freshness,
+        oddsRead.envelope,
         odds?.computedLabel ?? null,
         // Per conference, because the four pages do not agree on one stamp.
         (odds?.pages ?? []).map((page) => ({
@@ -387,10 +395,10 @@ export async function readProjectionSources(services: Services): Promise<Project
       // to our own Top-25 estimate — so the label is the estimate's, the same
       // one every finish term carries. A screen reading this knows the number
       // derived from it is ours.
-      sourceEntry('rankings', estimateSource, rankingsRead.envelope.freshness, null),
+      sourceEntry('rankings', estimateSource, rankingsRead.envelope, null),
       // Identity, not a probability: no source label to carry (§45).
-      sourceEntry('conferences', null, conferenceRead.envelope.freshness, null),
-      sourceEntry('teams', null, teamsRead.envelope.freshness, null),
+      sourceEntry('conferences', null, conferenceRead.envelope, null),
+      sourceEntry('teams', null, teamsRead.envelope, null),
     ],
     cacheStatus: composeStatus([
       fpiRead.status,

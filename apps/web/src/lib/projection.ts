@@ -196,6 +196,13 @@ export interface Provenance {
   asOf: string;
   /** Inputs that failed or are out of date, in a sentence each. Empty when all is well. */
   problems: string[];
+  /**
+   * The reference a failed input was logged under, to quote when reporting it
+   * (§38). `null` when nothing failed — a stale copy has none to give. One per
+   * screen: the inputs fail together far more often than apart, and they
+   * share a request when they do.
+   */
+  reference: string | null;
 }
 
 function byInput(
@@ -300,7 +307,9 @@ export function provenance(
       `${capitalize(listOf(stale.map((entry) => INPUT_NAMES[entry.input])))} may be out of date.`,
     );
   }
-  return { asOf, problems };
+  const reference =
+    failed.find((entry) => entry.error?.requestId != null)?.error?.requestId ?? null;
+  return { asOf, problems, reference };
 }
 
 function capitalize(text: string): string {
