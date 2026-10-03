@@ -2,9 +2,11 @@
 
 ## Phase Checklist
 
-- [ ] **Phase 1 — The week's matchups, as data.** A week of games in one
+- [x] **Phase 1 — The week's matchups, as data.** A week of games in one
   provider read, joined to the boards' picks, served as
   `GET /api/matchups?week=` and `GET /api/matchups/:gameId`. API only.
+  Built 2026-10-02/03, not yet committed or deployed. See
+  [Phase 1 — Completion notes](#phase-1--completion-notes).
 - [ ] **Phase 2 — The matchup board, and the way into a game.** The `/matchups`
   page, a header link, week navigation, and a first `/matchups/:gameId` page
   showing who has each side and the pregame win probability.
@@ -249,6 +251,197 @@ the KV budget.
   with the mock and the seed, as "Picked by" was.
 - **`check:season` will catch a date in a doc comment.** Write
   `<yyyy>-MM-DD`, as Phase 2 of projected points learned twice.
+
+### Phase 1 — Completion notes
+
+Written 2026-10-03 (UTC; Friday night 2026-10-02 Eastern), at the end of the
+phase, for whoever builds Phase 2. **Nothing is committed and nothing is
+deployed**: the working tree on `main` holds the whole phase. `npm run verify`
+is green — **1117 tests in 46 files, up 44 from 1073** — and
+`npm run format:check` is green.
+
+#### What exists now
+
+| File | What it is |
+| --- | --- |
+| `packages/shared/src/domain/matchup.ts` | **New.** `SeasonWeek`, `MatchupOwner`, `MatchupSide`, `Matchup` |
+| `packages/shared/src/api/responses.ts` | `MatchupBoardResponse`, `MatchupResponse`, `MatchupBoardNotice` |
+| `apps/api/src/providers/types.ts` | Two new provider methods: `getSeasonWeeks(season)` and `getWeekGames(season, week)` |
+| `apps/api/src/providers/espn/` | `getWeekGames` (`scoreboard?week=&seasontype=&groups=80&limit=300`, through the **existing** `readScoreboard` + `toProviderGame`), `getSeasonWeeks` (`readCalendarWeeks` + `toSeasonWeeks` over the bare scoreboard's `leagues[0].calendar`), `espnSeasonType` |
+| `apps/api/src/providers/mock/` | `getWeekGames`, `getSeasonWeeks` (`mockSeasonWeeks`, Tue–Mon windows), and current-week roles (below) |
+| `apps/api/src/providers/faults.ts` | The `week` token. The week list is the calendar, so it fails under `calendar` |
+| `apps/api/src/cache/policy.ts` | `week_games` and `matchup_composite` rows; resources `week` and `matchups` |
+| `apps/api/src/cache/tiers.ts` | `evictL1Prefix(prefix)` |
+| `apps/api/src/services/live.ts` | `overlayLive(services, games, baseFetchedAt)` — the overlay, extracted from `readLiveSchedule` so a week reuses it. `readLiveSchedule` now calls it and behaves exactly as before |
+| `apps/api/src/services/games.ts` | `readProviderGame` — the cached neutral game read, shared by `/api/games/:id` and `/api/matchups/:id` |
+| `apps/api/src/services/matchups.ts` | **New.** `readSeasonWeeks`, `readWeekGames`, `defaultWeek`, `indexPicks`, `isMatchup`, `compareRows`, `getMatchupBoard`, `getMatchup` |
+| `apps/api/src/routes/matchups.ts` | **New.** The two routes, mounted at `/api/matchups` in `app.ts` |
+| `apps/api/src/routes/admin.ts` | `forgetMatchups` (called from `forgetBoard`) |
+| `apps/api/src/cron/warm.ts` | Warms the week list and the current week's games (`results.week`) |
+| `apps/api/test/matchups.test.ts` | **New.** 41 tests: provider, real data, mock, live, faults, KV, single game, pure functions |
+| `apps/api/test/fixtures/espn/scoreboard-week-{5,6}.json` | **New.** Real week documents, in the manifest |
+| `apps/api/test/fixtures/app/pick-index.json` | **New.** The deployed `/api/selections`, same night. `userId`s replaced with synthetic uuids; names and team ids real. Kept out of `fixtures/espn/` so the damage test does not treat it as an ESPN payload |
+| `scripts/capture-espn-fixtures.ts` | Captures the current week on a full run, and `--weeks-only 5,6` captures just the week documents and merges the manifest |
+| `docs/espn-notes.md` §13 | The week scoreboard, the calendar's weeks, and the cross-check, as observed |
+
+#### Exit criteria, one by one
+
+| Criterion | Result | Where |
+| --- | --- | --- |
+| Mock: current week's matchups, two owned sides, owners named, rank and record in all three ranking states | Met. `ranked` and `unranked` normally; every rank `unavailable` with `SPORTS_PROVIDER_FAULT=rankings` and nothing else lost | `matchups.test.ts`, "GET /api/matchups in mock mode" |
+| Real week 6 + real pick index: the 12 measured matchups, UCLA at Oregon `sameOwner`, none of the 22 one-sided | **Met exactly**, and recomputed in the test from the raw payload with no app code. Week 5 also checked: 11 matchups, Florida at Missouri `sameOwner`, 22 one-sided | "the real week 6…", "the real week 5…" |
+| Cross-check: every owned team's own schedule game is in the week document | **Met.** 54 teams × weeks 5 and 6: 108 team-weeks, 90 games, 18 byes, **0 missing**. LSU–McNeese (FCS) included. Run live against ESPN, not a test (54 schedule requests); recorded in espn-notes §13 | — |
+| A live row's score and clock come from the slate, and its freshness is the slate's; with `slate` faulted the row is `stale` with its original time | Met. Proven with a 5-minute gap between the week document's read and the slate's | "a live matchup takes its score…" |
+| Faults: `week` cold → clean `unavailable`; `week` warm past TTL → `stale`, original `fetchedAt`; `rankings`; `slate`; together; Postgres failing → error with a reference | Met, with one departure: the database failure is a **500**, not the plan's 503 (decision 2 below) | "faults" |
+| `/api/health` ledger: no `matchup_composite` writes, at most one `week_games` write per week key per hour | Met in the test (an hour of 5-minute polls → 1 write; the 61st minute → 2) **and on local workerd** against real ESPN: `week_games: 2` for two week keys, nothing for the composite | "the KV budget" |
+| Admin write then read in the same isolate shows the change at once | Met: an added team makes a new matchup, and a rename shows, on the very next read | `admin.test.ts`, last test of "the public board reflects an admin change…" |
+| `npm run verify`, `npm run format:check` | Green | — |
+
+Mutation checks were run by hand on the four rules most likely to rot (TBD
+last within its day, the Eastern day key, the provider-namespace filter in
+`indexPicks`, and `forceStale` for an unverified live row) plus `forgetMatchups`:
+each mutant fails at least one test. The Eastern day key and the namespace
+filter **survived the route tests** on real data and needed the pure-function
+tests at the bottom of `matchups.test.ts` to be caught.
+
+#### Measured
+
+- **Real runtime (local `wrangler dev`, real ESPN, real Supabase, port 8793),**
+  checked first that `/api/health` said `provider: "espn"` and that nothing else
+  was listening (the leftover-process trap). `/api/matchups` cold **1.06 s**
+  (calendar, week document, rankings, and Supabase over the network), then
+  4–5 ms warm (`X-Cache: hit`, `max-age=59`). `?week=6` cold 0.30 s. The board
+  showed exactly the measured 12 (week 6) and 11 (week 5), Pitt 35–33 at
+  Virginia Tech as the one final. `/api/matchups/401858476` (Penn State at
+  Northwestern, nobody has Northwestern) answered with `owners: []` and
+  `team.id: null` on that side. `?week=40` → 400. The drill Worker was stopped
+  by PID afterwards.
+- **Parse cost in Node 22**, JSON.parse + validate + normalize, 30 runs: week 5
+  (1.05 MB) median **8.3 ms**, first run 16.5 ms; week 6 (0.78 MB) median
+  5.6 ms, first run 19.3 ms. A cold isolate's first read is over the documented
+  10 ms. **Not measured in workerd**: `wrangler dev` reports no CPU time, and
+  workerd's timers do not advance during synchronous work. Measure it with
+  `wrangler tail` on the deployed Worker (`cpuTime`) in Phase 3.
+- **Normalized size**: about **46 KB** a week, not the ~30 KB the plan
+  estimated. Still about 5% of the payload.
+- **What makes the payload big**: `competitors` ~455 KB, `leaders` ~102 KB,
+  **`odds` ~74 KB** (betting lines inside every event, never read), calendar
+  only 4 KB.
+
+#### Decisions and departures — each one a localized change if reversed
+
+1. **The week list is a new provider read, not the cached season.** The plan
+   assumed the cached `season_calendar` held the week windows. It holds only a
+   `Season` (`year`, `type`, `week`). Rather than change that cached shape
+   (which every other read depends on), `getSeasonWeeks(season)` reads the
+   bare scoreboard's `leagues[0].calendar` — the same request — and caches it
+   under the `season_calendar` category with its own key
+   (`…|season_calendar|<year>:<type>|weeks`). Cost: at most 4 more KV writes a
+   day, cron-warmed.
+2. **A database failure is a 500 with a reference, not a 503.** `DbError` maps
+   an unreachable or failing PostgREST to `internal` (500) everywhere: the
+   board and the projections answer the same way, and their tests assert it.
+   Making it 503 is a one-line change in `db/postgrest.ts` but it changes every
+   route, so it was left as the application's convention. The important part
+   holds: an error body with `requestId`, never an empty 200.
+3. **Row freshness.** A row whose game came off the live slate has the
+   **slate's** freshness as its primary part, with the week document and the
+   poll as reference parts (they can make it stale, not older) — so "its
+   freshness is the slate's" holds literally. Every other row's freshness is
+   the week document's. A live-window row that could not be checked is forced
+   `stale` with the week document's `fetchedAt`. The board's own `freshness`
+   is the week document's, plus the poll as reference, forced `stale` if any
+   row is. Each row also carries **`scoreUpdatedAt`** (the slate's read for a
+   live row, else the week document's) — Phase 2's "Updated" time on a card.
+4. **The board answers `notice` and `error`, not just rows.** `notice:
+   'offseason'` when the calendar has no weeks for the phase (preseason, or
+   mock postseason); `'week_unknown'` when the calendar is unreadable and the
+   season resolution has no week either (which is what `SPORTS_PROVIDER_FAULT=all`
+   produces, since the date heuristic never knows the week). `error` carries
+   the week read's failure with its `requestId`. A week with no games between
+   boards is `notice: null, matchups: []`.
+5. **Which week.** `?week=` must be 1–3 digits (else 400). A week the calendar
+   does not list is a 400; with the calendar unreadable a requested week is
+   taken on trust. With no `?week=`: the season's own week if listed, else the
+   week whose window holds now, else the next one, else the last
+   (`defaultWeek`). Tonight that opened on week 5.
+6. **A complete week is kept for a day, stale for a week.** "Complete" is every
+   game `final` or `canceled`; a week with a postponement keeps the 15-minute
+   TTL. The KV write interval stays an hour either way.
+7. **Admin eviction is by prefix.** The matchup composite is keyed per week and
+   per game, so `forgetBoard` now calls `evictL1Prefix('v2|<provider>|matchups|')`.
+   Other isolates catch up within 60 s, as with the board.
+8. **The single-game route is cached too** (`matchup_composite`, key
+   `…|matchups|game|<id>`), because a game page polling every 15 s would
+   otherwise be a Postgres query every 15 s. Identity and owners come from the
+   same one-query `listBoardsWithSelections`; a side nobody has gets the
+   provider's identity with `id: null`, `conference: null`, no colours. A game
+   unreadable with nothing cached is a 503 (the provider's error is the
+   answer); an unknown game is a 404.
+9. **The ESPN week read refuses a mismatched answer.** If the root
+   `season`/`week` of the payload differs from what was asked, it is
+   `invalid_response`, never shown as the requested week.
+10. **Mock current week now shows every state.** The first three non-live
+    pairings of the current week are made `final` (kicked off a game-length
+    before the live ones), `postponed`, and `tbd`, assigned from the games that
+    exist so a year's byes cannot remove one. No existing test changed. Under the
+    seed every roster team is on a board, so **every mock game is a matchup**;
+    same-owner games exist in some weeks (asserted across the season, not in a
+    fixed week); two-owner sides are Alabama, Texas, Ohio State, and Notre Dame
+    (Jordan's shared teams).
+11. **Two week fixtures, captured Friday night rather than Saturday.**
+    `scoreboard-week-5` (59 games: 54 pre, **1 in progress with `situation`**,
+    4 post) and `scoreboard-week-6` (58 pre). The in-progress game was Penn
+    State at Northwestern, which is not a matchup. So **Phase 3 still needs a
+    capture with a live matchup in it.** Careful: `--weeks-only 5` overwrites
+    `scoreboard-week-5.json`, and the tests assert its exact contents (the
+    4:38 4th-quarter row, Pitt 35–33). Copy the current file aside first (or
+    restore it from git once it is committed), capture, rename the new file
+    (for example `scoreboard-week-5-live.json`), put the old one back, and
+    point Phase 3's tests at the new name.
+12. **`isCacheEntry` needed nothing.** The plan's watch-out says a new category
+    must be added to a runtime set. In fact `isCacheEntry` checks the
+    *provider* name against a runtime set and the category only for being a
+    string. The second-isolate test was written anyway ("a second isolate
+    serves the first one's KV copy") and passes.
+13. **Order.** Sections are in-progress (live, or delayed/suspended with a
+    period) → upcoming (`scheduled`, `unknown`, pre-game delays) → `final` →
+    `postponed`/`canceled`. Upcoming is grouped by the provider's slate day
+    (`slateKeyFor`: US Eastern for ESPN, UTC date for the mock), TBD last
+    within a day, then kickoff, then game id. `anyLive` counts the in-progress
+    section.
+
+#### What Phase 2 should know
+
+- **Shapes.** `MatchupBoardResponse` is `{ season, week, weeks, generatedAt,
+  freshness, error, anyLive, notice, matchups }`. Print `weeks[].label`, never
+  "Week {n}" (ESPN's postseason weeks are `1` "Bowls" and `999` "CFP"). Hide
+  previous/next when `weeks` is empty. `week` is `null` only with a `notice`.
+- **A row is neutral.** `home`/`away` as the provider designates; `neutralSite`
+  decides "vs" against "at". Owners are sorted by display name. `sameOwner` is
+  computed by `userId`, so two people with the same display name would not
+  collide.
+- **Group upcoming rows by the viewer's zone on the client.** The server's
+  order uses Eastern days; a viewer in another zone needs `Intl` grouping and
+  should keep the server's order within a group.
+- **Times.** `row.scoreUpdatedAt` is the score's own "Updated" time; the
+  header's "Last updated" is the oldest `row.freshness.fetchedAt` (or
+  `body.freshness.fetchedAt`, which is the week document's).
+- **`Cache-Control`**: `public, max-age=` the composite's remaining life (60,
+  or 15 while live or degraded), `public, max-age=10` when anything is stale or
+  failing, `no-store` when the week could not be read at all.
+- **Records on final rows are post-game** (Pitt shows 5-0 after the win that
+  made it 5-0). That is ESPN's record as of the document, shown verbatim.
+- Nothing in `apps/web` was touched. `lib/api.ts` has no matchup calls yet.
+
+#### Still open after Phase 1
+
+- A Saturday capture with a **live matchup** in it (decision 11).
+- Workerd CPU for a cold week read, on the deployed Worker (`wrangler tail`).
+- README "Testing the matchup board", `docs/ops.md`, and the project-notes
+  section proper are Phase 3's, as the plan says; project-notes has a short
+  pointer section now (§13).
+- Commit and deploy: not done, by design — the owner reviews first.
 
 ---
 

@@ -29,6 +29,10 @@ projected points was built and deployed.
   phases built, each with its own completion notes, and live since 2026-10-02.
   That file holds the measured source data, the rubric, and the plan; **§12 of
   this file holds what building it actually taught us.**
+- [plan-matchup-board.md](plan-matchup-board.md) — the matchup board: every
+  game in a week between two boards. **Phase 1 (the API) is built and
+  verified, not committed or deployed**; Phases 2 (the screens) and 3 (the
+  live game page, docs, deploy) are next. §13 below is the short version.
 - Operations — deploying, configuration, limits, troubleshooting — is
   [../docs/ops.md](../docs/ops.md).
 - ESPN's undocumented API, as observed: [../docs/espn-notes.md](../docs/espn-notes.md).
@@ -983,3 +987,43 @@ reproducing the stated source and recording the doubt — was the right one.
   board's projection, and the leaderboard (`forgetProjections` in
   `routes/admin.ts`). Any future derivation of the selections needs its own line
   there, or the administrator will see one view update and another not.
+
+## 13. The matchup board (in progress)
+
+Plan: [plan-matchup-board.md](plan-matchup-board.md). **Phase 1 is built and
+verified (2026-10-03), not committed and not deployed.** Its
+[completion notes](plan-matchup-board.md#phase-1--completion-notes) are the
+full record — what exists, each exit criterion, the measurements, and thirteen
+decisions. What belongs here is what a later feature will trip over.
+
+- **Two new public routes**, `GET /api/matchups?week=` and
+  `GET /api/matchups/:gameId`, and two new provider methods,
+  `getSeasonWeeks` and `getWeekGames`. Every provider (ESPN, mock, the fault
+  wrapper, and any test fake) must implement both.
+- **Two new cache rows**: `week_games` (15 min, stale 6 h, KV at most hourly; a
+  week whose every game is final or canceled is kept a day and served stale for
+  a week) and `matchup_composite` (60 s, 15 s live or degraded, L1 only). The
+  week list rides the `season_calendar` category under its own key. Expected KV
+  cost: about 24–28 writes a day, cron-driven.
+- **The live overlay is now a function of any list of games**
+  (`services/live.ts` `overlayLive`), and the matchup board uses the boards'
+  own slate cache key, so a Saturday's boards and matchup board share one slate
+  read per isolate (tested).
+- **An admin write now drops four kinds of L1 key**: the board, that board's
+  projection, the leaderboard, and every matchup composite (by prefix,
+  `evictL1Prefix`). The §12 rule stands: any further derivation of the
+  selections needs its own line in `routes/admin.ts`.
+- **The real data matched the plan's measurement exactly**: 12 matchups in week
+  6 (UCLA at Oregon both Wilson's), 11 in week 5 (Florida at Missouri both
+  Jeremiah's), 22 one-sided each week, and no owned team's game missing from
+  the `groups=80` week document (cross-checked against all 54 teams' own
+  schedules, LSU–McNeese included).
+- **A week document is the biggest parse in the app**: 0.8–1.07 MB, 5.6–8.3 ms
+  median in Node and 16–19 ms on a cold first run, against the documented
+  10 ms. The cron warms the current week. Watch `exceededCpu` after the deploy,
+  as for the cold board (§9).
+- **ESPN puts betting odds in every week-document event** (~74 KB of the 800 KB).
+  The validator never reads the key; keep it that way (§3, espn-notes §6, §13).
+- **A database failure on these routes is a 500 with a reference**, the
+  application's convention for PostgREST failures, not the 503 the plan wrote.
+

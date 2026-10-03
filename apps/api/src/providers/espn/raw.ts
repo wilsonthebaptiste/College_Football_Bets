@@ -124,6 +124,37 @@ export interface RawCalendar {
   week: number | null;
 }
 
+/**
+ * `leagues[0].calendar` on a scoreboard (bare, or `?week=`): one phase per
+ * ESPN season type, each a list of weeks with its own date window.
+ *
+ *   { label: "Regular Season", value: "2", entries: [
+ *       { label: "Week 6", value: "6", startDate: "<yyyy>-10-05T07:00Z", endDate: … } ] }
+ *
+ * The postseason's weeks are not a weekly rhythm: "Bowls" is value `1` and
+ * "CFP" is value `999`, and their windows overlap.
+ */
+export interface RawCalendarWeeks {
+  /** `leagues[0].season.year`, else the root `season.year`. */
+  seasonYear: number | null;
+  phases: RawCalendarPhase[];
+}
+
+export interface RawCalendarPhase {
+  /** `value`, as a number: 1 preseason, 2 regular, 3 postseason, 4 off season. */
+  seasonType: number;
+  weeks: RawCalendarWeek[];
+}
+
+export interface RawCalendarWeek {
+  /** `value`, as a number. */
+  week: number;
+  label: string | null;
+  /** Already checked to parse. */
+  startDate: string;
+  endDate: string;
+}
+
 /** `summary?event={id}` */
 export interface RawSummary {
   event: RawEvent;

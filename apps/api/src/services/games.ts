@@ -1,7 +1,7 @@
 import type { Envelope, Game, Prediction } from '@cfb/shared';
 import type { CachePolicy } from '../cache/policy';
 import { cacheKey, policyFor } from '../cache/policy';
-import type { CacheStatus } from '../cache/swr';
+import type { CacheRead, CacheStatus } from '../cache/swr';
 import { invalidRequest } from '../http/errors';
 import type { ProviderGame } from '../providers/types';
 import { ProviderError } from '../providers/types';
@@ -34,6 +34,25 @@ export interface GameResult<T> {
 }
 
 /**
+ * The provider's game, neutral, through the cache. Shared by the game route
+ * and the single-matchup route, so both read one cache entry per game.
+ */
+export function readProviderGame(
+  services: Services,
+  providerGameId: string,
+  options: { whenUnavailable?: 'envelope' | 'throw' } = {},
+): Promise<CacheRead<ProviderGame>> {
+  const { cache, provider } = services;
+  return cache.read<ProviderGame>({
+    key: cacheKey('game', provider.name, providerGameId),
+    policyFor: policyForGame,
+    load: () => provider.getGame(providerGameId),
+    isFatal: isNotFound,
+    ...(options.whenUnavailable === undefined ? {} : { whenUnavailable: options.whenUnavailable }),
+  });
+}
+
+/**
  * The game from one participant's side. `perspective` is a provider team id;
  * without one, the home team's side is used, which is a stated default rather
  * than a guess (§19: home is the provider's own designation).
@@ -43,13 +62,7 @@ export async function getGame(
   providerGameId: string,
   perspective: string | null,
 ): Promise<GameResult<Game>> {
-  const { cache, provider } = services;
-  const read = await cache.read<ProviderGame>({
-    key: cacheKey('game', provider.name, providerGameId),
-    policyFor: policyForGame,
-    load: () => provider.getGame(providerGameId),
-    isFatal: isNotFound,
-  });
+  const read = await readProviderGame(services, providerGameId);
 
   const game = read.envelope.data;
   if (game === null) {

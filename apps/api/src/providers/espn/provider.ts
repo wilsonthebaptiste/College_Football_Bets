@@ -1,4 +1,4 @@
-import type { Prediction, RankingsSnapshot, Season, TeamIdentity } from '@cfb/shared';
+import type { Prediction, RankingsSnapshot, Season, SeasonWeek, TeamIdentity } from '@cfb/shared';
 import type {
   ConferenceMap,
   FpiFieldSums,
@@ -11,6 +11,7 @@ import { ProviderError } from '../types';
 import { ESPN_CORE_API, ESPN_FITT_API, ESPN_SITE_API, EspnClient } from './client';
 import {
   easternSlateKey,
+  espnSeasonType,
   hasInlinePrediction,
   scheduleSeasonTypes,
   toPrediction,
@@ -19,11 +20,13 @@ import {
   toRankings,
   toSchedule,
   toSeason,
+  toSeasonWeeks,
   toTeamIdentity,
 } from './normalize';
 import type { RawSchedule } from './raw';
 import {
   readCalendar,
+  readCalendarWeeks,
   readFpiPage,
   readGroup,
   readRankings,
@@ -38,6 +41,8 @@ import {
 /** Ids are interpolated into ESPN URLs; anything unusual cannot be a real id. */
 const SAFE_ID = /^[A-Za-z0-9_-]{1,40}$/;
 const SLATE_KEY = /^\d{8}$/;
+/** ESPN numbers the playoff "week" 999 (espn-notes §8); nothing real is above it. */
+const MAX_WEEK = 999;
 
 /** ESPN's group id for FBS, the parent of every FBS conference (espn-notes §7). */
 const FBS_GROUP = '80';
@@ -239,6 +244,53 @@ export class EspnProvider implements SportsDataProvider {
     const raw = readSummary(body);
     if (raw === null) throw invalid('summary');
     return toProviderGame(raw.event);
+  }
+
+  /**
+   * The bare scoreboard again — the request `getCurrentSeason` makes — read
+   * for its `leagues[0].calendar` this time (espn-notes §8). Cached above this
+   * layer on the calendar's own 6 h schedule.
+   */
+  async getSeasonWeeks(season: Season): Promise<SeasonWeek[]> {
+    const { body } = await this.client.getJson(`${ESPN_SITE_API}/scoreboard`);
+    const raw = readCalendarWeeks(body);
+    if (raw === null) throw invalid('calendar');
+    return toSeasonWeeks(raw, season);
+  }
+
+  /**
+   * One week of the season in one request: about 60 games and 800 KB to 1 MB,
+   * most of it the calendar and per-game extras that are never read
+   * (context/plan-matchup-board.md, "Measured"). The same event shape as a
+   * day's slate, so it goes through the same reader and normalizer.
+   *
+   * The root `season` and `week` say what ESPN actually answered with. If
+   * either disagrees with what was asked, the payload is refused rather than
+   * shown as the requested week, as a schedule for the wrong season is.
+   */
+  async getWeekGames(season: Season, week: number): Promise<ProviderGame[]> {
+    if (!Number.isInteger(week) || week < 0 || week > MAX_WEEK) {
+      throw new ProviderError('not_found', 'Not a valid week');
+    }
+    const seasonType = espnSeasonType(season.type);
+    // groups=80 is FBS: every game with at least one FBS team (espn-notes §1).
+    const url = `${ESPN_SITE_API}/scoreboard?week=${String(week)}&seasontype=${String(seasonType)}&groups=80&limit=300`;
+    const { body } = await this.client.getJson(url);
+    const raw = readScoreboard(body);
+    if (raw === null) throw invalid('week scoreboard');
+
+    const answered = readCalendar(body);
+    if (
+      answered !== null &&
+      (answered.seasonYear !== season.year ||
+        answered.seasonType !== seasonType ||
+        (answered.week !== null && answered.week !== week))
+    ) {
+      throw invalid(
+        `week scoreboard (asked for ${String(season.year)}/${String(seasonType)}/${String(week)}, got ${String(answered.seasonYear)}/${String(answered.seasonType)}/${String(answered.week)})`,
+      );
+    }
+    return raw.events.map((event) => toProviderGame(event, season));
   }
 
   async getPrediction(providerGameId: string): Promise<Prediction | null> {

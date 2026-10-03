@@ -263,9 +263,13 @@ describe('runWarmers', () => {
       // a viewer's request from ever being one of the four.
       projections: true,
       odds: true,
+      // The matchup board's week document: the largest parse in the app, so
+      // the cron pays it rather than the first Saturday viewer.
+      week: true,
       database: true,
     });
     expect(report.results['database']?.detail).toBe('9 users');
+    expect(report.results['week']?.detail).toMatch(/^week 6: \d+ games \(miss\)$/);
     // The durable copies land in KV, which is the point: other isolates read them there.
     const categories = kv.writes.map((write) => write.key.split('|')[2]).sort();
     expect(categories).toEqual([
@@ -274,12 +278,16 @@ describe('runWarmers', () => {
       'projection_inputs',
       'rankings',
       'season_calendar',
+      // The season's week list, on the calendar's own key space and schedule.
+      'season_calendar',
       'team_list',
+      'week',
     ]);
-    // Six documents, six writes a cron run — and the two new ones have 6 h
-    // write intervals, so they cost at most eight a day between them against
-    // a ledger that warns at 700 (project-notes §4).
-    expect(kv.writes).toHaveLength(6);
+    // Eight documents, eight writes a cron run. The two projection documents
+    // and the week list have 6 h write intervals and the week document 1 h, so
+    // the matchup board adds at most about 28 a day against a ledger that
+    // warns at 700 (project-notes §4).
+    expect(kv.writes).toHaveLength(8);
     // Postgres was asked as anon, with no token.
     expect(stub.restRequests[0]?.authorization).toBeNull();
   });

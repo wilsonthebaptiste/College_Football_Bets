@@ -6,6 +6,7 @@ import type {
   ProviderName,
   RankingsSnapshot,
   Season,
+  SeasonWeek,
   SportsProviderName,
   TeamIdentity,
   TeamRecord,
@@ -84,6 +85,21 @@ export interface SportsDataProvider {
   getSlate(slateKey: string): Promise<ProviderGame[]>;
 
   getGame(providerGameId: string): Promise<ProviderGame>;
+
+  /**
+   * The weeks of one season phase, in the provider's own numbering and words
+   * (the matchup board's navigation). Empty when the provider's calendar has
+   * no weeks for that phase — the preseason, or a calendar for some other
+   * season — which is data, not an error.
+   */
+  getSeasonWeeks(season: Season): Promise<SeasonWeek[]>;
+
+  /**
+   * Every game in one week of a season, from no team's point of view: one
+   * request for the lot (context/plan-matchup-board.md, Phase 1). The same
+   * normalized shape `getSlate` returns, so the live overlay applies to it.
+   */
+  getWeekGames(season: Season, week: number): Promise<ProviderGame[]>;
 
   /** The provider's own prediction, or `null` when it publishes none (§12, §46). */
   getPrediction(providerGameId: string): Promise<Prediction | null>;

@@ -14,7 +14,7 @@ import { DISPLAY_NAME_MAX_LENGTH, MAX_SELECTIONS } from '@cfb/shared';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { cacheKey } from '../cache/policy';
-import { evictL1 } from '../cache/tiers';
+import { evictL1, evictL1Prefix } from '../cache/tiers';
 import { supabaseAsAdmin } from '../db/client';
 import { DbError, type PostgrestClient } from '../db/postgrest';
 import {
@@ -78,6 +78,16 @@ function forgetProjections(c: AdminContext, userId: string | null): void {
 }
 
 /**
+ * The matchup board is a third derivation of the selections, cached in L1 for
+ * up to 60 s per week and per game (plan-matchup-board.md, Phase 1). Every one
+ * of those keys can hold the team that just moved, or the name just changed,
+ * so all of them go: the next read in this isolate rebuilds from Postgres.
+ */
+function forgetMatchups(c: AdminContext): void {
+  evictL1Prefix(`${cacheKey('matchups', providerName(c.env))}|`);
+}
+
+/**
  * The public board is cached in L1 for up to 60 s (plan §7). After a write,
  * this isolate's copy is dropped so the next read here rebuilds it. Other
  * isolates catch up when theirs expires (docs/ops.md, "Changing a board").
@@ -85,6 +95,7 @@ function forgetProjections(c: AdminContext, userId: string | null): void {
 function forgetBoard(c: AdminContext, userId: string): void {
   evictL1(cacheKey('board', providerName(c.env), userId));
   forgetProjections(c, userId);
+  forgetMatchups(c);
 }
 
 async function readJson(c: AdminContext): Promise<Record<string, unknown>> {

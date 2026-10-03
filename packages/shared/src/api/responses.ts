@@ -2,12 +2,14 @@ import type { AppError, Envelope, Freshness, SportsProviderName } from '../envel
 import type { Season, SeasonSource } from '../season';
 import type {
   Game,
+  Matchup,
   OutcomeKind,
   PageTeam,
   Prediction,
   ProjectionSource,
   ProjectionTermState,
   ScheduleResult,
+  SeasonWeek,
   Team,
   TeamSnapshot,
   UserSummary,
@@ -326,6 +328,62 @@ export interface TeamProjectionResponse {
   freshness: Freshness;
   sources: ProjectionInputStatus[];
   projection: ProjectedTeam;
+}
+
+// ─── GET /api/matchups?week=<n> ──────────────────────────────────────────────
+
+/**
+ * Why a matchup board has no week to show, as opposed to a week with no games
+ * between boards (which is `notice: null` and `matchups: []`).
+ *
+ *   offseason      the provider's calendar has no weeks for the current
+ *                  season phase (the preseason, or after the last bowl)
+ *   week_unknown   the calendar could not be read and the season resolution
+ *                  does not know the week either, so there is nothing honest
+ *                  to default to
+ */
+export type MatchupBoardNotice = 'offseason' | 'week_unknown';
+
+/**
+ * Every game in one week where both sides are on at least one board
+ * (context/plan-matchup-board.md, Phase 1).
+ *
+ * Derived on every read, never stored (§45). Ordered live first, then upcoming
+ * by kickoff (a TBD kickoff last within its day), then finals, then postponed
+ * and canceled games: what is happening now comes first (§51).
+ */
+export interface MatchupBoardResponse {
+  season: Season;
+  /** The week shown, by the provider's own number. `null` only with a `notice`. */
+  week: number | null;
+  /** The season phase's weeks, for previous/next links. Empty when the calendar is unknown. */
+  weeks: SeasonWeek[];
+  generatedAt: string;
+  /**
+   * The week's games as a whole: the week document's freshness, made `stale`
+   * if any row is. `unavailable`, with `error`, when the week's games could not
+   * be read at all — a cold cache with the provider down.
+   */
+  freshness: Freshness;
+  /** Why the week's games are missing, with the reference it was logged under. */
+  error: AppError | null;
+  /** Drives the client's polling interval (§24). Derived, never client-guessed. */
+  anyLive: boolean;
+  notice: MatchupBoardNotice | null;
+  matchups: Matchup[];
+}
+
+// ─── GET /api/matchups/:gameId ───────────────────────────────────────────────
+
+/**
+ * One game, in the same shape as a matchup board row. Works for ANY game the
+ * provider has: a side nobody has gets `owners: []` and the provider's own
+ * identity, so whether it is a matchup at all is the client's to read.
+ */
+export interface MatchupResponse {
+  season: Season;
+  generatedAt: string;
+  matchup: Matchup;
 }
 
 // ─── Errors ──────────────────────────────────────────────────────────────────

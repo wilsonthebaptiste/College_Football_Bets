@@ -1,4 +1,4 @@
-import type { Prediction, RankingsSnapshot, Season, TeamIdentity } from '@cfb/shared';
+import type { Prediction, RankingsSnapshot, Season, SeasonWeek, TeamIdentity } from '@cfb/shared';
 import { resolveSeasonFromDate } from '@cfb/shared';
 import type {
   ConferenceMap,
@@ -15,6 +15,7 @@ import {
   currentWeekFor,
   generateSeason,
   hash,
+  mockSeasonWeeks,
   seasonOfGameId,
 } from './generate';
 import { mockConferenceOdds, mockTeamProjections } from './projections';
@@ -123,6 +124,20 @@ export class MockProvider implements SportsDataProvider {
     if (game === undefined)
       throw new ProviderError('not_found', `mock provider has no game ${providerGameId}`);
     return game;
+  }
+
+  async getSeasonWeeks(season: Season): Promise<SeasonWeek[]> {
+    return mockSeasonWeeks(season, this.now()).map(({ week, startMs, endMs }) => ({
+      week,
+      label: `Week ${String(week)}`,
+      startUtc: new Date(startMs).toISOString(),
+      endUtc: new Date(endMs).toISOString(),
+    }));
+  }
+
+  /** The same timeline as every other read, so a week agrees with each team's schedule. */
+  async getWeekGames(season: Season, week: number): Promise<ProviderGame[]> {
+    return generateSeason(season, this.now()).filter((game) => game.week === week);
   }
 
   async getPrediction(providerGameId: string): Promise<Prediction | null> {

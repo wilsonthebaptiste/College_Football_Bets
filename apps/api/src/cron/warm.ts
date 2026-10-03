@@ -3,6 +3,7 @@ import { listUsers } from '../db/queries';
 import type { Env } from '../env';
 import { resolveSeason } from '../season/resolve';
 import { createServices } from '../services/context';
+import { defaultWeek, readSeasonWeeks, readWeekGames } from '../services/matchups';
 import { readConferenceOdds, readProjectionInputs } from '../services/projection';
 import { readConferences, readTeamList } from '../services/search';
 import { readRankings } from '../services/snapshot';
@@ -21,6 +22,11 @@ import { readRankings } from '../services/snapshot';
  *     and warming them is what keeps a viewer's request from ever being one of
  *     the four. Both have 6 h TTLs, so between them they are at most eight KV
  *     writes a day.
+ *   - The current week's games and the season's week list (the matchup
+ *     board). The week document is the largest parse the application does
+ *     (about twice a Saturday slate), so the cron pays it rather than the
+ *     first viewer of a Saturday. At most one KV write an hour for the week,
+ *     and the week list rides on the calendar's 6 h schedule.
  *   - One `select` from Postgres, so the free Supabase project never sits
  *     idle long enough to be paused (about 7 days; §10 risk register).
  *
@@ -82,41 +88,53 @@ export async function runWarmers(env: Env, options: WarmOptions): Promise<WarmRe
     defer: options.defer,
   });
 
-  const [season, rankings, teams, conferences, projections, odds, database] = await Promise.all([
-    attempt(async () => {
-      const resolved = await resolveSeason(services);
-      return `${String(resolved.season.year)} ${resolved.season.type} (${resolved.source})`;
-    }),
-    attempt(async () => {
-      const { season: current } = await resolveSeason(services);
-      const read = await readRankings(services, current);
-      if (read.status === 'unavailable')
-        throw new Error(read.envelope.error?.message ?? 'unavailable');
-      return read.status;
-    }),
-    attempt(async () => `${String((await readTeamList(services)).length)} teams`),
-    attempt(
-      async () => `${String(Object.keys(await readConferences(services)).length)} teams mapped`,
-    ),
-    attempt(async () => {
-      const read = await readProjectionInputs(services);
-      const document = read.envelope.data;
-      if (document === null) throw new Error(read.envelope.error?.message ?? 'unavailable');
-      return `${String(document.teams.length)} teams rated (${read.status})`;
-    }),
-    attempt(async () => {
-      const read = await readConferenceOdds(services);
-      const document = read.envelope.data;
-      if (document === null) throw new Error(read.envelope.error?.message ?? 'unavailable');
-      return `${String(document.rows.length)} rows (${read.status})`;
-    }),
-    attempt(async () => `${String((await listUsers(supabasePublic(env))).length)} users`),
-  ]);
+  const [season, rankings, teams, conferences, projections, odds, week, database] =
+    await Promise.all([
+      attempt(async () => {
+        const resolved = await resolveSeason(services);
+        return `${String(resolved.season.year)} ${resolved.season.type} (${resolved.source})`;
+      }),
+      attempt(async () => {
+        const { season: current } = await resolveSeason(services);
+        const read = await readRankings(services, current);
+        if (read.status === 'unavailable')
+          throw new Error(read.envelope.error?.message ?? 'unavailable');
+        return read.status;
+      }),
+      attempt(async () => `${String((await readTeamList(services)).length)} teams`),
+      attempt(
+        async () => `${String(Object.keys(await readConferences(services)).length)} teams mapped`,
+      ),
+      attempt(async () => {
+        const read = await readProjectionInputs(services);
+        const document = read.envelope.data;
+        if (document === null) throw new Error(read.envelope.error?.message ?? 'unavailable');
+        return `${String(document.teams.length)} teams rated (${read.status})`;
+      }),
+      attempt(async () => {
+        const read = await readConferenceOdds(services);
+        const document = read.envelope.data;
+        if (document === null) throw new Error(read.envelope.error?.message ?? 'unavailable');
+        return `${String(document.rows.length)} rows (${read.status})`;
+      }),
+      attempt(async () => {
+        const { season: current } = await resolveSeason(services);
+        const weeks = (await readSeasonWeeks(services, current)).envelope.data;
+        if (weeks === null) throw new Error('week list unavailable');
+        if (weeks.length === 0) return 'no weeks this phase';
+        const number = defaultWeek(current, weeks, services.now());
+        const read = await readWeekGames(services, current, number);
+        const games = read.envelope.data;
+        if (games === null) throw new Error(read.envelope.error?.message ?? 'unavailable');
+        return `week ${String(number)}: ${String(games.length)} games (${read.status})`;
+      }),
+      attempt(async () => `${String((await listUsers(supabasePublic(env))).length)} users`),
+    ]);
 
   const report: WarmReport = {
     cron: options.cron,
     skipped: false,
-    results: { season, rankings, teams, conferences, projections, odds, database },
+    results: { season, rankings, teams, conferences, projections, odds, week, database },
   };
   const failed = Object.values(report.results).some((result) => !result.ok);
   console[failed ? 'warn' : 'log'](

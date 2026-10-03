@@ -1,5 +1,8 @@
 import type {
   RawCalendar,
+  RawCalendarPhase,
+  RawCalendarWeek,
+  RawCalendarWeeks,
   RawCompetitor,
   RawEvent,
   RawFpiPage,
@@ -345,6 +348,44 @@ export function readCalendar(body: unknown): RawCalendar | null {
   const seasonType = finite(path(body, ['season', 'type']));
   if (seasonYear === null || seasonType === null) return null;
   return { seasonYear, seasonType, week: finite(path(body, ['week', 'number'])) };
+}
+
+function readCalendarWeek(value: unknown): RawCalendarWeek | null {
+  const week = numeric(field(value, 'value'));
+  const startDate = text(field(value, 'startDate'));
+  const endDate = text(field(value, 'endDate'));
+  if (week === null || !Number.isInteger(week) || week < 0) return null;
+  if (startDate === null || endDate === null) return null;
+  if (!parsesAsDate(startDate) || !parsesAsDate(endDate)) return null;
+  return { week, label: text(field(value, 'label')), startDate, endDate };
+}
+
+/**
+ * `leagues[0].calendar` (espn-notes §8): the weeks of every season phase.
+ * A phase or a week that does not read is skipped, not guessed at; a body with
+ * no calendar array at all is not a calendar.
+ */
+export function readCalendarWeeks(body: unknown): RawCalendarWeeks | null {
+  const league = list(field(body, 'leagues'))[0];
+  const calendar = field(league, 'calendar');
+  if (!Array.isArray(calendar)) return null;
+
+  const phases: RawCalendarPhase[] = [];
+  for (const entry of calendar) {
+    const seasonType = numeric(field(entry, 'value'));
+    if (seasonType === null || !Number.isInteger(seasonType)) continue;
+    const weeks: RawCalendarWeek[] = [];
+    for (const week of list(field(entry, 'entries'))) {
+      const parsed = readCalendarWeek(week);
+      if (parsed !== null) weeks.push(parsed);
+    }
+    phases.push({ seasonType, weeks });
+  }
+
+  return {
+    seasonYear: finite(path(league, ['season', 'year'])) ?? finite(path(body, ['season', 'year'])),
+    phases,
+  };
 }
 
 // ─── Summary and predictions ─────────────────────────────────────────────────

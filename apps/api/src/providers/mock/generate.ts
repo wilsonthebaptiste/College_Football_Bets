@@ -85,6 +85,28 @@ function anchorSaturday(now: number): number {
   return midnight + offsetDays * DAY;
 }
 
+/** A mock football week runs Tuesday 00:00Z to the Monday after, around its Saturday. */
+const WEEK_START_BEFORE_SATURDAY = 4 * DAY;
+
+/**
+ * The mock calendar: one window per week of the timeline, in the shape a
+ * provider's calendar has (the matchup board's navigation). Regular season
+ * only, because every mock game is a regular-season game; the preseason and
+ * postseason phases have no weeks of their own, which is the offseason state.
+ */
+export function mockSeasonWeeks(
+  season: Season,
+  now: number,
+): { week: number; startMs: number; endMs: number }[] {
+  if (season.type !== 'regular') return [];
+  const currentWeek = currentWeekFor(season);
+  return Array.from({ length: SEASON_WEEKS }, (_, index) => {
+    const week = index + 1;
+    const startMs = anchorSaturday(now) + (week - currentWeek) * WEEK - WEEK_START_BEFORE_SATURDAY;
+    return { week, startMs, endMs: startMs + WEEK - 1000 };
+  });
+}
+
 // ─── Pairings ────────────────────────────────────────────────────────────────
 
 /** Round `round` of a single round-robin over `size` teams (size must be even). */
@@ -140,9 +162,19 @@ export function decodeGameId(id: string): GameKey | null {
 
 // ─── Generation ──────────────────────────────────────────────────────────────
 
+/**
+ * What a game in the CURRENT week is made to be, beyond the live ones, so that
+ * the one week the matchup board opens on shows every state a card has to
+ * render (context/plan-matchup-board.md, Phase 1): a game already final, a
+ * postponement, and an unannounced kickoff, beside the live games.
+ */
+type CurrentWeekRole = 'final' | 'postponed' | 'tbd';
+const CURRENT_WEEK_ROLES: readonly CurrentWeekRole[] = ['final', 'postponed', 'tbd'];
+
 interface Slot {
   key: GameKey;
   pairIndex: number;
+  role: CurrentWeekRole | null;
 }
 
 /**
@@ -165,10 +197,27 @@ function scheduleSlots(season: Season): Slot[] {
       slots.push({
         key: { year: season.year, type: season.type, currentWeek, week, home, away },
         pairIndex,
+        role: null,
       });
     });
   }
+
+  // The roles go to the current week's first games that are not live, in pair
+  // order. Assigned from the games that exist rather than by fixed pair index,
+  // because byes depend on the year and could remove any one pairing.
+  const roles = [...CURRENT_WEEK_ROLES];
+  for (const slot of slots) {
+    if (slot.key.week !== currentWeek || isLivePair(slot.pairIndex)) continue;
+    const role = roles.shift();
+    if (role === undefined) break;
+    slot.role = role;
+  }
   return slots;
+}
+
+/** One pairing in five in the current week is always in progress. */
+function isLivePair(pairIndex: number): boolean {
+  return pairIndex % 5 === 0;
 }
 
 interface Timing {
@@ -180,13 +229,21 @@ interface Timing {
 function timingOf(slot: Slot, now: number): Timing {
   const { key, pairIndex } = slot;
   const weekStart = anchorSaturday(now) + (key.week - key.currentWeek) * WEEK;
+  const liveKickoff = Math.floor(now / LIVE_CYCLE) * LIVE_CYCLE - LIVE_LEAD;
 
-  if (key.week === key.currentWeek && pairIndex % 5 === 0) {
-    return {
-      kickoff: Math.floor(now / LIVE_CYCLE) * LIVE_CYCLE - LIVE_LEAD,
-      tbd: false,
-      forced: null,
-    };
+  if (key.week === key.currentWeek && isLivePair(pairIndex)) {
+    return { kickoff: liveKickoff, tbd: false, forced: null };
+  }
+  switch (slot.role) {
+    case 'final':
+      // Kicked off a full game length before the live games, so always over.
+      return { kickoff: liveKickoff - GAME_LENGTH - LIVE_CYCLE, tbd: false, forced: null };
+    case 'postponed':
+      return { kickoff: weekStart + (KICKOFF_SLOTS[2] ?? 0), tbd: false, forced: 'postponed' };
+    case 'tbd':
+      return { kickoff: weekStart + TBD_KICKOFF, tbd: true, forced: null };
+    case null:
+      break;
   }
   if (key.week === key.currentWeek - 1 && pairIndex % 5 === 2) {
     return { kickoff: weekStart + (KICKOFF_SLOTS[1] ?? 0), tbd: false, forced: 'postponed' };

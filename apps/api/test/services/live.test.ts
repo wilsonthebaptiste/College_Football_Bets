@@ -1,4 +1,11 @@
-import type { Freshness, Prediction, RankingsSnapshot, Season, TeamIdentity } from '@cfb/shared';
+import type {
+  Freshness,
+  Prediction,
+  RankingsSnapshot,
+  Season,
+  SeasonWeek,
+  TeamIdentity,
+} from '@cfb/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SwrCache, resetInflight } from '../../src/cache/swr';
 import { TieredCache, resetCacheTiers } from '../../src/cache/tiers';
@@ -79,6 +86,12 @@ class FakeProvider implements SportsDataProvider {
   }
   slateKeyFor(kickoffUtc: string): string {
     return kickoffUtc.slice(0, 10);
+  }
+  async getSeasonWeeks(): Promise<SeasonWeek[]> {
+    return [];
+  }
+  async getWeekGames(): Promise<ProviderGame[]> {
+    return [];
   }
   async getSlate(): Promise<ProviderGame[]> {
     this.slateCalls += 1;

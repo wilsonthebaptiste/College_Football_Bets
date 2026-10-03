@@ -180,6 +180,24 @@
       "ok": true,
       "bytes": 110223,
       "note": "captured 2026-09-18T23:40Z during the game (Phase 2)"
+    },
+    {
+      "name": "scoreboard-week-5",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?week=5&seasontype=2&groups=80&limit=300",
+      "purpose": "One week of games, every day of it, in one request: the matchup board (plan-matchup-board.md). Carries leagues[0].calendar too.",
+      "status": 200,
+      "ok": true,
+      "bytes": 1075663,
+      "note": "Captured 2026-10-03T03:26Z (Friday night, Eastern), later than the rest of this directory. 59 games: 54 pre, 1 in (Penn State at Northwestern, 4:38 - 4th Quarter, with competitions[0].situation), 4 post. The same night the pick index in ../app/pick-index.json was captured."
+    },
+    {
+      "name": "scoreboard-week-6",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?week=6&seasontype=2&groups=80&limit=300",
+      "purpose": "One week of games, every day of it, in one request: the matchup board (plan-matchup-board.md). Carries leagues[0].calendar too.",
+      "status": 200,
+      "ok": true,
+      "bytes": 795790,
+      "note": "Captured 2026-10-03T03:26Z. 58 games, all pre; 4 TBD kickoffs; Texas vs Oklahoma at a neutral site. 12 matchups against the real pick index."
     }
   ]
 }

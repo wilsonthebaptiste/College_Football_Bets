@@ -6,6 +6,7 @@ import type {
   RankingsSnapshot,
   Season,
   SeasonType,
+  SeasonWeek,
   TeamIdentity,
   TeamRecord,
   TeamRef,
@@ -21,6 +22,7 @@ import type {
 } from '../types';
 import type {
   RawCalendar,
+  RawCalendarWeeks,
   RawCompetitor,
   RawEvent,
   RawFpiPage,
@@ -74,6 +76,41 @@ export function seasonTypeFromEspn(type: number | null): SeasonType | null {
  */
 export function scheduleSeasonTypes(season: Season): number[] {
   return season.type === 'postseason' ? [2, 3] : [2];
+}
+
+/** The inverse of `seasonTypeFromEspn`, for building URLs: `seasontype=`. */
+export function espnSeasonType(type: SeasonType): number {
+  switch (type) {
+    case 'preseason':
+      return 1;
+    case 'regular':
+      return 2;
+    case 'postseason':
+      return 3;
+  }
+}
+
+/**
+ * The calendar's weeks for one season phase, in start order.
+ *
+ * A calendar for another year has no weeks for this season: around the
+ * rollover ESPN's bare scoreboard may already describe the next one, and its
+ * dates would be the wrong year's. The label falls back to "Week n" only when
+ * ESPN sends none — a name for an unnamed week, as `fullName` bottoms out at
+ * the team id.
+ */
+export function toSeasonWeeks(raw: RawCalendarWeeks, season: Season): SeasonWeek[] {
+  if (raw.seasonYear !== season.year) return [];
+  const phase = raw.phases.find((entry) => entry.seasonType === espnSeasonType(season.type));
+  if (phase === undefined) return [];
+  return phase.weeks
+    .map((week) => ({
+      week: week.week,
+      label: week.label ?? `Week ${String(week.week)}`,
+      startUtc: new Date(week.startDate).toISOString(),
+      endUtc: new Date(week.endDate).toISOString(),
+    }))
+    .sort((a, b) => a.startUtc.localeCompare(b.startUtc) || a.week - b.week);
 }
 
 function validWeek(week: number | null): number | null {

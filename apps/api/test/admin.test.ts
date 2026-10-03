@@ -5,11 +5,13 @@ import type {
   ApiErrorBody,
   BoardProjectionResponse,
   BoardResponse,
+  MatchupBoardResponse,
   ProjectionsResponse,
   RenameUserResponse,
   SelectionsResponse,
   TeamSearchResponse,
 } from '@cfb/shared';
+import { resolveSeasonFromDate } from '@cfb/shared';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
 import { resetJwksCache } from '../src/auth/jwks';
@@ -17,6 +19,7 @@ import { resetInflight } from '../src/cache/swr';
 import { resetCacheTiers } from '../src/cache/tiers';
 import type { Env } from '../src/env';
 import { resetRateLimits } from '../src/middleware/rate-limit';
+import { generateSeason } from '../src/providers/mock/generate';
 import { createFakeDb, type FakeDb } from './helpers/admin-db';
 import { uuidFor } from './helpers/boards';
 import { espnResponse } from './helpers/espn-stub';
@@ -776,6 +779,71 @@ describe('the public board reflects an admin change on the next read (exit crite
     const after = await names();
     expect(after).toContain('Newcomer');
     expect(after).toHaveLength(before.length + 1);
+  });
+
+  it('the matchup board moves with the board: a new matchup and a rename show at once', async () => {
+    // The third derivation of the selections (plan-matchup-board.md, Phase 1),
+    // cached per week in L1 for up to 60 s. Without the eviction the
+    // administrator would move a team and see the boards and the matchup board
+    // disagree for a minute.
+    install();
+    const season = { ...resolveSeasonFromDate(new Date()), type: 'regular' as const, week: 6 };
+    const wilsonTeams = ['333', '61', '251', '130', '30', '99'];
+    const onABoard = (id: string): boolean =>
+      wilsonTeams.includes(id) || ['333', '194'].includes(id);
+    // A current-week game between one of Wilson's teams and a team on no board.
+    const target = generateSeason(season, Date.now()).find(
+      (game) =>
+        game.week === 6 &&
+        wilsonTeams.includes(game.home.team.providerTeamId) !==
+          wilsonTeams.includes(game.away.team.providerTeamId) &&
+        !onABoard(
+          wilsonTeams.includes(game.home.team.providerTeamId)
+            ? game.away.team.providerTeamId
+            : game.home.team.providerTeamId,
+        ),
+    );
+    if (target === undefined) throw new Error('no one-sided mock game this week');
+    const other = wilsonTeams.includes(target.home.team.providerTeamId) ? target.away : target.home;
+
+    const matchups = async () =>
+      (await (await app.request('/api/matchups', {}, testEnv())).json<MatchupBoardResponse>())
+        .matchups;
+
+    expect((await matchups()).map((row) => row.providerGameId)).not.toContain(
+      target.providerGameId,
+    );
+    // Served from the matchup board's own L1 cache now…
+    expect((await matchups()).map((row) => row.providerGameId)).not.toContain(
+      target.providerGameId,
+    );
+
+    await asAdmin({
+      method: 'POST',
+      path: `/api/admin/users/${JORDAN}/selections`,
+      body: { providerTeamId: other.team.providerTeamId },
+    });
+
+    // …and not after the write.
+    const row = (await matchups()).find((entry) => entry.providerGameId === target.providerGameId);
+    expect(row).toBeDefined();
+    const side =
+      row!.home.team.providerTeamId === other.team.providerTeamId ? row!.home : row!.away;
+    expect(side.owners.map((owner) => owner.displayName)).toEqual(['Jordan']);
+
+    await asAdmin({
+      method: 'PATCH',
+      path: `/api/admin/users/${WILSON}`,
+      body: { displayName: 'Renamed' },
+    });
+    const renamed = (await matchups()).find(
+      (entry) => entry.providerGameId === target.providerGameId,
+    );
+    const names = [renamed!.home, renamed!.away].flatMap((entry) =>
+      entry.owners.map((owner) => owner.displayName),
+    );
+    expect(names).toContain('Renamed');
+    expect(names).not.toContain('Wilson');
   });
 });
 

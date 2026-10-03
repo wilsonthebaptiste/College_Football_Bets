@@ -620,3 +620,62 @@ contradiction: measured on the same payload, Texas A&M was **FPI rank 16 with
 playoff odds are the path in front of it. A strong team that has already lost
 is both. Phase 1 of projected points recorded this pair as an inconsistency in
 the plan's worked table, and the captured payload settled it the other way.
+
+## 13. A whole week in one request (the matchup board)
+
+Observed 2026-10-03 for the matchup board (context/plan-matchup-board.md,
+Phase 1). Fixtures: `scoreboard-week-5.json` and `scoreboard-week-6.json`.
+
+```
+GET site.api.espn.com/…/college-football/scoreboard?week=6&seasontype=2&groups=80&limit=300
+```
+
+- **The same shape as a day's slate.** `events[]` with `competitions[0]` exactly
+  as `scoreboard?dates=` returns them, so `readScoreboard` and `toProviderGame`
+  read it unchanged. No new parser.
+- **The root says what was answered.** `season.year`, `season.type`, and
+  `week.number` are at the root, as on the bare scoreboard. `getWeekGames`
+  refuses a payload whose root disagrees with what it asked for, the same way a
+  schedule for the wrong season is refused.
+- **It is large because of how much each game carries.** Week 5 was 1.07 MB
+  and week 6 0.80 MB, for 59 and 58 games. Measured on week 6: the
+  `competitors` blocks (full team objects, links, logos, records) are about
+  455 KB, `leaders` 102 KB, and **`odds` 74 KB** — betting lines sit inside
+  every event, and nothing reads them (§6; the validator never touches the
+  key). The calendar is only 4 KB. Normalized, a week is about **46 KB**, and
+  that is what the cache stores.
+- **Parse cost, measured in Node 22** (JSON.parse + validate + normalize, 30
+  runs): week 5 median **8.3 ms**, first run 16.5 ms; week 6 median 5.6 ms,
+  first run 19.3 ms. Against the documented 10 ms CPU limit, a cold isolate's
+  first read is over it, the same order as the cold board (project-notes §9).
+  The cron warms the current week so a viewer's request rarely pays it.
+- **`groups=80` includes FBS-against-FCS games.** LSU against McNeese was in the
+  week-5 document. Cross-checked against every owned team's own schedule: see
+  below.
+- **Days.** The four week-6 games stamped `2026-10-11` in UTC are Saturday-night
+  Eastern kickoffs, and Iowa at Washington (`2026-10-10T01:00Z`) is a Friday
+  night game. Group by `easternSlateKey`, never by `kickoffUtc.slice(0, 10)`.
+- **TBD kickoffs** are `timeValid: false` with a `04:00Z` (midnight Eastern)
+  placeholder, as everywhere else. Four in week 6.
+- **A live row carries `competitions[0].situation`** — `downDistanceText`,
+  `possession`, `possessionText`, `lastPlay`, `isRedZone`, timeouts. Nothing reads
+  it yet; Phase 3 of the matchup board will.
+
+### The calendar's weeks
+
+`leagues[0].calendar[]` (the same block §8 shows) is read by
+`readCalendarWeeks` / `toSeasonWeeks` for the week list. One phase per ESPN
+season type (`value` "1"…"4"); each phase's `entries[]` carry `value` (the week
+number), `label`, `startDate`, `endDate`. The postseason is not weekly:
+**"Bowls" is week `1` and "CFP" is week `999`, and their windows overlap.** A
+client must print `label`, never "Week {n}". A calendar whose
+`leagues[0].season.year` is not the season asked about yields no weeks.
+
+### Cross-check: does `groups=80` miss any owned team's game?
+
+Run 2026-10-03 against the live pick index (54 teams) and each team's own
+`teams/{id}/schedule?season=2026&seasontype=2`: **108 team-weeks, 90 games, 18
+byes, and every one of the 90 games was in the week document** (weeks 5 and 6).
+The one owned team with an FCS opponent that week (LSU–McNeese, week 5) was
+included. Re-run it at the start of each season: a team moving to or from FBS
+is the case that could change the answer.

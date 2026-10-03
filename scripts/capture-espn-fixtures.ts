@@ -9,6 +9,12 @@
  *
  *   node --experimental-strip-types scripts/capture-espn-fixtures.ts
  *   node --experimental-strip-types scripts/capture-espn-fixtures.ts --date 20251004
+ *   node --experimental-strip-types scripts/capture-espn-fixtures.ts --weeks-only 5,6
+ *
+ * `--weeks-only` re-captures just the matchup board's week documents
+ * (`scoreboard-week-<n>.json`) and leaves every other fixture alone, so a
+ * Saturday capture with live games in it does not rewrite the fixtures the
+ * rest of the suite is pinned to (context/plan-matchup-board.md, Phase 1).
  *
  * This is a one-off developer tool, not application code. It is the one place in
  * the repo allowed to be chatty and to hard-code ESPN URLs outside
@@ -233,6 +239,70 @@ function yyyymmdd(date: Date): string {
   return `${y}${m}${d}`;
 }
 
+/** `--weeks-only 5,6` → [5, 6]; absent → null. Regular-season weeks only. */
+function parseWeeksArg(argv: string[]): number[] | null {
+  const index = argv.indexOf('--weeks-only');
+  if (index === -1) return null;
+  const weeks = (argv[index + 1] ?? '')
+    .split(',')
+    .map((part) => Number(part.trim()))
+    .filter((week) => Number.isInteger(week) && week >= 1 && week <= 20);
+  return weeks.length > 0 ? weeks : null;
+}
+
+/** A whole week in one request: what `getWeekGames` reads. */
+function weekCapture(week: number, seasonType = 2): Capture {
+  return {
+    name: `scoreboard-week-${String(week)}`,
+    url: `${SITE}/scoreboard?week=${String(week)}&seasontype=${String(seasonType)}&groups=80&limit=300`,
+    purpose:
+      'One week of games, every day of it, in one request: the matchup board (plan-matchup-board.md). Carries leagues[0].calendar too.',
+  };
+}
+
+/**
+ * Captures only the week documents, and merges their entries into the
+ * existing manifest instead of replacing it.
+ */
+async function captureWeeksOnly(weeks: number[]): Promise<void> {
+  const { readFile } = await import('node:fs/promises');
+  let manifest: Manifest;
+  try {
+    manifest = JSON.parse(await readFile(join(OUT_DIR, '_manifest.json'), 'utf8')) as Manifest;
+  } catch {
+    manifest = { capturedAt: new Date().toISOString(), entries: [] };
+  }
+  console.log(`Capturing week documents ${weeks.join(', ')} → ${OUT_DIR}
+`);
+  for (const week of weeks) {
+    const capture = weekCapture(week);
+    process.stdout.write(`  ${capture.name.padEnd(30)} `);
+    const result = await getJson(capture.url);
+    const bytes = result.ok ? await save(capture.name, result.body) : 0;
+    const states = asArray(dig(result.body, ['events'])).map((event) =>
+      String(dig(event, ['status', 'type', 'state'])),
+    );
+    const summary = `${String(states.length)} games: ${String(states.filter((s) => s === 'pre').length)} pre, ${String(states.filter((s) => s === 'in').length)} in, ${String(states.filter((s) => s === 'post').length)} post`;
+    manifest.entries = manifest.entries.filter((entry) => entry.name !== capture.name);
+    manifest.entries.push({
+      name: capture.name,
+      url: capture.url,
+      purpose: capture.purpose,
+      status: result.status,
+      ok: result.ok,
+      bytes,
+      note: result.ok ? `Captured ${new Date().toISOString()}; ${summary}.` : result.note,
+    });
+    console.log(
+      result.ok
+        ? `ok   ${String(bytes).padStart(8)} bytes  (${summary})`
+        : `FAIL ${result.note ?? ''}`,
+    );
+    await sleep(PAUSE_MS);
+  }
+  await save('_manifest', manifest);
+}
+
 function parseDateArg(argv: string[]): string | null {
   const index = argv.indexOf('--date');
   if (index === -1) return null;
@@ -241,6 +311,11 @@ function parseDateArg(argv: string[]): string | null {
 }
 
 async function main(): Promise<void> {
+  const weeksOnly = parseWeeksArg(process.argv);
+  if (weeksOnly !== null) {
+    await captureWeeksOnly(weeksOnly);
+    return;
+  }
   const dateArg = parseDateArg(process.argv);
   const scoreboardDate = dateArg ?? yyyymmdd(new Date());
 
@@ -297,6 +372,13 @@ async function main(): Promise<void> {
     url: `${SITE}/scoreboard`,
     purpose: 'Bare scoreboard — carries the season/week calendar used by §21.',
   });
+
+  // The matchup board: the current week, whole, in one request.
+  const currentWeek = dig(calendar, ['week', 'number']);
+  const currentType = dig(calendar, ['season', 'type']);
+  if (typeof currentWeek === 'number' && currentType === 2) {
+    await run(weekCapture(currentWeek));
+  }
 
   // Projected points, the national half (context/predicting_score.md). One
   // page, every rated team. `limit=200` covers the 138 ESPN rates with room to

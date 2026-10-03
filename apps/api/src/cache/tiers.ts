@@ -353,6 +353,17 @@ export function evictL1(key: string): void {
   l1.delete(key);
 }
 
+/**
+ * Drops every L1 key that starts with `prefix`. For an L1-only derivation the
+ * admin write cannot name key by key: the matchup board is cached per week and
+ * per game, and any of those can hold the team that was just moved.
+ */
+export function evictL1Prefix(prefix: string): void {
+  for (const key of [...l1.keys()]) {
+    if (key.startsWith(prefix)) l1.delete(key);
+  }
+}
+
 /** Test seam: L1, the L2 probe, and the KV ledger are all module scope. */
 export function resetCacheTiers(): void {
   l1.clear();

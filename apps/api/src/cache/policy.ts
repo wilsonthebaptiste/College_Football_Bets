@@ -19,7 +19,9 @@ export type CacheCategory =
   | 'board_composite'
   | 'projection_inputs'
   | 'conference_odds'
-  | 'projection_board';
+  | 'projection_board'
+  | 'week_games'
+  | 'matchup_composite';
 
 export type CacheTier = 'l1' | 'l2' | 'l3';
 
@@ -147,7 +149,35 @@ const TABLE: Readonly<Record<CacheCategory, PolicyRow>> = {
     tiers: EPHEMERAL,
     kvWriteIntervalSeconds: 0,
   },
+  // ── The matchup board (plan-matchup-board.md, Phase 1) ────────────────────
+  // A whole week's games: one provider request, normalized before it is
+  // stored (about 30 KB for 58 games, against an 800 KB payload). Live scores
+  // never come from here — the 25 s slate lays them over this — so 15 minutes
+  // only has to catch kickoff-time changes and finals. KV at most hourly: the
+  // cron keeps the current week warm, about 24 writes a day.
+  week_games: {
+    ttlSeconds: 15 * MINUTE,
+    staleSeconds: 6 * HOUR,
+    tiers: DURABLE,
+    kvWriteIntervalSeconds: HOUR,
+  },
+  // The assembled board: the week, the picks from Postgres, the live overlay,
+  // and the poll. L1 only and never KV, like `board_composite`, which it
+  // mirrors: 60 s, or 15 s while a game is live or a row is degraded.
+  matchup_composite: {
+    ttlSeconds: 60,
+    staleSeconds: 5 * MINUTE,
+    tiers: EPHEMERAL,
+    kvWriteIntervalSeconds: 0,
+  },
 };
+
+/**
+ * A week whose every game is over will not change again (a past week), so it
+ * is kept for a day, and served stale for a week if the provider goes down.
+ */
+const WEEK_COMPLETE_TTL = DAY;
+const WEEK_COMPLETE_STALE = 7 * DAY;
 
 /** Rankings move weekly in season and not at all out of it (plan §7: 1 h, 6 h offseason). */
 const RANKINGS_OFFSEASON_TTL = 6 * HOUR;
@@ -162,8 +192,10 @@ const BOARD_SHORT_TTL = 15;
 export interface PolicyContext {
   seasonType?: SeasonType;
   anyLive?: boolean;
-  /** Board only: some card is `unavailable` or `stale`. */
+  /** Board and matchup board only: some card or row is `unavailable` or `stale`. */
   degraded?: boolean;
+  /** Week games only: every game in the week is final or canceled. */
+  weekComplete?: boolean;
 }
 
 export function policyFor(category: CacheCategory, context: PolicyContext = {}): CachePolicy {
@@ -176,8 +208,14 @@ export function policyFor(category: CacheCategory, context: PolicyContext = {}):
   ) {
     ttlSeconds = RANKINGS_OFFSEASON_TTL;
   }
-  if (category === 'board_composite' && (context.anyLive === true || context.degraded === true)) {
+  if (
+    (category === 'board_composite' || category === 'matchup_composite') &&
+    (context.anyLive === true || context.degraded === true)
+  ) {
     ttlSeconds = BOARD_SHORT_TTL;
+  }
+  if (category === 'week_games' && context.weekComplete === true) {
+    return { ...row, category, ttlSeconds: WEEK_COMPLETE_TTL, staleSeconds: WEEK_COMPLETE_STALE };
   }
   return { ...row, category, ttlSeconds };
 }
@@ -204,7 +242,9 @@ export type CacheResource =
   | 'board'
   | 'projection_inputs'
   | 'conference_odds'
-  | 'projection_board';
+  | 'projection_board'
+  | 'week'
+  | 'matchups';
 
 /** Bump when a cached value's shape changes, so KV never serves an old shape. */
 const KEY_VERSION = 'v2';

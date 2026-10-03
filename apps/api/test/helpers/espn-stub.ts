@@ -17,6 +17,8 @@ export interface EspnStubOptions {
   slates?: Record<string, string>;
   /** game id → summary fixture. */
   summaries?: Record<string, string>;
+  /** `<seasontype>/<week>` → week scoreboard fixture. Default: regular-season weeks 5 and 6. */
+  weeks?: Record<string, string>;
   /** game ids with a standalone predictor (served from prediction-present). */
   predictors?: string[];
   /** Override a response entirely: return one to short-circuit. */
@@ -35,6 +37,10 @@ const DEFAULT_SCHEDULES: Record<string, string> = {
 const DEFAULT_SLATES: Record<string, string> = {
   '20260917': 'scoreboard-20260917',
   '20260918': 'scoreboard-live',
+};
+const DEFAULT_WEEKS: Record<string, string> = {
+  '2/5': 'scoreboard-week-5',
+  '2/6': 'scoreboard-week-6',
 };
 const DEFAULT_SUMMARIES: Record<string, string> = {
   '401858225': 'game-final',
@@ -60,6 +66,12 @@ export function espnResponse(url: URL, options: EspnStubOptions = {}): Response 
 
   if (url.hostname === 'site.api.espn.com') {
     if (path === `${site}/scoreboard`) {
+      const week = url.searchParams.get('week');
+      if (week !== null) {
+        const key = `${url.searchParams.get('seasontype') ?? ''}/${week}`;
+        const name = (options.weeks ?? DEFAULT_WEEKS)[key];
+        return name === undefined ? json('{"events":[]}') : json(fixtureText(name));
+      }
       const date = url.searchParams.get('dates');
       if (date === null) return json(fixtureText('calendar'));
       const name = (options.slates ?? DEFAULT_SLATES)[date];

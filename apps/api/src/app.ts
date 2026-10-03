@@ -7,6 +7,7 @@ import { requestId } from './middleware/request-id';
 import { adminRoutes } from './routes/admin';
 import { gameRoutes } from './routes/games';
 import { healthRoutes } from './routes/health';
+import { matchupRoutes } from './routes/matchups';
 import { metaRoutes } from './routes/meta';
 import { projectionRoutes } from './routes/projections';
 import { searchRoutes } from './routes/search';
@@ -52,6 +53,9 @@ export function createApp(): Hono<AppBindings> {
   app.route('/api', projectionRoutes);
   app.route('/api/teams', teamRoutes);
   app.route('/api/games', gameRoutes);
+  // The matchup board (plan-matchup-board.md, Phase 1): derived from the week's
+  // games and every board's picks, never stored.
+  app.route('/api/matchups', matchupRoutes);
   // Mounted here, above the admin branch, so the read budget applies to it:
   // it is the one public route a keystroke can call (plan-search-engine §2).
   app.route('/api/search', searchRoutes);

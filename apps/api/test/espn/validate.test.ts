@@ -7,10 +7,12 @@ import {
   toRankings,
   toSchedule,
   toSeason,
+  toSeasonWeeks,
   toTeamIdentity,
 } from '../../src/providers/espn/normalize';
 import {
   readCalendar,
+  readCalendarWeeks,
   readErrorBody,
   readFpiPage,
   readGroup,
@@ -123,6 +125,13 @@ function pipeline(body: unknown): void {
   readErrorBody(body);
   const calendar = readCalendar(body);
   if (calendar !== null) toSeason(calendar);
+  // The matchup board's week list, from the same calendar every scoreboard carries.
+  const weeks = readCalendarWeeks(body);
+  if (weeks !== null) {
+    for (const type of ['preseason', 'regular', 'postseason'] as const) {
+      toSeasonWeeks(weeks, { ...SEASON, type });
+    }
+  }
 
   const teams = readTeamList(body);
   if (teams !== null) teams.map(toTeamIdentity);
