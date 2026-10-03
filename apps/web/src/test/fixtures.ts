@@ -6,6 +6,11 @@ import type {
   Freshness,
   FreshnessState,
   Game,
+  Matchup,
+  MatchupBoardResponse,
+  MatchupOwner,
+  MatchupResponse,
+  MatchupSide,
   NextGameSlot,
   PageTeam,
   Prediction,
@@ -625,5 +630,155 @@ export function predictionResponse(
       freshness: freshness(state),
       error,
     },
+  };
+}
+
+// ─── The matchup board (plan-matchup-board, Phase 2) ─────────────────────────
+
+/** The longest team name the provider lists, for "nothing scrolls sideways". */
+export const LONGEST_NAME = 'Louisiana-Monroe Warhawks of Northeast Louisiana';
+
+export function makeMatchupOwner(displayName: string, userId: string = nextId()): MatchupOwner {
+  return { userId, displayName };
+}
+
+export const WILSON = makeMatchupOwner('Wilson', '22222222-2222-4222-8222-000000000001');
+export const STEPH = makeMatchupOwner('Steph', '22222222-2222-4222-8222-000000000002');
+export const JORDAN = makeMatchupOwner('Jordan', '22222222-2222-4222-8222-000000000003');
+
+export function makeMatchupSide(overrides: Partial<MatchupSide> = {}): MatchupSide {
+  return {
+    team: makeTeam(),
+    owners: [STEPH],
+    ranking: RANKED,
+    record: RECORD,
+    score: null,
+    winner: null,
+    ...overrides,
+  };
+}
+
+/**
+ * An ordinary upcoming matchup: Ohio State (Wilson's) at Iowa (Steph's),
+ * Saturday 3:30 PM Eastern, on FOX.
+ */
+export function makeMatchup(overrides: Partial<Matchup> = {}): Matchup {
+  return {
+    providerGameId: '401500001',
+    season: { year: 2026, type: 'regular', week: 6 },
+    week: 6,
+    kickoffUtc: '2026-10-10T19:30:00.000Z',
+    kickoffTbd: false,
+    status: 'scheduled',
+    statusDetail: null,
+    period: null,
+    clock: null,
+    neutralSite: false,
+    venue: 'Kinnick Stadium',
+    broadcast: 'FOX',
+    away: makeMatchupSide({
+      team: makeTeam({
+        providerTeamId: '194',
+        name: 'Ohio State Buckeyes',
+        displayName: 'Ohio State',
+        abbreviation: 'OSU',
+        conference: 'Big Ten',
+      }),
+      owners: [WILSON],
+      ranking: { kind: 'ranked', rank: 2, poll: 'AP Top 25', week: 6 },
+      record: { ...RECORD, summary: '5-0' },
+    }),
+    home: makeMatchupSide({
+      team: makeTeam({
+        providerTeamId: '2294',
+        name: 'Iowa Hawkeyes',
+        displayName: 'Iowa',
+        abbreviation: 'IOWA',
+        conference: 'Big Ten',
+      }),
+      owners: [STEPH],
+      ranking: { kind: 'unranked' },
+      record: { ...RECORD, summary: '3-2' },
+    }),
+    sameOwner: false,
+    scoreUpdatedAt: '2026-10-10T17:59:00.000Z',
+    freshness: freshness('fresh', '2026-10-10T17:59:00.000Z'),
+    ...overrides,
+  };
+}
+
+/** In the 2nd quarter, Ohio State up 14–7, the score read at 9:41 PM UTC. */
+export function liveMatchup(overrides: Partial<Matchup> = {}): Matchup {
+  const base = makeMatchup();
+  return makeMatchup({
+    providerGameId: '401500002',
+    status: 'live',
+    statusDetail: '4:32 - 2nd Quarter',
+    period: 2,
+    clock: '4:32',
+    away: { ...base.away, score: 14 },
+    home: { ...base.home, score: 7 },
+    scoreUpdatedAt: '2026-10-10T21:41:00.000Z',
+    freshness: freshness('fresh', '2026-10-10T21:41:00.000Z'),
+    ...overrides,
+  });
+}
+
+/** Final: Ohio State 31, Iowa 24. */
+export function finalMatchup(overrides: Partial<Matchup> = {}): Matchup {
+  const base = makeMatchup();
+  return makeMatchup({
+    providerGameId: '401500003',
+    kickoffUtc: '2026-10-09T00:00:00.000Z',
+    status: 'final',
+    statusDetail: 'Final',
+    away: { ...base.away, score: 31, winner: true },
+    home: { ...base.home, score: 24, winner: false },
+    ...overrides,
+  });
+}
+
+export function matchupBoardResponse(
+  matchups: Matchup[],
+  overrides: Partial<MatchupBoardResponse> = {},
+): MatchupBoardResponse {
+  return {
+    season: { year: 2026, type: 'regular', week: 6 },
+    week: 6,
+    weeks: [
+      {
+        week: 5,
+        label: 'Week 5',
+        startUtc: '2026-09-29T07:00:00Z',
+        endUtc: '2026-10-06T06:59:00Z',
+      },
+      {
+        week: 6,
+        label: 'Week 6',
+        startUtc: '2026-10-06T07:00:00Z',
+        endUtc: '2026-10-13T06:59:00Z',
+      },
+      {
+        week: 7,
+        label: 'Week 7',
+        startUtc: '2026-10-13T07:00:00Z',
+        endUtc: '2026-10-20T06:59:00Z',
+      },
+    ],
+    generatedAt: '2026-10-10T18:00:00.000Z',
+    freshness: freshness('fresh', '2026-10-10T17:59:00.000Z'),
+    error: null,
+    anyLive: matchups.some((row) => row.status === 'live'),
+    notice: null,
+    matchups,
+    ...overrides,
+  };
+}
+
+export function matchupResponse(matchup: Matchup): MatchupResponse {
+  return {
+    season: matchup.season,
+    generatedAt: '2026-10-10T18:00:00.000Z',
+    matchup,
   };
 }

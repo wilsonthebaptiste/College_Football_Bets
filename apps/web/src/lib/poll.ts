@@ -1,4 +1,13 @@
-import type { BoardResponse, Envelope, Game, ScheduleResult, TeamSnapshot } from '@cfb/shared';
+import type {
+  BoardResponse,
+  Envelope,
+  Game,
+  Matchup,
+  MatchupBoardResponse,
+  ScheduleResult,
+  TeamSnapshot,
+} from '@cfb/shared';
+import { isInProgress } from './matchup';
 
 /**
  * §24 — every refresh interval in the app, in one place.
@@ -85,7 +94,10 @@ export function boardPollInterval(board: BoardResponse, now: number): number {
 }
 
 /** Could this game be under way, or about to be? Final, canceled, and TBD games never are. */
-function nearKickoff(game: Game, now: number): boolean {
+function nearKickoff(
+  game: Pick<Game, 'kickoffTbd' | 'status' | 'kickoffUtc'>,
+  now: number,
+): boolean {
   if (game.kickoffTbd) return false;
   if (game.status === 'final' || game.status === 'canceled' || game.status === 'postponed') {
     return false;
@@ -112,4 +124,39 @@ export function schedulePollInterval(schedule: Envelope<ScheduleResult>, now: nu
     if (nearKickoff(item.game, now)) active = true;
   }
   return active ? POLL.activeMs : POLL.idleMs;
+}
+
+const isDegraded = (row: Pick<Matchup, 'freshness'>): boolean =>
+  row.freshness.state === 'stale' || row.freshness.state === 'unavailable';
+
+/**
+ * The matchup board (plan-matchup-board, Phase 2), on the board's own rules
+ * and constants, so the two screens agree on a Saturday:
+ *
+ * - Anything in progress → `liveMs`. `anyLive` is the server's word and wins.
+ * - A kickoff within `gameSoonMs` (or one past but not yet reported live), a
+ *   row that is stale or failed, or a week that could not be read →
+ *   `activeMs`, so it recovers by itself.
+ * - Otherwise → `idleMs`. A TBD placeholder time never wakes it.
+ */
+export function matchupBoardPollInterval(board: MatchupBoardResponse, now: number): number {
+  if (board.anyLive) return POLL.liveMs;
+  if (board.error !== null || board.freshness.state === 'stale') return POLL.activeMs;
+  let active = false;
+  for (const row of board.matchups) {
+    if (isInProgress(row)) return POLL.liveMs;
+    if (isDegraded(row) || nearKickoff(row, now)) active = true;
+  }
+  return active ? POLL.activeMs : POLL.idleMs;
+}
+
+/**
+ * One game's page, as the team page polls its snapshot: live while in
+ * progress, active around kickoff or while the row is stale, idle otherwise
+ * (a final game included; Phase 3 stops it altogether once its detail is in).
+ */
+export function matchupPollInterval(matchup: Matchup, now: number): number {
+  if (isInProgress(matchup)) return POLL.liveMs;
+  if (isDegraded(matchup) || nearKickoff(matchup, now)) return POLL.activeMs;
+  return POLL.idleMs;
 }

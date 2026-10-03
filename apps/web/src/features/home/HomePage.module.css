@@ -8,6 +8,19 @@
   letter-spacing: -0.01em;
 }
 
+/* Pulled up under the heading: it belongs to the heading, not the grid. */
+.matchups {
+  margin-top: calc(-1 * var(--space-4));
+}
+
+.matchupsLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));

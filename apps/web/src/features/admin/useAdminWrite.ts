@@ -32,6 +32,9 @@ export function useAfterAdminWrite(): (userId: string | null) => void {
         // selections. The prefix also catches team projections, which do not
         // depend on a board — harmless, and one line rather than three.
         void queryClient.invalidateQueries({ queryKey: queryKeys.projections });
+        // Every matchup row names the owners of both sides, and whether a game
+        // is a matchup at all depends on the picks (plan-matchup-board).
+        void queryClient.invalidateQueries({ queryKey: queryKeys.matchups });
         if (userId !== null) {
           void queryClient.invalidateQueries({ queryKey: queryKeys.board(userId) });
         }

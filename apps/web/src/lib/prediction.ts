@@ -24,52 +24,90 @@ export interface PredictionSideView {
   pct: number;
   /** This side's share of the bar, 0–100. Only differs from `pct` if the two don't sum to 100. */
   share: number;
-  /** The team whose page this is. */
+  /** The team whose page this is. Never true on a page that views neither team. */
   ours: boolean;
 }
 
 export interface PredictionView {
-  /** Viewed team first, as in §12's example ("Alabama — 67%, Tennessee — 33%"). */
+  /** In the order the page asked for (`PredictionOrder`). */
   sides: [PredictionSideView, PredictionSideView];
+}
+
+/** A team as a prediction names it: the provider's id, and what this page calls it. */
+export interface NamedTeam {
+  providerTeamId: string;
+  name: string;
+}
+
+/**
+ * Which side a prediction lists first, and which (if any) is "ours".
+ *
+ * - `viewed_team`: a team's page. That team first, as in §12's example
+ *   ("Alabama — 67%, Tennessee — 33%"), and marked as the page's own.
+ * - `away_home`: a page about the game itself (the matchup page), which views
+ *   neither team. Away first, then home, as the page's heading reads
+ *   ("Ohio State at Iowa"), and neither side is marked.
+ *
+ * One parameter rather than a second component, so the panel's wording —
+ * the source line, the pregame caveat, every "unavailable" reason — cannot
+ * drift between the two pages (plan-matchup-board, Phase 2).
+ */
+export type PredictionOrder =
+  | { kind: 'viewed_team'; team: NamedTeam; opponent: NamedTeam }
+  | { kind: 'away_home'; away: NamedTeam; home: NamedTeam };
+
+/** The order a team page uses: its own team first, against the game's opponent. */
+export function viewedTeamOrder(team: NamedTeam, game: Pick<Game, 'opponent'>): PredictionOrder {
+  return {
+    kind: 'viewed_team',
+    team,
+    opponent: { providerTeamId: game.opponent.providerTeamId, name: game.opponent.name },
+  };
 }
 
 const isPct = (value: number): boolean => Number.isFinite(value) && value >= 0 && value <= 100;
 
 /**
- * A prediction laid out from the viewed team's side, or `null` when it cannot
- * be shown honestly: it is about a different game, or its numbers are not
- * percentages. A bad figure is reported as unavailable, never repaired (§12:
- * no percentage the provider did not supply).
+ * A prediction laid out in the page's order, or `null` when it cannot be shown
+ * honestly: it is about a different game, or its numbers are not percentages.
+ * A bad figure is reported as unavailable, never repaired (§12: no percentage
+ * the provider did not supply).
  *
- * Sides are matched by provider team id, never by position (§19). If neither
- * side is the viewed team, both are shown as the provider named them, away
- * team first, and neither is marked as ours.
+ * Sides are matched by provider team id, never by position (§19). A side the
+ * page does not know is shown under the provider's own name. With
+ * `viewed_team`, if neither side is the viewed team, both are shown away first
+ * and neither is marked as ours. With `away_home`, the side matching the
+ * page's away team comes first; if neither matches, the provider's away side.
  */
 export function predictionView(
   prediction: Prediction,
-  game: Game,
-  team: { providerTeamId: string; name: string },
+  providerGameId: string,
+  order: PredictionOrder,
 ): PredictionView | null {
-  if (prediction.providerGameId !== game.providerGameId) return null;
+  if (prediction.providerGameId !== providerGameId) return null;
   const { home, away, homeWinPct, awayWinPct } = prediction;
   if (!isPct(homeWinPct) || !isPct(awayWinPct)) return null;
 
+  const known =
+    order.kind === 'viewed_team' ? [order.team, order.opponent] : [order.away, order.home];
   const total = homeWinPct + awayWinPct;
   const shareOf = (pct: number): number => (total > 0 ? (pct / total) * 100 : 50);
   const nameOf = (side: Prediction['home']): string =>
-    side.providerTeamId === team.providerTeamId
-      ? team.name
-      : side.providerTeamId === game.opponent.providerTeamId
-        ? game.opponent.name
-        : side.name;
+    known.find((team) => team.providerTeamId === side.providerTeamId)?.name ?? side.name;
+  const isOurs = (side: Prediction['home']): boolean =>
+    order.kind === 'viewed_team' && side.providerTeamId === order.team.providerTeamId;
 
   const view = (side: Prediction['home'], pct: number): PredictionSideView => ({
     name: nameOf(side),
     pct,
     share: shareOf(pct),
-    ours: side.providerTeamId === team.providerTeamId,
+    ours: isOurs(side),
   });
   const homeSide = view(home, homeWinPct);
   const awaySide = view(away, awayWinPct);
-  return { sides: homeSide.ours ? [homeSide, awaySide] : [awaySide, homeSide] };
+  const homeFirst =
+    order.kind === 'viewed_team'
+      ? homeSide.ours
+      : home.providerTeamId === order.away.providerTeamId;
+  return { sides: homeFirst ? [homeSide, awaySide] : [awaySide, homeSide] };
 }

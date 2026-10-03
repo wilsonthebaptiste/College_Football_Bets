@@ -44,6 +44,15 @@ export function AppHeader() {
                 Boards
               </NavLink>
             </li>
+            <li>
+              {/* Not `end`: a game page is still "in" the matchups. */}
+              <NavLink
+                to="/matchups"
+                className={({ isActive }) => cx(styles.navLink, isActive && styles.active)}
+              >
+                Matchups
+              </NavLink>
+            </li>
             {isAdmin && (
               <li>
                 <NavLink

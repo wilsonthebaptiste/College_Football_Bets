@@ -117,6 +117,44 @@ export function formatGameDate(
 }
 
 /**
+ * The calendar day a game is played on, as a sortable `YYYY-MM-DD` key, in the
+ * viewer's zone (or `options.timeZone`). A TBD kickoff's day is read in
+ * Eastern, for the reason `GAME_DAY_TIME_ZONE` gives: its time is a placeholder
+ * at midnight Eastern, which in Pacific would land on the day before. `null`
+ * for a kickoff that is not a date at all.
+ */
+export function gameDayKey(
+  game: Pick<Game, 'kickoffUtc' | 'kickoffTbd'>,
+  options: ClockOptions = {},
+): string | null {
+  const ms = Date.parse(game.kickoffUtc);
+  if (Number.isNaN(ms)) return null;
+  const zone = game.kickoffTbd ? GAME_DAY_TIME_ZONE : options.timeZone;
+  const parts = formatter('day', CALENDAR_DAY, zone).formatToParts(ms);
+  const part = (type: string): string =>
+    (parts.find((p) => p.type === type)?.value ?? '').padStart(2, '0');
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+const DAY_HEADING: Intl.DateTimeFormatOptions = {
+  weekday: 'long',
+  month: 'long',
+  day: 'numeric',
+  timeZone: 'UTC',
+};
+
+/**
+ * A `gameDayKey` as a heading: `Saturday, October 3`. The key is already a
+ * calendar day, so it is formatted as that day (noon UTC), not converted again.
+ */
+export function formatGameDay(key: string): string {
+  const [year = 0, month = 1, day = 1] = key.split('-').map(Number);
+  const ms = Date.UTC(year, month - 1, day, 12);
+  if (Number.isNaN(ms)) return 'Date to be announced';
+  return formatter('day-heading', DAY_HEADING, 'UTC').format(ms);
+}
+
+/**
  * The kickoff time alone, for a schedule's time column: `3:30 PM`, or `TBD`
  * when no time has been announced (never the placeholder "12:00 AM", §4).
  */

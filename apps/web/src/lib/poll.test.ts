@@ -3,6 +3,11 @@ import type { Game, ScheduleItem } from '@cfb/shared';
 import {
   envelope,
   finalGame,
+  finalMatchup,
+  freshness,
+  liveMatchup,
+  makeMatchup,
+  matchupBoardResponse,
   liveGame,
   makeBoard,
   makeBoardTeam,
@@ -13,7 +18,14 @@ import {
   PROVIDER_DOWN,
   scheduleResponse,
 } from '../test/fixtures';
-import { boardPollInterval, POLL, pollIntervalFor, schedulePollInterval } from './poll';
+import {
+  boardPollInterval,
+  matchupBoardPollInterval,
+  matchupPollInterval,
+  POLL,
+  pollIntervalFor,
+  schedulePollInterval,
+} from './poll';
 
 const HOUR = 60 * 60 * 1000;
 const at = (offsetMs: number): string => new Date(NOW + offsetMs).toISOString();
@@ -156,5 +168,86 @@ describe('schedulePollInterval (the team page’s schedule, §24)', () => {
 describe('POLL.predictionMs', () => {
   it('rereads a prediction slowly: it does not move once published', () => {
     expect(POLL.predictionMs).toBeGreaterThanOrEqual(POLL.activeMs);
+  });
+});
+
+describe('matchupBoardPollInterval (plan-matchup-board, Phase 2: the board’s rules)', () => {
+  const kickoffIn = (offsetMs: number, tbd = false) =>
+    makeMatchup({ kickoffUtc: at(offsetMs), kickoffTbd: tbd });
+
+  it('polls at the live pace while anything is in progress, on the server’s word', () => {
+    expect(matchupBoardPollInterval(matchupBoardResponse([liveMatchup()]), NOW)).toBe(POLL.liveMs);
+    const quiet = matchupBoardResponse([kickoffIn(3 * 24 * HOUR)], { anyLive: true });
+    expect(matchupBoardPollInterval(quiet, NOW)).toBe(POLL.liveMs);
+  });
+
+  it('counts a mid-game delay as in progress even if anyLive were missing', () => {
+    const delayed = makeMatchup({ status: 'delayed', period: 3 });
+    expect(matchupBoardPollInterval(matchupBoardResponse([delayed], { anyLive: false }), NOW)).toBe(
+      POLL.liveMs,
+    );
+  });
+
+  it('is active within 12 hours of a kickoff, or past one not yet reported live', () => {
+    expect(matchupBoardPollInterval(matchupBoardResponse([kickoffIn(3 * HOUR)]), NOW)).toBe(
+      POLL.activeMs,
+    );
+    expect(matchupBoardPollInterval(matchupBoardResponse([kickoffIn(-HOUR)]), NOW)).toBe(
+      POLL.activeMs,
+    );
+  });
+
+  it('is active while a row is stale or failed, or the week could not be read', () => {
+    const stale = kickoffIn(3 * 24 * HOUR);
+    expect(
+      matchupBoardPollInterval(
+        matchupBoardResponse([{ ...stale, freshness: freshness('stale') }]),
+        NOW,
+      ),
+    ).toBe(POLL.activeMs);
+    expect(
+      matchupBoardPollInterval(
+        matchupBoardResponse([{ ...stale, freshness: freshness('unavailable') }]),
+        NOW,
+      ),
+    ).toBe(POLL.activeMs);
+    expect(
+      matchupBoardPollInterval(
+        matchupBoardResponse([], { error: PROVIDER_DOWN, freshness: freshness('unavailable') }),
+        NOW,
+      ),
+    ).toBe(POLL.activeMs);
+  });
+
+  it('idles otherwise, and never treats a TBD placeholder, a final, or a postponement as soon', () => {
+    const rows = [
+      kickoffIn(2 * 24 * HOUR),
+      kickoffIn(HOUR, true),
+      finalMatchup({ kickoffUtc: at(-2 * HOUR) }),
+      makeMatchup({ status: 'postponed', kickoffUtc: at(-HOUR) }),
+    ];
+    expect(matchupBoardPollInterval(matchupBoardResponse(rows), NOW)).toBe(POLL.idleMs);
+    expect(matchupBoardPollInterval(matchupBoardResponse([]), NOW)).toBe(POLL.idleMs);
+  });
+
+  it('uses the board’s own constants, so the two screens agree on a Saturday', () => {
+    expect([POLL.liveMs, POLL.activeMs, POLL.idleMs]).toEqual([15_000, 60_000, 300_000]);
+  });
+});
+
+describe('matchupPollInterval (one game’s page)', () => {
+  it('is live while in progress, active around kickoff or when stale, idle otherwise', () => {
+    expect(matchupPollInterval(liveMatchup(), NOW)).toBe(POLL.liveMs);
+    expect(matchupPollInterval(makeMatchup({ kickoffUtc: at(2 * HOUR) }), NOW)).toBe(POLL.activeMs);
+    expect(
+      matchupPollInterval(
+        makeMatchup({ kickoffUtc: at(5 * 24 * HOUR), freshness: freshness('stale') }),
+        NOW,
+      ),
+    ).toBe(POLL.activeMs);
+    expect(matchupPollInterval(makeMatchup({ kickoffUtc: at(5 * 24 * HOUR) }), NOW)).toBe(
+      POLL.idleMs,
+    );
+    expect(matchupPollInterval(finalMatchup({ kickoffUtc: at(-3 * HOUR) }), NOW)).toBe(POLL.idleMs);
   });
 });

@@ -1,5 +1,10 @@
-import type { BoardProjectionSummary, ProjectionsResponse, UserSummary } from '@cfb/shared';
-import { useQuery } from '@tanstack/react-query';
+import type {
+  BoardProjectionSummary,
+  MatchupBoardResponse,
+  ProjectionsResponse,
+  UserSummary,
+} from '@cfb/shared';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { ProjectionNote } from '../../components/Projection';
 import { Skeleton } from '../../components/Skeleton';
@@ -74,6 +79,7 @@ export function HomePage() {
   return (
     <div className={styles.page}>
       <h1 className={styles.title}>Boards</h1>
+      <MatchupsLine />
       {users.data === undefined ? (
         <HomeSkeleton />
       ) : users.data.users.length === 0 ? (
@@ -97,6 +103,31 @@ export function HomePage() {
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * One line pointing at the matchup board (plan-matchup-board, Phase 2). It
+ * fetches nothing: the home page's job is the boards, and a count is not worth
+ * a request (and a Postgres read) on every visit. If this document has already
+ * loaded the current week's board, its count is used; otherwise the line
+ * says the same thing without a number.
+ */
+function MatchupsLine() {
+  const queryClient = useQueryClient();
+  const board = queryClient.getQueryData<MatchupBoardResponse>(queryKeys.matchupBoard(null));
+  const count =
+    board !== undefined && board.week !== null && board.error === null
+      ? board.matchups.length
+      : null;
+  return (
+    <p className={styles.matchups}>
+      <Link to="/matchups" className={styles.matchupsLink}>
+        {count === null
+          ? 'This week’s games between boards'
+          : `This week: ${String(count)} ${count === 1 ? 'matchup' : 'matchups'} between boards`}
+      </Link>
+    </p>
   );
 }
 

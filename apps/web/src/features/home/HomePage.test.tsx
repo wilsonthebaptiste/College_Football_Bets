@@ -1,4 +1,4 @@
-import type { ProjectionsResponse, UsersResponse } from '@cfb/shared';
+import type { MatchupBoardResponse, ProjectionsResponse, UsersResponse } from '@cfb/shared';
 import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, it } from 'vitest';
 import { queryKeys } from '../../lib/api';
@@ -6,6 +6,8 @@ import { ApiError } from '../../lib/apiClient';
 import {
   boardSummary,
   inputDown,
+  makeMatchup,
+  matchupBoardResponse,
   projectionSources,
   projectionsResponse,
 } from '../../test/fixtures';
@@ -48,8 +50,13 @@ function leaderboard(): ProjectionsResponse {
 type Seed = ProjectionsResponse | ApiError | undefined;
 
 /** `users: null` leaves the people list loading. */
-function renderHome(projections: Seed, users: UsersResponse | null = USERS) {
+function renderHome(
+  projections: Seed,
+  users: UsersResponse | null = USERS,
+  matchups?: MatchupBoardResponse,
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retryOnMount: false } } });
+  if (matchups !== undefined) client.setQueryData(queryKeys.matchupBoard(null), matchups);
   if (users !== null) client.setQueryData(queryKeys.users, users);
   if (projections instanceof ApiError) {
     client.getQueryCache().build(client, { queryKey: queryKeys.projections }).setState({
@@ -177,5 +184,37 @@ describe('a failed or slow projection costs the page nothing (§42)', () => {
     const { markup, heard } = renderHome(undefined, null);
     expect(markup.match(/<h1/g)).toHaveLength(1);
     expect(heard).toContain('Loading boards…');
+  });
+});
+
+describe('the line pointing at the matchup board (plan-matchup-board, Phase 2)', () => {
+  it('links to /matchups under the heading, and asks the API for nothing to say so', () => {
+    const { markup, seen, client } = renderHome(leaderboard());
+    expect(markup).toContain('href="/matchups"');
+    expect(seen).toContain('Boards This week’s games between boards');
+    // The page's own two reads, and nothing for this line.
+    expect(client.getQueryCache().find({ queryKey: queryKeys.matchups })).toBeUndefined();
+  });
+
+  it('counts this week’s matchups when this visit has already loaded them', () => {
+    const board = matchupBoardResponse([makeMatchup(), makeMatchup({ providerGameId: 'b' })]);
+    expect(renderHome(leaderboard(), USERS, board).seen).toContain(
+      'This week: 2 matchups between boards',
+    );
+    const one = matchupBoardResponse([makeMatchup()]);
+    expect(renderHome(leaderboard(), USERS, one).seen).toContain(
+      'This week: 1 matchup between boards',
+    );
+  });
+
+  it('never counts a week it could not read, or the offseason, as zero', () => {
+    const failed = matchupBoardResponse([], {
+      error: { kind: 'provider_unavailable', message: 'x', requestId: null },
+    });
+    expect(renderHome(leaderboard(), USERS, failed).seen).toContain(
+      'This week’s games between boards',
+    );
+    const off = matchupBoardResponse([], { week: null, notice: 'offseason' });
+    expect(renderHome(leaderboard(), USERS, off).seen).not.toContain('0 matchups');
   });
 });

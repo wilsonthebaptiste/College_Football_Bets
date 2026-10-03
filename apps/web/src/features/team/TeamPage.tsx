@@ -3,7 +3,7 @@ import { useLocation, useParams } from 'react-router';
 import { BackLink, readFromState } from '../../components/BackLink';
 import { Card } from '../../components/Card';
 import { FreshnessLabel } from '../../components/FreshnessLabel';
-import { GameFacts, NextGameLine, PreviousGameLine } from '../../components/GameLine';
+import { GameFacts, NextGameLine, Opponent, PreviousGameLine } from '../../components/GameLine';
 import { LiveScore } from '../../components/LiveScore';
 import { PickedBy } from '../../components/PickedBy';
 import { Skeleton } from '../../components/Skeleton';
@@ -12,13 +12,13 @@ import { RankBadge, RecordBadge } from '../../components/Standing';
 import { TeamLogo } from '../../components/TeamLogo';
 import { isApiError } from '../../lib/apiClient';
 import { formatSeason, teamLabel } from '../../lib/format';
-import { predictionTarget } from '../../lib/prediction';
+import { predictionTarget, viewedTeamOrder } from '../../lib/prediction';
 import { teamAccent } from '../../lib/teamColor';
 import { useDocumentTitle } from '../../lib/useDocumentTitle';
 import { useTeamOwners } from '../../lib/useTeamOwners';
 import { unavailableMessage } from '../board/TeamCard';
 import { Panel } from './Panel';
-import { PredictionPanel } from './PredictionPanel';
+import { PredictionPanel, type PredictionSubject } from './PredictionPanel';
 import { TeamProjectionPanel } from './ProjectionPanel';
 import { ScheduleSection } from './ScheduleSection';
 import styles from './TeamPage.module.css';
@@ -181,8 +181,10 @@ export function TeamPage() {
               <NextFacts slot={data.nextGame} />
             </Panel>
             <PredictionPanel
-              game={predictionTarget(data)}
-              team={{ providerTeamId: identity.providerTeamId, name }}
+              subject={predictionSubject(predictionTarget(data), {
+                providerTeamId: identity.providerTeamId,
+                name,
+              })}
             />
             <TeamProjectionPanel query={projection} />
           </div>
@@ -197,6 +199,15 @@ export function TeamPage() {
       />
     </div>
   );
+}
+
+/** The team page's prediction: this team first, against the game's opponent, named. */
+function predictionSubject(
+  game: Game | null,
+  team: { providerTeamId: string; name: string },
+): PredictionSubject | null {
+  if (game === null) return null;
+  return { game, order: viewedTeamOrder(team, game), label: <Opponent game={game} /> };
 }
 
 function upcomingOf(slot: NextGameSlot): Game | null {

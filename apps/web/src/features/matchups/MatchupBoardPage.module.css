@@ -1,0 +1,143 @@
+.page {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.header {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.title {
+  font-size: var(--text-display);
+  line-height: 0.95;
+  letter-spacing: -0.01em;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  color: var(--color-ink-secondary);
+  font-weight: 500;
+}
+
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-2);
+}
+
+.refresh {
+  min-width: 8.5rem;
+}
+
+.spinning {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.notice {
+  color: var(--color-stale);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.notice:empty {
+  display: none;
+}
+
+/* Previous on the left, next on the right, each a full-height touch target. */
+.weekNav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.weekLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 44px;
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.weekLink:hover {
+  text-decoration: underline;
+}
+
+.next {
+  margin-inline-start: auto;
+}
+
+.flip {
+  transform: scaleX(-1);
+}
+
+.section {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.sectionTitle {
+  font-size: var(--text-xl);
+  padding-bottom: var(--space-1);
+  border-bottom: 2px solid var(--color-rule);
+}
+
+.day {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.dayTitle {
+  color: var(--color-ink-secondary);
+  font-size: var(--text-base);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* §34: one column on phones, two on tablets, three on desktops. */
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 640px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.cell {
+  min-width: 0;
+}
+
+.skeletonCard {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}

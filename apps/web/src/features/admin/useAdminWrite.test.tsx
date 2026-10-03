@@ -54,6 +54,9 @@ function seeded(): QueryClient {
   client.setQueryData(queryKeys.users, []);
   client.setQueryData(queryKeys.projections, {});
   client.setQueryData(queryKeys.boardProjection('u-1'), {});
+  client.setQueryData(queryKeys.matchupBoard(null), {});
+  client.setQueryData(queryKeys.matchupBoard('5'), {});
+  client.setQueryData(queryKeys.matchup('401'), {});
   return client;
 }
 
@@ -72,6 +75,7 @@ describe('a change to one board', () => {
       '/api/users',
       '/api/selections',
       '/api/projections',
+      '/api/matchups',
       '/api/users/u-1',
       '/api/users/u-1/board',
       '/api/users/u-1/projection',
@@ -111,7 +115,27 @@ describe('a change with no board of its own — a rename, an added person', () =
       expect(invalidated(client, queryKeys.owners)).toBe(true);
     });
     // A rename or a new person moves the leaderboard too: it names everybody.
-    expect(urls).toEqual(['/api/users', '/api/selections', '/api/projections']);
+    expect(urls).toEqual(['/api/users', '/api/selections', '/api/projections', '/api/matchups']);
     expect(invalidated(client, queryKeys.projections)).toBe(true);
+  });
+});
+
+describe('the matchup board (plan-matchup-board, Phase 2)', () => {
+  /**
+   * Every matchup row names the owners of both sides, and whether a game is a
+   * matchup at all depends on the picks. The server drops its composites on an
+   * admin write (`forgetMatchups`); this is the browser's half, so the admin
+   * who just moved a team does not see the old matchups for a minute.
+   */
+  it('re-fetches the current week and invalidates every week and game', async () => {
+    const client = seeded();
+    afterWriteFor(client)(null);
+
+    await vi.waitFor(() => {
+      expect(invalidated(client, queryKeys.matchupBoard(null))).toBe(true);
+    });
+    expect(urls).toContain('/api/matchups');
+    expect(invalidated(client, queryKeys.matchupBoard('5'))).toBe(true);
+    expect(invalidated(client, queryKeys.matchup('401'))).toBe(true);
   });
 });

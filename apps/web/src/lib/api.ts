@@ -6,6 +6,8 @@ import type {
   BoardProjectionResponse,
   BoardResponse,
   CreateUserResponse,
+  MatchupBoardResponse,
+  MatchupResponse,
   PredictionResponse,
   ProjectionsResponse,
   RenameUserResponse,
@@ -65,6 +67,22 @@ export const api = {
 
   teamProjection: (teamId: string, signal?: AbortSignal) =>
     getPublic<TeamProjectionResponse>(`/api/teams/${id(teamId)}/projection`, signal),
+
+  /**
+   * The matchup board (plan-matchup-board, Phase 2): every game in a week
+   * between two boards. `week` is the provider's own week number, exactly as
+   * the response's `weeks[].week` gives it; `null` asks the server for the
+   * current week, which it chooses (the client never guesses it).
+   */
+  matchups: (week: string | null, signal?: AbortSignal) =>
+    getPublic<MatchupBoardResponse>(
+      week === null ? '/api/matchups' : `/api/matchups?week=${encodeURIComponent(week)}`,
+      signal,
+    ),
+
+  /** One game, in the same row shape, for any game the provider has. */
+  matchup: (providerGameId: string, signal?: AbortSignal) =>
+    getPublic<MatchupResponse>(`/api/matchups/${id(providerGameId)}`, signal),
 
   /**
    * "Is this session an administrator?" Asked by `RequireAdmin` and by the
@@ -139,12 +157,15 @@ export const adminApi = {
  * touched: the people list, and the pick index, which carries display names as
  * well as memberships — so a rename changes it too. The projected leaderboard
  * is the same kind of read: it names everybody and totals every board, so a
- * rename, a new person, or any one board's change moves it.
+ * rename, a new person, or any one board's change moves it. So is the current
+ * week's matchup board, which names the owners of every side (other weeks and
+ * single games are left to their own short lifetimes: at most a minute).
  */
 export const PUBLIC_INDEX_PATHS: readonly string[] = [
   '/api/users',
   '/api/selections',
   '/api/projections',
+  '/api/matchups',
 ];
 
 /** The public reads an admin change can make stale: primed after every write (`refreshPublic`). */
@@ -189,6 +210,16 @@ export const queryKeys = {
   projections: ['projections'] as const,
   boardProjection: (userId: string) => ['projections', 'board', userId] as const,
   teamProjection: (teamId: string) => ['projections', 'team', teamId] as const,
+  /**
+   * The matchup board and its games. One prefix, so an admin write sweeps them
+   * all with one invalidation; out of `'admin'` for the reason `search` is.
+   * `week` is the URL's own `?week=` text, or `'current'` without one: the
+   * server decides what the current week is, so "current" and "6" are two
+   * entries even when they are the same week.
+   */
+  matchups: ['matchups'] as const,
+  matchupBoard: (week: string | null) => ['matchups', 'week', week ?? 'current'] as const,
+  matchup: (providerGameId: string) => ['matchups', 'game', providerGameId] as const,
   adminSession: ['admin', 'session'] as const,
   adminUsers: ['admin', 'users'] as const,
   adminBoard: (userId: string) => ['admin', 'board', userId] as const,

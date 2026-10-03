@@ -37,6 +37,13 @@ beforeEach(() => {
 const header = () => renderInRouter(<AppHeader />);
 const links = () => visibleText(header());
 
+describe('the header Matchups link (plan-matchup-board, Phase 2)', () => {
+  it('sits beside Boards for every viewer, signed in or not', () => {
+    expect(links()).toBe('CFB Board Boards Matchups Search');
+    expect(header()).toContain('href="/matchups"');
+  });
+});
+
 describe('the header Admin link', () => {
   it('is absent for a viewer', () => {
     expect(links()).not.toContain('Admin');
@@ -50,13 +57,13 @@ describe('the header Admin link', () => {
   it('is absent for a signed-in non-administrator (403)', () => {
     state.status = 'signed-in';
     state.confirmed = false;
-    expect(links()).toBe('CFB Board Boards Search');
+    expect(links()).toBe('CFB Board Boards Matchups Search');
   });
 
   it('appears once the server confirms an administrator', () => {
     state.status = 'signed-in';
     state.confirmed = true;
-    expect(links()).toBe('CFB Board Boards Admin Search');
+    expect(links()).toBe('CFB Board Boards Matchups Admin Search');
   });
 });
 

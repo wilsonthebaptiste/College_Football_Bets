@@ -157,3 +157,38 @@ describe('projected points (predicting_score.md, Phase 4)', () => {
     expect(invalidated).toHaveLength(3);
   });
 });
+
+describe('the matchup board (plan-matchup-board, Phase 2)', () => {
+  it('reads the two public routes, with no token, and asks for the current week by leaving the week out', async () => {
+    await api.matchups(null);
+    await api.matchups('6');
+    await api.matchup('401858476');
+    expect(urls).toEqual(['/api/matchups', '/api/matchups?week=6', '/api/matchups/401858476']);
+    expect(headers.every((sent) => !('authorization' in sent))).toBe(true);
+  });
+
+  it('encodes what the URL gave it rather than pasting it into a path', async () => {
+    await api.matchups('6&x=1');
+    await api.matchup('a/b');
+    expect(urls).toEqual(['/api/matchups?week=6%26x%3D1', '/api/matchups/a%2Fb']);
+  });
+
+  it('keeps "current" and a numbered week apart, all under one prefix, out of the admin one', () => {
+    expect(queryKeys.matchupBoard(null)).not.toEqual(queryKeys.matchupBoard('6'));
+    const client = new QueryClient();
+    client.setQueryData(queryKeys.matchupBoard(null), 1);
+    client.setQueryData(queryKeys.matchupBoard('6'), 2);
+    client.setQueryData(queryKeys.matchup('401'), 3);
+    client.removeQueries({ queryKey: ['admin'] });
+    void client.invalidateQueries({ queryKey: queryKeys.matchups });
+    const invalidated = client
+      .getQueryCache()
+      .getAll()
+      .filter((query) => query.state.isInvalidated);
+    expect(invalidated).toHaveLength(3);
+  });
+
+  it('re-fetches the current week after any admin write: it names every owner', () => {
+    expect(PUBLIC_INDEX_PATHS).toContain('/api/matchups');
+  });
+});

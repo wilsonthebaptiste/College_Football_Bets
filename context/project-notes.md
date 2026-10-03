@@ -30,9 +30,10 @@ projected points was built and deployed.
   That file holds the measured source data, the rubric, and the plan; **§12 of
   this file holds what building it actually taught us.**
 - [plan-matchup-board.md](plan-matchup-board.md) — the matchup board: every
-  game in a week between two boards. **Phase 1 (the API) is built and
-  verified, not committed or deployed**; Phases 2 (the screens) and 3 (the
-  live game page, docs, deploy) are next. §13 below is the short version.
+  game in a week between two boards. **Phase 1 (the API) is committed
+  (`1380a99`); Phase 2 (the two screens) is built and verified, not committed;
+  nothing is deployed.** Phase 3 (the live game page, docs, deploy) is next.
+  §13 below is the short version.
 - Operations — deploying, configuration, limits, troubleshooting — is
   [../docs/ops.md](../docs/ops.md).
 - ESPN's undocumented API, as observed: [../docs/espn-notes.md](../docs/espn-notes.md).
@@ -990,11 +991,37 @@ reproducing the stated source and recording the doubt — was the right one.
 
 ## 13. The matchup board (in progress)
 
-Plan: [plan-matchup-board.md](plan-matchup-board.md). **Phase 1 is built and
-verified (2026-10-03), not committed and not deployed.** Its
-[completion notes](plan-matchup-board.md#phase-1--completion-notes) are the
-full record — what exists, each exit criterion, the measurements, and thirteen
-decisions. What belongs here is what a later feature will trip over.
+Plan: [plan-matchup-board.md](plan-matchup-board.md). **Phase 1 is committed
+(`1380a99`); Phase 2 is built and verified (2026-10-03), not committed; neither
+is deployed.** Each phase's completion notes are the full record —
+[Phase 1](plan-matchup-board.md#phase-1--completion-notes) (the API, thirteen
+decisions) and [Phase 2](plan-matchup-board.md#phase-2--completion-notes) (the
+screens, sixteen decisions). What belongs here is what a later feature will
+trip over.
+
+**From Phase 2 (the screens, `apps/web` only — 1230 tests, up 113):**
+
+- **Two new pages**, `/matchups?week=` and `/matchups/:gameId`, lazy and
+  prefetched, and a **"Matchups" header link** beside "Boards". The home page
+  has one line linking there, which fetches nothing.
+- **`PredictionPanel` is shared by two pages now**, through
+  `subject: { game, order, label? }`; `predictionView(prediction, gameId,
+  order)` takes a `PredictionOrder` (`viewed_team` or `away_home`). Change its
+  wording once and both pages follow — that is the point; do not fork it.
+- **All matchup display rules live in `lib/matchup.ts`** (sections, the
+  viewer-zone day grouping, titles, "Both Wilson's", results, score states,
+  the header's oldest-row freshness). The client's `isInProgress` mirrors the
+  server's ordering rule (a mid-game delay is "Live now"); keep the two in step.
+- **`['matchups']` is a fourth query prefix an admin write must invalidate**
+  (`useAdminWrite.ts`), and `/api/matchups` is in `PUBLIC_INDEX_PATHS`.
+- **The first `<h4>` in the app had no reset** — `global.css` covered h1–h3
+  only, and a screenshot, not a test, found it. A future `h5` has the same trap.
+- **A flex gap is not a space**: the board header read "week 5Rankings". Fixed
+  on both headers; assert a real space with `visibleText`.
+- **Browser checks (84 + a 3-check slate drill) passed on the mock provider
+  only.** The real-ESPN and deployed runs are Phase 3's.
+
+**From Phase 1 (the API):**
 
 - **Two new public routes**, `GET /api/matchups?week=` and
   `GET /api/matchups/:gameId`, and two new provider methods,

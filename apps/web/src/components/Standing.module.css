@@ -24,6 +24,10 @@
   font-size: var(--numeral-md);
 }
 
+.sm {
+  font-size: var(--text-base);
+}
+
 .quiet {
   color: var(--color-ink-muted);
   font-weight: 600;

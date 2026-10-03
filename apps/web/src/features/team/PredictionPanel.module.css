@@ -77,6 +77,11 @@
   background: var(--color-rule-strong);
 }
 
+/* The first side, on a page that views neither team (the matchup page). */
+.neutralFill {
+  background: var(--color-ink-muted);
+}
+
 .note {
   color: var(--color-ink-secondary);
   font-size: var(--text-sm);

@@ -5,11 +5,13 @@
 - [x] **Phase 1 — The week's matchups, as data.** A week of games in one
   provider read, joined to the boards' picks, served as
   `GET /api/matchups?week=` and `GET /api/matchups/:gameId`. API only.
-  Built 2026-10-02/03, not yet committed or deployed. See
+  Built 2026-10-02/03, committed as `1380a99`, not deployed. See
   [Phase 1 — Completion notes](#phase-1--completion-notes).
-- [ ] **Phase 2 — The matchup board, and the way into a game.** The `/matchups`
+- [x] **Phase 2 — The matchup board, and the way into a game.** The `/matchups`
   page, a header link, week navigation, and a first `/matchups/:gameId` page
   showing who has each side and the pregame win probability.
+  Built 2026-10-03, web only, not yet committed or deployed. See
+  [Phase 2 — Completion notes](#phase-2--completion-notes).
 - [ ] **Phase 3 — Inside the game, live; docs, drills, and the deploy.** Box
   score, leaders, line score, scoring plays, down and distance, and ESPN's live
   win probability, all updating while the game is on. Then the release.
@@ -549,6 +551,195 @@ Built now so that every card goes somewhere real. Phase 3 fills it out.
   is twelve more cache keys and up to twelve more KV writes every two hours.
   The predictor belongs on the game page. If the owner wants a favourite on
   the card, it is an Open question with a cost attached.
+
+### Phase 2 — Completion notes
+
+Written 2026-10-03, at the end of the phase, for whoever builds Phase 3.
+**Phase 1 is committed (`1380a99`); Phase 2 is not committed and nothing is
+deployed.** The working tree on `main` holds the whole of Phase 2, all of it
+in `apps/web` — **the API, `packages/shared`, and the database were not
+touched.** `npm run verify` is green — **1230 tests in 50 files, up 113 from
+1117** — and `npm run format:check`, `check:season`, and `check:bundle` are
+green.
+
+#### What exists now
+
+| File | What it is |
+| --- | --- |
+| `apps/web/src/lib/matchup.ts` | **New.** Every rule the screens apply to a row, pure and unit-tested: `isInProgress`, `sectionOf` (`live`/`upcoming`/`final`/`off`), `groupMatchups` (upcoming regrouped by the viewer's day), `matchupTitle`, `sharedOwners`, `sameOwnerNote`, `resultOf`, `scoreState`, `summarizeMatchupFreshness`, `rankingPollOfMatchups`, `weekLabel`, `adjacentWeeks`, `weekPath`, `matchupPath`, `teamPath` |
+| `apps/web/src/lib/format.ts` | `gameDayKey(game, {timeZone})` (sortable `YYYY-MM-DD`; a TBD kickoff's day read in Eastern) and `formatGameDay(key)` ("Saturday, October 10") |
+| `apps/web/src/lib/poll.ts` | `matchupBoardPollInterval(board, now)` and `matchupPollInterval(row, now)`; `nearKickoff` now takes any `{kickoffTbd, status, kickoffUtc}` |
+| `apps/web/src/lib/prediction.ts` | **Changed signature**: `predictionView(prediction, providerGameId, order)`, with `PredictionOrder = {kind:'viewed_team', team, opponent} \| {kind:'away_home', away, home}`, `NamedTeam`, and `viewedTeamOrder(team, game)` |
+| `apps/web/src/lib/api.ts` | `api.matchups(week \| null)`, `api.matchup(id)`; keys `queryKeys.matchups` (prefix), `matchupBoard(week)` = `['matchups','week', week ?? 'current']`, `matchup(id)` = `['matchups','game', id]`; `'/api/matchups'` added to `PUBLIC_INDEX_PATHS` |
+| `apps/web/src/features/matchups/useMatchups.ts` | **New.** `matchupBoardQuery(week)` (exported `queryOptions`, so the polling test drives exactly what the page uses), `useMatchupBoard`, `useMatchup` (with `placeholderData` from any loaded board, so board → game paints at once, as board → team does) |
+| `apps/web/src/features/matchups/parts.tsx` + `.module.css` | **New.** What both screens print: `MatchupStatus` (`context: 'card' \| 'page'`), `OwnerNames`, `SideScore`, `failureCopy`, `requestIdOf` |
+| `apps/web/src/features/matchups/MatchupCard.tsx` + `.module.css` | **New.** One card, and `MatchupCardFallback` for its error boundary |
+| `apps/web/src/features/matchups/MatchupBoardPage.tsx` + `.module.css` | **New.** `/matchups?week=` |
+| `apps/web/src/features/matchups/MatchupPage.tsx` + `.module.css` | **New.** `/matchups/:gameId` |
+| `apps/web/src/features/team/PredictionPanel.tsx` | Now `PredictionPanel({ subject, title })`, `subject: PredictionSubject \| null` = `{ game, order, label? }`. `.neutralFill` in its CSS for a page that views neither team |
+| `apps/web/src/features/team/TeamPage.tsx` | Builds its subject with `viewedTeamOrder` and `label: <Opponent/>` — renders exactly as before (all 56 team-page tests unchanged) |
+| `apps/web/src/app/pages.ts`, `routes.tsx` | Two lazy routes, both prefetched when idle (`prefetchViewerPages`) |
+| `apps/web/src/components/AppHeader.tsx` | "Matchups" `NavLink` after "Boards" (no `end`, so a game page keeps it active) |
+| `apps/web/src/features/home/HomePage.tsx` | `MatchupsLine` under the h1 |
+| `apps/web/src/features/admin/useAdminWrite.ts` | Invalidates the `['matchups']` prefix after every admin write |
+| `apps/web/src/components/Standing.tsx` | `RankBadge`/`RecordBadge` gained `size="sm"` (text size, for a card's team row) |
+| `apps/web/src/styles/global.css` | `h4` added to the margin reset and the display-font rule (see decision 12) |
+| `apps/web/src/features/board/BoardPage.tsx` | A real space between the season and "Rankings:" (decision 13) |
+| `apps/web/src/test/fixtures.ts` | `makeMatchup` (Ohio State, Wilson's, at Iowa, Steph's; Sat 19:30Z on FOX), `liveMatchup` (2nd qtr, 14–7), `finalMatchup` (31–24), `makeMatchupSide`, `makeMatchupOwner`, `WILSON`/`STEPH`/`JORDAN`, `LONGEST_NAME`, `matchupBoardResponse` (weeks 5–7), `matchupResponse` |
+| Tests | **New:** `lib/matchup.test.ts` (26), `features/matchups/MatchupBoardPage.test.tsx` (37), `MatchupPage.test.tsx` (28), `useMatchups.test.ts` (3, the real `QueryClient` with a fake clock). **Extended:** `poll.test.ts`, `prediction.test.ts` (away_home order), `api.test.ts`, `HomePage.test.tsx`, `AppHeader.test.tsx`, `useAdminWrite.test.tsx`, `routes.test.tsx` |
+
+#### Exit criteria, one by one
+
+| Criterion | Result | Where |
+| --- | --- | --- |
+| Home → Matchups → a game → back, fresh window, no session, no Supabase request | **Met** in headless Edge on the production build (`vite preview` → local mock Worker): every step, back link (history back), forward/back, then home; zero requests matching `supabase`, zero console errors | browser run, "Journey" |
+| 320 / 768 / 1440 px, light and dark, no horizontal scroll, longest name + multi-owner side on one card | **Met**, 12 combinations, board and game page. The run rewrites the first real row to `LONGEST_NAME` and **three** owners. "No sideways" checks every element in `<main>` against the viewport, not only `scrollWidth`, because `body` clips `overflow-x` and would hide a poking element | browser run, "Layout" |
+| Every state asserted in component tests: loading, failed request, 429, stale row, failed row, empty week, offseason, live with no score, TBD kickoff, postponed, same-owner, two-owner side | **Met**, plus `week_unknown`, a week the provider could not read, an invalid `?week=` (400), halftime, a mid-game delay, Final/OT, neutral site, postseason labels, a canceled game, a side on no board, a failed prediction | `MatchupBoardPage.test.tsx`, `MatchupPage.test.tsx` |
+| Keyboard only: header link, week links, then every card in order, visible focus ring, Enter opens | **Met** on the board: Matchups link → (search box, Refresh) → previous/next week → all 14 cards, one Tab stop each, in reading order; the card's computed outline is `solid 3px` while its link is focused; Enter navigates. **The game page was not walked by keyboard** | browser run, "Keyboard" |
+| Axe clean on both pages at 320 and 1280 in both themes; one `<h1>`; live score region `polite`, rest of card not | **Met**: axe (wcag2a/aa, 21a/aa) zero violations at 320, 1280, and 1440, both themes, both pages. Exactly one polite region per live card, inside the card, holding the two team rows only (no LIVE, clock, Updated, or TV) | browser run, "Layout" and "Live regions"; component tests |
+| Hidden-tab test with the real `QueryClient` and a fake clock, including the mutation check | **Met.** `useMatchups.test.ts` runs `matchupBoardQuery` under `createQueryClient()`: 15 s polling while live, nothing for five hidden minutes, one refetch on return; the idle pace on a quiet week; no storm on tab flicking. **Mutation run by hand**: `refetchIntervalInBackground: true` in `lib/queryClient.ts` fails the first test; file restored (no diff) | `useMatchups.test.ts` |
+| Slate blocked (a live row stale) and matchups request blocked (page `ErrorState`), said in words | **Met.** Slate: a second, cold mock Worker on 8788 with `--var SPORTS_PROVIDER_FAULT:slate` behind a second preview on 4174 — the API answered every live row `stale` with the week document's `fetchedAt` and the board `stale`; every live card said "May be out of date. Last updated: …" and so did the header. Request blocked: `page.route(...).abort()` → "Unable to load the matchups … Try again", one h1; the game page likewise; the prediction request blocked → the header stays and "Prediction unavailable" | browser run, "Blocked" and "stale" |
+
+The browser run is **84 checks + 3 for the slate drill, all passing**. Its
+script is `matchups-browser.mjs` in this session's scratchpad
+(`%TEMP%\claude\c--Users-wilso-django-College-Football-Bets\0abb35ac-…\scratchpad\`,
+with `playwright-core` and `axe-core` copied into its `node_modules`); like
+every earlier browser script it is outside the repo because CI has no browser.
+Usage: `node matchups-browser.mjs <site> [journey|layout|keyboard|live|blocked|stale|all]`.
+**Everything in Phase 2 was checked against the mock provider only**, never
+against real ESPN data; the local Worker read the real Supabase through
+`.dev.vars`, so the real nine names were on screen.
+
+#### Decisions and departures — each one a localized change if reversed
+
+1. **"Who's favored", not "Who's favoured".** The app's copy is US English
+   throughout ("Canceled", `en-US` formatters). The panel title is a prop, so
+   it is one string in `MatchupPage.tsx`.
+2. **`PredictionPanel` takes a `subject`, not a `Game` and a team.** `subject`
+   carries the game (only `providerGameId`, `status`, `kickoffUtc`,
+   `kickoffTbd` are read), the `PredictionOrder`, and an optional `label` (the
+   team page passes `<Opponent/>`; the matchup page passes none, because its
+   h1 already names both teams). Every sentence the panel says — the source
+   line, the pregame caveat, each "unavailable" reason — is still written once.
+   With `away_home`, sides are matched to the page's away team **by provider
+   id** (never by the prediction's own home/away); neither is "ours", and the
+   bar's first segment is `--color-ink-muted` instead of the accent, so the
+   bar does not seem to favour whichever side the accent lands on.
+3. **No prediction at all for a final or canceled game** — the panel is not
+   rendered, so it is not fetched either. A postponed game keeps it, as on the
+   team page (`predictionTarget` keeps postponed games too).
+4. **The home line fetches nothing.** It reads the current week's board from
+   the query cache (`getQueryData(queryKeys.matchupBoard(null))`) and says
+   "This week: 12 matchups between boards" only when this visit has already
+   loaded it (and it has a week and no error); otherwise "This week's games
+   between boards". It never says "0 matchups" for a failed or offseason read.
+5. **"current" and a numbered week are separate cache entries.** The server
+   decides what the current week is; the client never guesses it. `/matchups`
+   and `/matchups?week=6` therefore make two requests even when they are the
+   same week.
+6. **Admin writes**: the client re-fetches `/api/matchups` from the network
+   (`PUBLIC_INDEX_PATHS`) and invalidates the whole `['matchups']` prefix.
+   Other weeks and single games are not network-primed: their `max-age` is at
+   most 60 s, and the server's `forgetMatchups` already drops its composites.
+7. **The card.** Its one link is the matchup's name ("Ohio State at Iowa") in
+   an `h3` (Live, Final, Postponed sections) or an `h4` (under an upcoming
+   day's `h3`), stretched over the card with `::after`; the focus ring moves to
+   the card with `:has()`, as `TeamCard`. Away row over home row; the home row
+   starts with `HomeAwayMark` (`@`, or `vs` at a neutral site). Logos are
+   decorative (the name is beside them). Owners are plain text with a hidden
+   "Picked by " and commas between names (on the game page they are
+   `PickedBy` links instead). The live region is the two team rows plus the
+   "Score unavailable" line, `aria-atomic`, and only on in-progress rows.
+8. **Status words** (`MatchupStatus`). Live: LIVE badge + `liveSituation`
+   (provider wording, never "Final" while live). Delayed/suspended mid-game:
+   a status tag ("Delayed") + the provider's detail, **no LIVE badge**, but
+   still in "Live now" (the server's `inProgress` rule, mirrored as
+   `isInProgress`). Upcoming on a card: the time alone ("3:30 PM" or "Time
+   TBD"), since the day heading carries the date; on the game page,
+   `formatKickoff`. Final: `scheduleStatus` ("Final", "Final/OT") + the date.
+   Postponed/canceled: tag + date.
+9. **Upcoming days are the viewer's days.** `gameDayKey` in the viewer's zone
+   (a TBD kickoff's day in Eastern, because its time is a midnight-Eastern
+   placeholder); days sorted by key, the server's order kept within a day (so
+   TBD stays last); a kickoff that is not a date goes in a last group, "Date to
+   be announced". Tested in New York, Los Angeles, Chicago, London, Honolulu.
+10. **Results.** `W`/`L` (`ResultMark`, shapes not colour) only when the status
+    is final and the **other** side's `winner` is `true` for the `L`. Two
+    `false` winners are a data gap: no mark at all, never an inferred tie.
+11. **The header.** "Week 6 matchups" (`weekLabel`: the calendar's label, so
+    "CFP matchups", "Bowls"), then the season without the week (`2026 season`),
+    the poll once, "Last updated" = the oldest row's `fetchedAt` (in practice
+    the week document's, since upcoming rows carry it), stale if the board or
+    any row is. A **Refresh** button and a "Couldn't refresh" status line, as
+    the board has (not in the plan). Week links come after Refresh in Tab
+    order and before the cards. A `?week=` the calendar lacks (the API's 400)
+    is "No such week" with a link to `/matchups`. A 429 is "Too many requests —
+    Wait a moment, then try again." (`failureCopy`).
+12. **The first `<h4>` in the app exposed a gap in the global reset.**
+    `global.css` reset margins and set the display font for `h1`–`h3` only, so
+    every upcoming card's head was 69 px tall with browser-default margins.
+    **No test caught it; a screenshot did.** `h4` is now in both rules.
+13. **"2026 seasonRankings" — found here, fixed on the board page too.** The
+    season and the poll were two spans separated only by a flex gap, so the
+    line read and copied as one word. Both headers now put a real space
+    between them, and the matchup test asserts `2026 season Rankings: AP Top 25`.
+14. **The game page's way back.** From router state when the page was opened
+    from a board (history back). Otherwise the game's own week:
+    `/matchups?week=N` labelled "Week N matchups" in the regular season, or
+    "Postseason matchups" — the single-game response carries no calendar, so a
+    postseason week has no label to print, and "Week 999" would be wrong.
+    Team links use our uuid, else the provider id (`teamPath`), with this game
+    as their `from`. A side nobody has says "Not on any board". The footer
+    says "Score updated <time>" while live and not stale, else the
+    `FreshnessLabel` (which says "May be out of date" when stale).
+15. **`lib/matchup.ts` is in the main bundle**, because `lib/poll.ts` (used by
+    the board) imports `isInProgress` from it. A couple of KB; the pages
+    themselves are their own chunks (`MatchupBoardPage` 9 KB, `MatchupPage`
+    4.8 KB, shared `useMatchups` 3.2 KB, before gzip).
+16. **No API change was needed.** Phase 1's contract was sufficient for every
+    state. One oddity seen in mock data: a live row can carry
+    `kickoffTbd: true` (Notre Dame at Texas); the live section never reads
+    TBD, so it renders correctly.
+
+#### What Phase 3 should know
+
+- **Where the game page grows.** `MatchupPage.tsx`: `GameHeader` (the hero
+  card; its `.titleRow` holds the h1 and `MatchupStatus` — the situation line
+  goes there; its `.sides` div is the live region), then the
+  `PredictionPanel`. §51 order puts line score, then win probability (the
+  live ESPN bar above the pregame panel), then stats, leaders, drive, scoring
+  plays. Each new section should be its own request and its own `Panel`
+  (`features/team/Panel.tsx`), so a failed detail leaves the header and the
+  prediction.
+- **Polling.** `matchupPollInterval` idles a final game at 5 min; Phase 3's
+  rule is "a final game does not poll at all" — return `false` from
+  `useMatchup`'s `refetchInterval` for `status === 'final'` once the detail
+  read exists, and give the detail its own `gameDetailPollInterval`.
+- **The labels the Phase 3 real-payload test must assert where rendered**:
+  "Source: ESPN matchup predictor" and the pregame caveat already render in
+  `PredictionPanel` (tested with mock labels and with `makePrediction`'s
+  ESPN label); "ESPN win probability (live)" is Phase 3's.
+- **Test helpers.** Seed the cache with `queryKeys.matchup(id)` and
+  `queryKeys.prediction(id)`; `renderAt(path, '/matchups/:gameId', <MatchupPage/>,
+  client, state)`. `spokenText` only strips `<span aria-hidden="true">` with
+  no other attribute first, so `ResultMark`'s letter (which has a class)
+  stays in spoken text — assert with `W?Won`.
+- **The leftover-process trap, again.** `TaskStop` (or killing `npx`)
+  stopped the wrapper but left `workerd` **and** wrangler's `node` parent
+  listening on 8787/8788. They were found with `Get-NetTCPConnection`,
+  checked by command line and start time, and stopped by PID. All drill
+  ports were free at the end of the phase.
+
+#### Still open after Phase 2
+
+- A browser run against **real ESPN data** (local `wrangler dev` with the ESPN
+  provider), and against the deployed site — Phase 3.
+- A keyboard walk of the **game page** (only the board was walked), and a
+  real screen-reader pass (never done in this project).
+- README "Testing the matchup board", `docs/ops.md`, and the note that owner
+  names now appear on a third kind of page (no new exposure: every board is
+  public) — the plan puts docs in Phase 3.
+- Commit and deploy: not done, by design — the owner reviews first.
 
 ---
 

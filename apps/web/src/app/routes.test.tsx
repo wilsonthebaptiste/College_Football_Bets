@@ -18,12 +18,14 @@ describe('every page sits under the one layout that carries the header', () => {
     expect(layout?.element).toBeDefined();
   });
 
-  it('holds home, a board, a team, search, login, admin, and not-found', () => {
+  it('holds home, a board, a team, search, the matchups, login, admin, and not-found', () => {
     expect((layout?.children ?? []).map((route) => route.path)).toEqual([
       '/',
       '/u/:userId',
       '/teams/:teamId',
       '/search',
+      '/matchups',
+      '/matchups/:gameId',
       '/login',
       '/admin',
       '*',

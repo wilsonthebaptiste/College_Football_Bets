@@ -2,7 +2,16 @@ import { Outlet, type RouteObject } from 'react-router';
 import { RequireAdmin } from '../auth/RequireAdmin';
 import { HomePage } from '../features/home/HomePage';
 import { NotFoundPage } from './NotFoundPage';
-import { AdminPage, BoardEditorPage, BoardPage, LoginPage, SearchPage, TeamPage } from './pages';
+import {
+  AdminPage,
+  BoardEditorPage,
+  BoardPage,
+  LoginPage,
+  MatchupBoardPage,
+  MatchupPage,
+  SearchPage,
+  TeamPage,
+} from './pages';
 import { RootLayout } from './RootLayout';
 
 /**
@@ -19,6 +28,10 @@ export const routes: RouteObject[] = [
       // The query lives in `?q=`, not the path: a search IS a URL, shareable
       // and reloadable (plan-search-engine, Phase 3).
       { path: '/search', element: <SearchPage /> },
+      // The week lives in `?week=`, so previous/next are real links and the
+      // back button walks the weeks (plan-matchup-board, Phase 2; §47).
+      { path: '/matchups', element: <MatchupBoardPage /> },
+      { path: '/matchups/:gameId', element: <MatchupPage /> },
       { path: '/login', element: <LoginPage /> },
       {
         path: '/admin',

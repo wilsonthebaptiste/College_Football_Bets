@@ -19,6 +19,8 @@ import { lazy } from 'react';
 const loadBoardPage = () => import('../features/board/BoardPage');
 const loadTeamPage = () => import('../features/team/TeamPage');
 const loadSearchPage = () => import('../features/search/SearchPage');
+const loadMatchupBoardPage = () => import('../features/matchups/MatchupBoardPage');
+const loadMatchupPage = () => import('../features/matchups/MatchupPage');
 
 export const BoardPage = lazy(() =>
   loadBoardPage().then((module) => ({ default: module.BoardPage })),
@@ -26,6 +28,12 @@ export const BoardPage = lazy(() =>
 export const TeamPage = lazy(() => loadTeamPage().then((module) => ({ default: module.TeamPage })));
 export const SearchPage = lazy(() =>
   loadSearchPage().then((module) => ({ default: module.SearchPage })),
+);
+export const MatchupBoardPage = lazy(() =>
+  loadMatchupBoardPage().then((module) => ({ default: module.MatchupBoardPage })),
+);
+export const MatchupPage = lazy(() =>
+  loadMatchupPage().then((module) => ({ default: module.MatchupPage })),
 );
 export const LoginPage = lazy(() => import('../features/admin/LoginPage'));
 export const AdminPage = lazy(() => import('../features/admin/AdminPage'));
@@ -38,4 +46,8 @@ export function prefetchViewerPages(): void {
   // The header's search box links here from every page, so `/search` is as
   // reachable as a board is (plan-search-engine, Phase 3).
   loadSearchPage().catch(() => undefined);
+  // The header's Matchups link is on every page too (plan-matchup-board,
+  // Phase 2), and every card on that board opens a game page.
+  loadMatchupBoardPage().catch(() => undefined);
+  loadMatchupPage().catch(() => undefined);
 }

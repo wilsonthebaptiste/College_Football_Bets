@@ -2,7 +2,8 @@ import type { RankingState, TeamRecord } from '@cfb/shared';
 import { cx } from '../lib/cx';
 import styles from './Standing.module.css';
 
-type Size = 'lg' | 'md';
+/** `sm` sits inside a line of text: a matchup card's team row. */
+type Size = 'lg' | 'md' | 'sm';
 
 /**
  * §7 — three states, three renders, never confused:

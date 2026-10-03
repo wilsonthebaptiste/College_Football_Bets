@@ -1,0 +1,65 @@
+.status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+
+.situation {
+  color: var(--color-ink-secondary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.when {
+  color: var(--color-ink-secondary);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.final {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.owners {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.owner {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+.nobody {
+  color: var(--color-ink-muted);
+}
+
+.score,
+.scorePage {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums lining-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.score {
+  font-size: var(--numeral-md);
+}
+
+.scorePage {
+  font-size: var(--numeral-lg);
+}
+
+/* The result tile beside a score is smaller than the score itself. */
+.score > :first-child,
+.scorePage > :first-child {
+  font-size: var(--text-base);
+}

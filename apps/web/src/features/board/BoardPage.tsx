@@ -125,8 +125,16 @@ function BoardHeader({ board, refreshing, refreshFailed, onRefresh }: BoardHeade
     <header className={styles.header}>
       <h1 className={styles.title}>{board.user.displayName}</h1>
       <p className={styles.meta}>
+        {/* A real space between the two: a flex gap is not one, and without it
+            the line reads and copies as "week 5Rankings" (found in matchup-board
+            Phase 2, where the same header was written again). */}
         <span>{formatSeason(board.season)}</span>
-        {poll !== null && <span>Rankings: {poll}</span>}
+        {poll !== null && (
+          <>
+            {' '}
+            <span>Rankings: {poll}</span>
+          </>
+        )}
       </p>
 
       <div className={styles.status}>
