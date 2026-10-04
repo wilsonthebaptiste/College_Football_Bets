@@ -1,11 +1,11 @@
-import type { GameResponse, PredictionResponse } from '@cfb/shared';
+import type { GameDetailResponse, GameResponse, PredictionResponse } from '@cfb/shared';
 import { Hono } from 'hono';
 import type { AppBindings } from '../env';
 import { setCacheHeaders } from '../http/cache-headers';
 import { invalidRequest, notFound } from '../http/errors';
 import { isProviderId } from '../providers/ids';
 import { servicesFor } from '../services/context';
-import { getGame, getPrediction } from '../services/games';
+import { getGame, getGameDetail, getPrediction } from '../services/games';
 
 /**
  * Public game reads. `:gameId` is the provider's game id: games live only in
@@ -40,4 +40,15 @@ gameRoutes.get('/:gameId/prediction', async (c) => {
 
   setCacheHeaders(c, envelope.freshness, cacheStatus, services.now());
   return c.json({ prediction: envelope } satisfies PredictionResponse);
+});
+
+gameRoutes.get('/:gameId/detail', async (c) => {
+  const gameId = c.req.param('gameId');
+  if (!isProviderId(gameId)) throw notFound('No such game.');
+
+  const services = servicesFor(c);
+  const { envelope, cacheStatus } = await getGameDetail(services, gameId);
+
+  setCacheHeaders(c, envelope.freshness, cacheStatus, services.now());
+  return c.json({ detail: envelope } satisfies GameDetailResponse);
 });

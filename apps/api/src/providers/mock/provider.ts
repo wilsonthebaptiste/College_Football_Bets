@@ -1,4 +1,11 @@
-import type { Prediction, RankingsSnapshot, Season, SeasonWeek, TeamIdentity } from '@cfb/shared';
+import type {
+  GameDetail,
+  Prediction,
+  RankingsSnapshot,
+  Season,
+  SeasonWeek,
+  TeamIdentity,
+} from '@cfb/shared';
 import { resolveSeasonFromDate } from '@cfb/shared';
 import type {
   ConferenceMap,
@@ -10,6 +17,7 @@ import type {
   TeamProjectionsDocument,
 } from '../types';
 import { ProviderError } from '../types';
+import { mockGameDetail, mockSituation } from './detail';
 import {
   DEFAULT_CURRENT_WEEK,
   currentWeekFor,
@@ -108,9 +116,14 @@ export class MockProvider implements SportsDataProvider {
   async getSlate(slateKey: string): Promise<ProviderGame[]> {
     const season = await this.getCurrentSeason();
     if (season === null) return [];
-    return generateSeason(season, this.now()).filter(
-      (game) => this.slateKeyFor(game.kickoffUtc) === slateKey,
-    );
+    const now = this.now();
+    // Only a slate carries down and distance, as only ESPN's scoreboard does.
+    return generateSeason(season, now)
+      .filter((game) => this.slateKeyFor(game.kickoffUtc) === slateKey)
+      .map((game) => {
+        const situation = mockSituation(game, now);
+        return situation === null ? game : { ...game, situation };
+      });
   }
 
   async getGame(providerGameId: string): Promise<ProviderGame> {
@@ -166,6 +179,12 @@ export class MockProvider implements SportsDataProvider {
       },
       retrievedAt: new Date(this.now()).toISOString(),
     };
+  }
+
+  /** Synthetic, labelled mock, and moving with the clock while live (Phase 3). */
+  async getGameDetail(providerGameId: string): Promise<GameDetail> {
+    const game = await this.getGame(providerGameId);
+    return mockGameDetail(game, this.now());
   }
 
   /** Synthetic FPI-shaped figures, labelled `mock_projection` (§46). */

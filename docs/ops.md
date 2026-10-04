@@ -471,6 +471,54 @@ Cloudflare let every one through. If `exceededCpu` ever appears on
 `/api/projections`, the remedy is to cache the join's result (67 rows) rather
 than the whole team list on that path.
 
+### The matchup board release (2026-10-04)
+
+The fifth deploy, and the first of the matchup board: all three phases
+(context/plan-matchup-board.md) at once — Phase 1's two routes
+(`/api/matchups?week=`, `/api/matchups/:gameId`), Phase 2's two pages
+(`/matchups`, `/matchups/:gameId`) and header link, and Phase 3's
+`/api/games/:gameId/detail` and the game page filled out. **No configuration
+change, no new secret, no new binding**: steps 5 and 7 only, by hand.
+
+What it costs, by design:
+
+| Read                         | Cache                                                                                            | KV writes                                      |
+| ---------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
+| The week's games             | `week_games`: 15 min (a day once every game is over), stale 6 h; the cron warms the current week | at most hourly per week key: a few dozen a day |
+| The assembled board / game   | `matchup_composite`: 60 s, or 15 s while live or degraded; L1 only                               | none                                           |
+| The live score and situation | The boards' own 25 s slate, shared; L1 only                                                      | none                                           |
+| Inside a game                | `game_detail`: live 25 s L1 only (from 15 min before kickoff); upcoming 10 min; final 7 days     | upcoming at most hourly per game; final once   |
+
+Verified before deploying:
+
+| Question                                    | Answer                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run verify`                            | **1313 tests in 53 files**, green; `format:check`, `check:season`, `check:bundle` clean                                                                                                                                                                                                                                                                                                                                            |
+| `npm run smoke` against a local mock Worker | The three new routes pass (14 matchups, a live game's detail with 7 stat rows and 12 scoring plays). The one failure, "every card has sports data 3 of 6", is mock mode against the real boards, whose real teams the mock season does not know — as before this release                                                                                                                                                           |
+| Six fault drills, cold, on real ESPN, local | `week`, `slate`, `detail`, `prediction`, `rankings`, `all`, each named and run alone; every reference followed to its `cache_refresh_failed_*` log line. Table below                                                                                                                                                                                                                                                               |
+| Browser, local, mock and real ESPN          | Mock: every check passing, about 80 (journey, a live game polling at 15 s with its stats time moving, a final game making **no** request in 25 s, season averages, the detail aborted, 320/768/1440 in both themes, axe, keyboard). Real ESPN: 35 checks on Sunday's finals and week 6's upcoming games. The captured live game (California at UNLV) served to the built site: 15 checks, axe clean at 320/768/1280 in both themes |
+
+The drills (local `wrangler dev`, real ESPN, a cold cache each, Sunday
+2026-10-04, so no game was live):
+
+| Fault        | Seen                                                                                                                                                                              |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| none         | Week 5: 11 matchups; Pitt at Virginia Tech's detail 15 stat rows, 11 scoring plays, no win probability (final); week 6's first game season averages (8 rows) and ESPN's predictor |
+| `detail`     | The header and the prediction 200 and whole; the detail `unavailable` with a reference → `cache_refresh_failed_nothing_cached key=v2\|espn\|game_detail\|401858245`               |
+| `week`       | The board `unavailable` with a reference → the `week\|2026:regular\|5` log line; a game page still opens and its detail is fresh                                                  |
+| `prediction` | "none" with a reference → the `prediction\|401858254` log line; the detail untouched                                                                                              |
+| `rankings`   | Every rank `unavailable`, nothing else lost                                                                                                                                       |
+| `slate`      | Nothing to see on a Sunday: no row was in its live window. The live-row behaviour (stale, original time, no situation) is covered by tests and Phase 2's mock drill               |
+| `all`        | The board `unavailable` (four log lines: calendar, weeks, week, rankings); a game page a **503** with a reference; the detail `unavailable` with its own                          |
+
+**Found on the day, not a defect of this release:** on Sunday before about
+2 PM Eastern ESPN's `rankings` feed listed only the Coaches Poll, with no AP
+poll for the new week, so `toRankings` (CFP, else AP) found none and every rank
+read `—` everywhere in the app, boards included. It is the existing rule,
+honestly applied; it clears when the AP poll is published.
+
+And afterwards, on the live Worker: see the rows filled in below.
+
 ---
 
 ## Continuous deployment
@@ -649,6 +697,13 @@ Plan §5 asks for 24 hours of normal use measured against the free tiers.
   small and flat: `projection_inputs` and `conference_odds` at about four writes
   a day each, nearly all from the cron. Anything more than that means the 6 h
   KV interval is not holding. Nothing else in the feature writes KV.
+- **After the matchup board release**, `week_games` should be a few dozen
+  writes a day (the current week, at most hourly, mostly from the cron, plus
+  one an hour for any other week someone opens) and `game_detail` small:
+  only an upcoming game's detail (at most hourly per game) and a final game's
+  (once a week). A live game's detail and every `matchup_composite` are L1
+  only and must never appear. On a Saturday, also watch CPU on
+  `/api/matchups`: a cold week document parses in 6–19 ms.
 - **Usage alert.** In **Notifications → Add**, look for a Workers usage or
   daily-limit notification and point it at your email. If your plan offers
   none, check the metrics above weekly during the season: a crawl shows up as

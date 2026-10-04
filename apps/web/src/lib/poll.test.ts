@@ -5,6 +5,9 @@ import {
   finalGame,
   finalMatchup,
   freshness,
+  gameDetailResponse,
+  liveGameDetail,
+  upcomingGameDetail,
   liveMatchup,
   makeMatchup,
   matchupBoardResponse,
@@ -20,6 +23,8 @@ import {
 } from '../test/fixtures';
 import {
   boardPollInterval,
+  gameDetailPollInterval,
+  isSettled,
   matchupBoardPollInterval,
   matchupPollInterval,
   POLL,
@@ -249,5 +254,35 @@ describe('matchupPollInterval (one game’s page)', () => {
       POLL.idleMs,
     );
     expect(matchupPollInterval(finalMatchup({ kickoffUtc: at(-3 * HOUR) }), NOW)).toBe(POLL.idleMs);
+  });
+});
+
+describe('gameDetailPollInterval (inside one game, Phase 3)', () => {
+  const ok = gameDetailResponse(upcomingGameDetail()).detail;
+
+  it('a final or canceled game does not poll at all', () => {
+    expect(gameDetailPollInterval(finalMatchup(), ok, NOW)).toBe(false);
+    expect(gameDetailPollInterval(makeMatchup({ status: 'canceled' }), ok, NOW)).toBe(false);
+    expect(isSettled(makeMatchup({ status: 'postponed' }))).toBe(false);
+  });
+
+  it('is live while the header says the game is on, whatever the detail lags behind at', () => {
+    expect(gameDetailPollInterval(liveMatchup(), ok, NOW)).toBe(POLL.liveMs);
+    expect(
+      gameDetailPollInterval(liveMatchup(), gameDetailResponse(liveGameDetail()).detail, NOW),
+    ).toBe(POLL.liveMs);
+  });
+
+  it('is active around kickoff, and while the detail failed, is missing, or is stale', () => {
+    expect(gameDetailPollInterval(makeMatchup({ kickoffUtc: at(2 * HOUR) }), ok, NOW)).toBe(
+      POLL.activeMs,
+    );
+    const far = makeMatchup({ kickoffUtc: at(5 * 24 * HOUR) });
+    expect(gameDetailPollInterval(far, undefined, NOW)).toBe(POLL.activeMs);
+    expect(gameDetailPollInterval(far, gameDetailResponse(null).detail, NOW)).toBe(POLL.activeMs);
+    expect(
+      gameDetailPollInterval(far, gameDetailResponse(upcomingGameDetail(), 'stale').detail, NOW),
+    ).toBe(POLL.activeMs);
+    expect(gameDetailPollInterval(far, ok, NOW)).toBe(POLL.idleMs);
   });
 });

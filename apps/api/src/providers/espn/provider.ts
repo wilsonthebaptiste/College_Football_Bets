@@ -1,4 +1,11 @@
-import type { Prediction, RankingsSnapshot, Season, SeasonWeek, TeamIdentity } from '@cfb/shared';
+import type {
+  GameDetail,
+  Prediction,
+  RankingsSnapshot,
+  Season,
+  SeasonWeek,
+  TeamIdentity,
+} from '@cfb/shared';
 import type {
   ConferenceMap,
   FpiFieldSums,
@@ -14,6 +21,7 @@ import {
   espnSeasonType,
   hasInlinePrediction,
   scheduleSeasonTypes,
+  toGameDetail,
   toPrediction,
   toProjectionInputs,
   toProviderGame,
@@ -28,6 +36,7 @@ import {
   readCalendar,
   readCalendarWeeks,
   readFpiPage,
+  readGameDetail,
   readGroup,
   readRankings,
   readRefPage,
@@ -310,6 +319,19 @@ export class EspnProvider implements SportsDataProvider {
     );
     if (standalone.status === 404) return null;
     return toPrediction(summary, readStandalonePredictor(standalone.body), retrievedAt);
+  }
+
+  /**
+   * The summary again, read for what is inside the game (espn-notes §14). The
+   * same request as `getGame` and `getPrediction`, cached under its own key,
+   * because its lifetime follows the box score rather than the header.
+   */
+  async getGameDetail(providerGameId: string): Promise<GameDetail> {
+    const id = safeId(providerGameId);
+    const { body } = await this.client.getJson(`${ESPN_SITE_API}/summary?event=${id}`);
+    const raw = readGameDetail(body);
+    if (raw === null) throw invalid('summary');
+    return toGameDetail(raw);
   }
 
   /**

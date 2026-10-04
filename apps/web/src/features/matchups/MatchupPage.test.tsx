@@ -101,6 +101,8 @@ describe('before kickoff: the header and who ESPN favours', () => {
       'h2:Ohio State',
       'h2:@ Iowa',
       'h2:Who’s favored',
+      // The detail is its own request, still loading here (Phase 3).
+      'h2:Game details',
     ]);
   });
 
@@ -164,8 +166,9 @@ describe('during the game', () => {
     expect(seen).toContain('In progress');
   });
 
-  it('makes the scores the one polite live region', () => {
-    expect(markup.match(/aria-live="polite"/g)).toHaveLength(1);
+  it('makes the scores and the situation line the only polite live regions (Phase 3)', () => {
+    expect(markup.match(/aria-live="polite"/g)).toHaveLength(2);
+    expect(markup).toMatch(/<p class="[^"]*situation[^"]*" aria-live="polite"/);
   });
 
   it('calls nothing Final', () => {

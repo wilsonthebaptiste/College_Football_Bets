@@ -5,16 +5,19 @@
 - [x] **Phase 1 — The week's matchups, as data.** A week of games in one
   provider read, joined to the boards' picks, served as
   `GET /api/matchups?week=` and `GET /api/matchups/:gameId`. API only.
-  Built 2026-10-02/03, committed as `1380a99`, not deployed. See
+  Built 2026-10-02/03, committed as `1380a99`, deployed 2026-10-04. See
   [Phase 1 — Completion notes](#phase-1--completion-notes).
 - [x] **Phase 2 — The matchup board, and the way into a game.** The `/matchups`
   page, a header link, week navigation, and a first `/matchups/:gameId` page
   showing who has each side and the pregame win probability.
-  Built 2026-10-03, web only, not yet committed or deployed. See
+  Built 2026-10-03, web only, committed as `fb4e168`, deployed 2026-10-04. See
   [Phase 2 — Completion notes](#phase-2--completion-notes).
-- [ ] **Phase 3 — Inside the game, live; docs, drills, and the deploy.** Box
+- [x] **Phase 3 — Inside the game, live; docs, drills, and the deploy.** Box
   score, leaders, line score, scoring plays, down and distance, and ESPN's live
   win probability, all updating while the game is on. Then the release.
+  Built 2026-10-03/04, deployed with Phases 1 and 2 on 2026-10-04. One step
+  left by its nature: the first real Saturday on the deployed site
+  (2026-10-10). See [Phase 3 — Completion notes](#phase-3--completion-notes).
 
 Phases are sequential and each ends at a state that can be checked. Phase 2
 needs Phase 1's contract, not its ESPN accuracy: mock mode covers that, as it
@@ -917,6 +920,104 @@ Sections in §51 order, so what is happening now comes first:
   real network found the stale-slate bug that no local run could (project-notes
   §7). The matchup board now races twelve live rows and a summary against the
   same slate. The real Saturday is a required step, not a nice-to-have.
+
+
+### Phase 3 — Completion notes
+
+Written 2026-10-04, at the end of the phase. **All three phases are committed
+and deployed** (release record:
+[ops.md](../docs/ops.md#the-matchup-board-release-2026-10-04)). `npm run verify`
+is green — **1313 tests in 53 files, up 83 from 1230** — and `format:check`,
+`check:season`, and `check:bundle` are green.
+
+#### What exists now
+
+| File | What it is |
+| --- | --- |
+| `packages/shared/src/domain/detail.ts` | **New.** `GameDetail`, `GameSituation`, `LineScore`, `TeamStatRow`/`StatValue`, `GameStatsKind`, `LeaderRow`, `ScoringPlay`, `CurrentDrive`, `WinProbability` |
+| `packages/shared/src/domain/matchup.ts` | `Matchup.situation: GameSituation \| null` |
+| `packages/shared/src/api/responses.ts` | `GameDetailResponse` (`{ detail: Envelope<GameDetail> }`) |
+| `apps/api/src/providers/types.ts` | `getGameDetail(id)`; `ProviderGame.situation?` (slate reads only) |
+| `apps/api/src/providers/espn/` | `readGameDetail` + `toGameDetail` over the summary (line score, stats by name in two lists, leaders, scoring plays, drive, win probability); `readSituation` + `toSituation` over `competitions[0].situation`; `getGameDetail` |
+| `apps/api/src/providers/mock/detail.ts` | **New.** `mockGameDetail(game, now)` and `mockSituation(game, now)`: synthetic, labelled mock, built on the mock score's own arithmetic so a live line score sums to the header's score at the same instant |
+| `apps/api/src/providers/faults.ts` | The `detail` token |
+| `apps/api/src/cache/policy.ts` | `game_detail` category and resource; `detailState` context (`live` → the live row, `final` → the completed row) |
+| `apps/api/src/services/games.ts` | `getGameDetail`, `detailState` (live from 15 min before kickoff) |
+| `apps/api/src/services/live.ts`, `matchups.ts` | `overlay()` copies the slate's situation; `rowOf` sets `situation` only from a slate laid over the row |
+| `apps/api/src/routes/games.ts` | `GET /api/games/:gameId/detail` |
+| `apps/api/test/detail.test.ts` | **New.** 30 tests: ESPN normalization of the live, upcoming, final, and postponed summaries; by-name reading; 0–100 scaling; the betting-key test; situation only from the slate; cache rules; the route in mock mode in every state; faults; the KV budget; the captured Saturday through the routes; and the file snapshot for the web |
+| `apps/api/test/fixtures/espn/` | **New captures, 2026-10-03T23:07Z, during the games:** `scoreboard-week-5-live`, `scoreboard-20261003-live`, `game-live-matchup` (California at UNLV, 4th quarter), `game-upcoming-matchup` (Miami at Clemson). Added to the manifest; the damage test runs over them, and over the detail's own parts specifically |
+| `apps/web/src/lib/detail.ts` | **New.** `situationLine`, `possessionSide`, `statText`, `pointsText`, `probabilityText`, `statsTitle`, `leadersTitle`, `periodShort`/`periodSpoken`, `scoreAfter`, `orderedScoringPlays`, `liveWinProbability`, `trendSummary`, `trendPoints` |
+| `apps/web/src/lib/poll.ts` | `gameDetailPollInterval`, `isSettled` |
+| `apps/web/src/lib/api.ts` | `api.gameDetail`, `queryKeys.gameDetail` (outside the `['matchups']` prefix: provider data, not picks) |
+| `apps/web/src/features/matchups/GameDetail.tsx` + `.module.css` | **New.** `LineScorePanel`, `LiveWinProbabilityPanel` (split bar, a decorative trend line with its numbers in words), `StatsPanel`, `LeadersPanel`, `DrivePanel`, `ScoringPlaysPanel`, `DetailLoading`, `DetailFailed` |
+| `apps/web/src/features/matchups/MatchupPage.tsx` | The situation line and "Has the ball"; the sections in §51 order; the detail's failure states |
+| `apps/web/src/features/matchups/useMatchups.ts` | `gameDetailQuery`/`useGameDetail`; `useMatchup` stops polling a final or canceled game |
+| `apps/web/src/test/real-saturday.json` | **Generated** by `detail.test.ts` (file snapshot); prettier-ignored |
+| Tests | **New:** `lib/detail.test.ts` (13), `GameDetail.test.tsx` (27). **Extended:** `poll.test.ts`, `useMatchups.test.ts` (the detail on the real `QueryClient`), `MatchupPage.test.tsx` (two live regions, the loading detail panel), `validate.test.ts` |
+| `scripts/smoke.mjs` | The three new routes: the board, one game, and its detail, with the final/no-probability and season-average checks |
+| Docs | README "Testing the matchup board"; `docs/espn-notes.md` §14; `docs/ops.md` release record and usage notes; project-notes §2, §4, §10, §13 |
+
+#### Exit criteria, one by one
+
+| Criterion | Result | Where |
+| --- | --- | --- |
+| Live mock game: score, line score, stats, situation, live probability change across polls, each with its own Updated time; nothing says Final | Met. API: ten minutes apart, stats, series length, and `fetchedAt` all move, and the situation moves in five; browser: the detail and header each polled twice in 40 s and the stats' Updated time moved | `detail.test.ts`; browser "Live" |
+| Final game: stats and plays, no probability of either kind, no polling | Met. Real ESPN (Pitt at Virginia Tech): 15 stat rows, 11 plays, no probability; **no request at all in 25 s** after the first load; the real `QueryClient` makes one request in half an hour | `useMatchups.test.ts`; browser "Final", on mock and real |
+| Before kickoff: "Season averages", never in a game column; pregame predictor shown | Met, mock and real ESPN (week 6) | `detail.test.ts`, `GameDetail.test.tsx`; browser "Upcoming" |
+| Detail blocked or faulted: header and prediction render, stats offer Try again | Met: request aborted in the browser, `detail` faulted on the real runtime, and an `unavailable` envelope in component tests, each with its reference | all three |
+| No `undefined`, `NaN`, `0–0`, `0%` for a missing value, seen or spoken, in every state | Met; `expectClean` in every component state, including a live game with no score | `GameDetail.test.tsx` |
+| Real-payload test through both routes, the three labels where rendered | Met: the captured live game through `/api/matchups/:id`, `/detail`, and `/prediction`, rendered by the web test from the generated file | `detail.test.ts` → `real-saturday.json` → `GameDetail.test.tsx` |
+| Axe, keyboard, 320 px with every section open, both themes, on the deployed site | Met locally on mock, on real ESPN, and on the captured live game; on the deployed site see the release record | browser runs |
+| verify, format:check, check:bundle green; deployed; smoke extended to the three routes | Met | release record |
+
+The browser scripts are in this session's scratchpad (`game-browser.mjs`,
+`real-live.mjs`, `drill.mjs`, with `playwright-core` and `axe-core` copied
+beside them), outside the repo as before because CI has no browser.
+
+#### Decisions and departures — each one a localized change if reversed
+
+1. **`statsKind` labels the leaders too.** Before kickoff ESPN's leaders are
+   season leaders ("94/106, 1,211 YDS, 14 TD"), so the panel is "Season
+   leaders". The plan only named the stats.
+2. **`GameDetail` carries `status`, `kickoffUtc`, and `kickoffTbd`**, so the
+   cache can choose a lifetime from the detail alone, and so the page can see
+   when the detail lags the header.
+3. **A detail is cached as live from 15 minutes before kickoff** (L1 only, no
+   KV), so a pregame copy is never kept 10 minutes into the game.
+4. **`awayWinProbability` is `1 − home − tie`** of ESPN's own series point —
+   the series publishes home and tie only. It is the remainder of a published
+   figure, not a second estimate, and the type says so.
+5. **No live probability beside a "Final" header**, even when the detail is a
+   poll behind (`liveWinProbability` checks both). Likewise the drive.
+6. **One panel for a failed detail** ("Game details" → "Stats unavailable",
+   reference, Try again), placed where the stats would be. The line score and
+   live probability come from the same read, so they are simply absent.
+7. **Each detail panel prints its own "Updated" time** from the detail's
+   envelope (or "May be out of date" when stale); the header keeps the score's.
+8. **The trend line was built**: an `aria-hidden` SVG that fills its panel's
+   width at any size, with the first and latest values in a sentence beside
+   it. It passed the 320 px check.
+9. **An empty stats or leaders list is not drawn as a table of dashes**: the
+   normalizer returns `[]` when nothing at all was published, and the page says
+   "No team stats have been published for this game."
+10. **The situation is optional on `ProviderGame`** and present only on slate
+    reads, so every existing constructor and cached copy is untouched and no
+    cache key version was bumped.
+11. **The real-payload web test reads a generated file** rather than importing
+    API code into the web workspace (see project-notes §13).
+12. **A real space between the status and the situation line, and between the
+    season and "Score updated"** in the game header — found by the real-payload
+    render ("4th QuarterUNLV ball").
+
+#### Still open after Phase 3
+
+- **The first real Saturday on the deployed site**: week 6, 2026-10-10. Record
+  what the page looked like and what the KV ledger said at the end of the day.
+- **The KV counter the day after the deploy** (`week_games` a few dozen,
+  `game_detail` small, nothing for `matchup_composite` or a live detail).
+- **Worker CPU for a cold week read under `wrangler tail`** on a Saturday.
+- A real screen-reader pass (never done in this project).
 
 ---
 

@@ -198,6 +198,42 @@
       "ok": true,
       "bytes": 795790,
       "note": "Captured 2026-10-03T03:26Z. 58 games, all pre; 4 TBD kickoffs; Texas vs Oklahoma at a neutral site. 12 matchups against the real pick index."
+    },
+    {
+      "name": "scoreboard-week-5-live",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?week=5&seasontype=2&groups=80&limit=300",
+      "purpose": "Week 5 again, captured DURING Saturday games: the matchup board with live matchups and their competitions[0].situation (plan-matchup-board.md, Phase 3). A separate file so scoreboard-week-5 (asserted exactly by the Phase 1 tests) is untouched.",
+      "status": 200,
+      "ok": true,
+      "bytes": 862571,
+      "note": "Captured 2026-10-03T23:07Z. 59 games: 16 pre, 12 in, 31 post. Live matchups: California at UNLV (9:31 4th) and Florida at Missouri (0:47 4th, both Jeremiah’s)."
+    },
+    {
+      "name": "scoreboard-20261003-live",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?dates=20261003&groups=80&limit=300",
+      "purpose": "The live slate for the same Saturday, seconds after the week document: down, distance, possession, and the last play (competitions[0].situation) for every game in progress (Phase 3).",
+      "status": 200,
+      "ok": true,
+      "bytes": 779163,
+      "note": "Captured 2026-10-03T23:07Z. 54 games: 14 pre, 12 in, 28 post. California at UNLV: 7:39 4th, 1st & 10 at UNLV 48, Cal ball."
+    },
+    {
+      "name": "game-live-matchup",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/summary?event=401858247",
+      "purpose": "A live matchup game summary, inside the game: boxscore.teams (game stats), leaders, header linescores, scoringPlays, drives.current, winprobability (Phase 3). Betting keys (odds, pickcenter, againstTheSpread) present and never read.",
+      "status": 200,
+      "ok": true,
+      "bytes": 504756,
+      "note": "Captured 2026-10-03T23:07Z: California at UNLV, 4th quarter, UNLV 32-25. 167 win-probability points, 9 scoring plays."
+    },
+    {
+      "name": "game-upcoming-matchup",
+      "url": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/summary?event=401858249",
+      "purpose": "An upcoming matchup game summary: boxscore.teams holds SEASON PER-GAME AVERAGES under different stat names, leaders are season leaders, predictor present (Phase 3).",
+      "status": 200,
+      "ok": true,
+      "bytes": 110931,
+      "note": "Captured 2026-10-03T23:07Z: Miami at Clemson, 7:30 PM EDT kickoff."
     }
   ]
 }

@@ -6,6 +6,8 @@ import type {
   Freshness,
   FreshnessState,
   Game,
+  GameDetail,
+  GameDetailResponse,
   Matchup,
   MatchupBoardResponse,
   MatchupOwner,
@@ -700,6 +702,7 @@ export function makeMatchup(overrides: Partial<Matchup> = {}): Matchup {
       ranking: { kind: 'unranked' },
       record: { ...RECORD, summary: '3-2' },
     }),
+    situation: null,
     sameOwner: false,
     scoreUpdatedAt: '2026-10-10T17:59:00.000Z',
     freshness: freshness('fresh', '2026-10-10T17:59:00.000Z'),
@@ -780,5 +783,169 @@ export function matchupResponse(matchup: Matchup): MatchupResponse {
     season: matchup.season,
     generatedAt: '2026-10-10T18:00:00.000Z',
     matchup,
+  };
+}
+
+// ─── Inside the game (plan-matchup-board, Phase 3) ───────────────────────────
+
+/** Ohio State (away) has the ball, 2nd & 7 at the Iowa 34. */
+export const LIVE_SITUATION = {
+  possessionTeamId: '194',
+  downDistance: '2nd & 7 at IOWA 34',
+  lastPlay: '(4:40) C. Kurtz pass complete to J. Smith for 9 yards',
+};
+
+const stat = (display: string | null, value: number | null = null) => ({ display, value });
+
+/** The live game's inside: 2nd quarter, Ohio State 14, Iowa 7, read at 9:41 PM UTC. */
+export function liveGameDetail(overrides: Partial<GameDetail> = {}): GameDetail {
+  return {
+    providerGameId: '401500002',
+    status: 'live',
+    kickoffUtc: '2026-10-10T19:30:00.000Z',
+    kickoffTbd: false,
+    lineScore: {
+      periods: [
+        { number: 1, label: '1', home: 7, away: 7 },
+        { number: 2, label: '2', home: 0, away: 7 },
+      ],
+      homeTotal: 7,
+      awayTotal: 14,
+    },
+    statsKind: 'game',
+    teamStats: [
+      { key: 'firstDowns', label: '1st Downs', home: stat('8', 8), away: stat('11', 11) },
+      { key: 'thirdDownEff', label: '3rd down efficiency', home: stat('2-6'), away: stat('4-7') },
+      { key: 'totalYards', label: 'Total Yards', home: stat('142'), away: stat('231') },
+      // ESPN sends "-" where a number was expected: no number, and the string is kept.
+      { key: 'fourthDownEff', label: '4th down efficiency', home: stat('0-0'), away: stat(null) },
+      {
+        key: 'possessionTime',
+        label: 'Possession',
+        home: stat('11:02', 662),
+        away: stat('12:28', 748),
+      },
+    ],
+    leaders: [
+      {
+        category: 'passing',
+        label: 'Passing',
+        home: { name: 'Mark Gronowski', line: '7/12, 88 YDS' },
+        away: { name: 'Julian Sayin', line: '12/16, 151 YDS, 2 TD' },
+      },
+      {
+        category: 'rushing',
+        label: 'Rushing',
+        home: { name: 'Kamari Moulton', line: '9 CAR, 41 YDS, 1 TD' },
+        away: null,
+      },
+      {
+        category: 'receiving',
+        label: 'Receiving',
+        home: { name: 'Reece Vander Zee', line: '3 REC, 40 YDS' },
+        away: { name: 'Jeremiah Smith', line: '5 REC, 77 YDS, 1 TD' },
+      },
+    ],
+    scoringPlays: [
+      {
+        id: 'sp1',
+        period: 1,
+        clock: '9:12',
+        teamId: '194',
+        kind: 'TD',
+        text: 'Jeremiah Smith 22 Yd pass from Julian Sayin (Jayden Fielding Kick)',
+        homeScore: 0,
+        awayScore: 7,
+      },
+      {
+        id: 'sp2',
+        period: 1,
+        clock: '2:01',
+        teamId: '2294',
+        kind: 'TD',
+        text: 'Kamari Moulton 3 Yd Run (Drew Stevens Kick)',
+        homeScore: 7,
+        awayScore: 7,
+      },
+      {
+        id: 'sp3',
+        period: 2,
+        clock: '6:30',
+        teamId: '194',
+        kind: 'TD',
+        text: 'Carnell Tate 15 Yd pass from Julian Sayin (Jayden Fielding Kick)',
+        homeScore: 7,
+        awayScore: 14,
+      },
+    ],
+    currentDrive: { teamId: '194', description: '6 plays, 41 yards, 2:51' },
+    winProbability: {
+      source: 'espn_win_probability',
+      sourceLabel: 'ESPN win probability',
+      homeWinProbability: 0.214,
+      awayWinProbability: 0.786,
+      tieProbability: 0,
+      homeSeries: [0.38, 0.31, 0.44, 0.29, 0.214],
+    },
+    ...overrides,
+  };
+}
+
+/** Before kickoff: season averages and season leaders, nothing else. */
+export function upcomingGameDetail(overrides: Partial<GameDetail> = {}): GameDetail {
+  return liveGameDetail({
+    providerGameId: '401500001',
+    status: 'scheduled',
+    lineScore: null,
+    statsKind: 'season_average',
+    teamStats: [
+      {
+        key: 'totalPointsPerGame',
+        label: 'Points Per Game',
+        home: stat('24.2'),
+        away: stat('41.6'),
+      },
+      { key: 'yardsPerGame', label: 'Total Yards', home: stat('331.0'), away: stat('488.4') },
+    ],
+    scoringPlays: [],
+    currentDrive: null,
+    winProbability: null,
+    ...overrides,
+  });
+}
+
+/** Final: Ohio State 31, Iowa 24. No win probability of any kind. */
+export function finalGameDetail(overrides: Partial<GameDetail> = {}): GameDetail {
+  return liveGameDetail({
+    providerGameId: '401500003',
+    status: 'final',
+    lineScore: {
+      periods: [
+        { number: 1, label: '1', home: 7, away: 7 },
+        { number: 2, label: '2', home: 3, away: 10 },
+        { number: 3, label: '3', home: 7, away: 7 },
+        { number: 4, label: '4', home: 7, away: 7 },
+      ],
+      homeTotal: 24,
+      awayTotal: 31,
+    },
+    currentDrive: null,
+    winProbability: null,
+    ...overrides,
+  });
+}
+
+export function gameDetailResponse(
+  detail: GameDetail | null,
+  state: FreshnessState = 'fresh',
+  error: AppError | null = null,
+  fetchedAt = '2026-10-10T21:40:30.000Z',
+): GameDetailResponse {
+  return {
+    detail: {
+      data: detail,
+      freshness: detail === null ? freshness('unavailable') : freshness(state, fetchedAt),
+      error,
+    },
   };
 }

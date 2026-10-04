@@ -1,4 +1,5 @@
 import type { Matchup, MatchupResponse, Season } from '@cfb/shared';
+import type { ReactNode } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
 import { BackLink, readFromState, type FromState } from '../../components/BackLink';
 import { Card } from '../../components/Card';
@@ -22,11 +23,23 @@ import {
   teamPath,
   weekPath,
 } from '../../lib/matchup';
+import { possessionSide, situationLine } from '../../lib/detail';
 import { useDocumentTitle } from '../../lib/useDocumentTitle';
 import { PredictionPanel, type PredictionSubject } from '../team/PredictionPanel';
+import {
+  DetailFailed,
+  DetailLoading,
+  DrivePanel,
+  LeadersPanel,
+  LineScorePanel,
+  LiveWinProbabilityPanel,
+  ScoringPlaysPanel,
+  StatsPanel,
+  type DetailProps,
+} from './GameDetail';
 import styles from './MatchupPage.module.css';
 import { failureCopy, MatchupStatus, requestIdOf, SideScore } from './parts';
-import { useMatchup } from './useMatchups';
+import { useGameDetail, useMatchup } from './useMatchups';
 
 /**
  * Where "back" goes when the page was not reached from a board: the matchup
@@ -42,13 +55,15 @@ function boardLinkFor(season: Season, week: number | null): FromState['from'] {
 }
 
 /**
- * One game (plan-matchup-board, Phase 2): both teams, whose boards they are
- * on, where the game stands, and — before and during it — who ESPN's matchup
- * predictor favours. Phase 3 fills in the game itself below.
+ * One game: both teams, whose boards they are on, where the game stands
+ * (Phase 2), and the game itself — line score, ESPN's live win probability,
+ * stats, leaders, the drive, and the scoring plays (Phase 3) — in §51's order,
+ * what is happening now first.
  *
- * Two independent reads (§42): the game, and the prediction, which is the
+ * Three independent reads (§42): the game (the header), the prediction (the
  * team page's own panel with the order made neutral — away first, as the
- * heading reads, and neither side marked as the page's own.
+ * heading reads, and neither side marked as the page's own), and the detail.
+ * Any one failing leaves the other two.
  */
 export function MatchupPage() {
   const { gameId = '' } = useParams();
@@ -56,6 +71,7 @@ export function MatchupPage() {
   const from = readFromState(location.state);
   const query = useMatchup(gameId);
   const data = query.data;
+  const detail = useGameDetail(gameId, data?.matchup ?? null);
   useDocumentTitle(data === undefined ? null : matchupTitle(data.matchup));
 
   const fallbackBack =
@@ -110,14 +126,59 @@ export function MatchupPage() {
   }
 
   const row = data.matchup;
+  const envelope = detail.data?.detail;
+  const inside: DetailProps | null =
+    envelope?.data === undefined || envelope.data === null
+      ? null
+      : { row, detail: envelope.data, envelope };
+  const detailError = detail.error;
+
+  let failed: ReactNode = null;
+  if (inside === null) {
+    if (envelope !== undefined) {
+      // A 200 that says "unavailable": the provider failed with nothing cached.
+      failed = (
+        <DetailFailed
+          requestId={envelope.error?.requestId ?? null}
+          onRetry={() => void detail.refetch()}
+        />
+      );
+    } else if (detailError !== null) {
+      const copy = failureCopy(detailError, 'the game details');
+      failed = (
+        <DetailFailed
+          requestId={requestIdOf(detailError)}
+          onRetry={() => void detail.refetch()}
+          {...(isApiError(detailError) && detailError.kind === 'rate_limited'
+            ? { message: copy.message }
+            : {})}
+        />
+      );
+    } else {
+      failed = <DetailLoading />;
+    }
+  }
+
   return (
     <div className={styles.page}>
       {back}
       <GameHeader response={data} />
+      {inside !== null && <LineScorePanel {...inside} />}
+      {inside !== null && <LiveWinProbabilityPanel {...inside} />}
       {/* Never beside a result: a pregame number next to a final score is not
           information (team page, Phase 4 decision 1). */}
       {row.status !== 'final' && row.status !== 'canceled' && (
         <PredictionPanel title="Who’s favored" subject={predictionSubject(row)} />
+      )}
+      {inside === null ? (
+        failed
+      ) : (
+        <>
+          <StatsPanel {...inside} />
+          <LeadersPanel {...inside} />
+          <DrivePanel {...inside} />
+          <ScoringPlaysPanel {...inside} />
+        </>
       )}
     </div>
   );
@@ -146,6 +207,7 @@ function GameHeader({ response }: { response: MatchupResponse }) {
   const poll = rankingPollOfMatchups([row]);
   const here: FromState['from'] = { path: matchupPath(row.providerGameId), label: title };
   const updated = formatUpdatedAt(row.scoreUpdatedAt);
+  const situation = situationLine(row);
   const facts = [
     row.venue,
     row.neutralSite ? 'Neutral site' : null,
@@ -157,6 +219,16 @@ function GameHeader({ response }: { response: MatchupResponse }) {
       <div className={styles.titleRow}>
         <h1 className={styles.title}>{title}</h1>
         <MatchupStatus row={row} context="page" />
+        {/* Down and distance: as old as the score, and announced with it. */}
+        {live && ' '}
+        {live && (
+          <p className={styles.situation} aria-live="polite" aria-atomic="true">
+            {situation ?? ''}
+          </p>
+        )}
+        {live && row.situation?.lastPlay != null && (
+          <p className={styles.lastPlay}>Last play: {row.situation.lastPlay}</p>
+        )}
       </div>
 
       <div
@@ -183,7 +255,7 @@ function GameHeader({ response }: { response: MatchupResponse }) {
         <span>
           {formatSeason(response.season)}
           {poll !== null && <> · Rankings: {poll}</>}
-        </span>
+        </span>{' '}
         {live && !stale && updated !== null && row.scoreUpdatedAt !== null ? (
           <p>
             Score updated <time dateTime={row.scoreUpdatedAt}>{updated}</time>
@@ -228,6 +300,12 @@ function SideBlock({ row, side, here }: SideBlockProps) {
         </h2>
         <p className={styles.standing}>
           <RankBadge ranking={ranking} size="sm" /> <RecordBadge record={record} size="sm" />
+          {possessionSide(row) === side && (
+            <>
+              {' '}
+              <span className={styles.ball}>Has the ball</span>
+            </>
+          )}
         </p>
         {owners.length === 0 ? (
           <p className={styles.nobody}>Not on any board</p>

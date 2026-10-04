@@ -1,6 +1,8 @@
 import type {
   AppErrorKind,
   FpiProjectionInputs,
+  GameDetail,
+  GameSituation,
   GameStatus,
   Prediction,
   ProviderName,
@@ -103,6 +105,14 @@ export interface SportsDataProvider {
 
   /** The provider's own prediction, or `null` when it publishes none (§12, §46). */
   getPrediction(providerGameId: string): Promise<Prediction | null>;
+
+  /**
+   * Inside one game: line score, team stats (or season averages before
+   * kickoff), leaders, scoring plays, the current drive, and the provider's
+   * in-game win probability (context/plan-matchup-board.md, Phase 3). Every
+   * value is the provider's own display string; nothing is computed.
+   */
+  getGameDetail(providerGameId: string): Promise<GameDetail>;
 
   /**
    * Every team the provider publishes playoff and championship probabilities
@@ -278,6 +288,13 @@ export interface ProviderGame {
   broadcast: string | null;
   home: ProviderCompetitor;
   away: ProviderCompetitor;
+  /**
+   * Down, distance, and possession while live. Only a SLATE read carries it
+   * (it is in the day scoreboard, not in a schedule or a summary), so it is
+   * absent or `null` on every other read, and on a cached copy written before
+   * it existed.
+   */
+  situation?: GameSituation | null;
 }
 
 export interface ProviderSchedule {

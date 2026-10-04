@@ -6,6 +6,7 @@ import type {
   BoardProjectionResponse,
   BoardResponse,
   CreateUserResponse,
+  GameDetailResponse,
   MatchupBoardResponse,
   MatchupResponse,
   PredictionResponse,
@@ -83,6 +84,14 @@ export const api = {
   /** One game, in the same row shape, for any game the provider has. */
   matchup: (providerGameId: string, signal?: AbortSignal) =>
     getPublic<MatchupResponse>(`/api/matchups/${id(providerGameId)}`, signal),
+
+  /**
+   * Inside one game (plan-matchup-board, Phase 3): line score, stats, leaders,
+   * scoring plays, drive, and the in-game win probability. Its own request, so
+   * a failed box score leaves the game's header and its prediction (§42).
+   */
+  gameDetail: (providerGameId: string, signal?: AbortSignal) =>
+    getPublic<GameDetailResponse>(`/api/games/${id(providerGameId)}/detail`, signal),
 
   /**
    * "Is this session an administrator?" Asked by `RequireAdmin` and by the
@@ -187,6 +196,8 @@ export const queryKeys = {
   team: (teamId: string) => ['team', teamId] as const,
   schedule: (teamId: string) => ['team', teamId, 'schedule'] as const,
   prediction: (providerGameId: string) => ['prediction', providerGameId] as const,
+  /** Inside a game. Provider data, not picks, so outside the `'matchups'` prefix an admin write sweeps. */
+  gameDetail: (providerGameId: string) => ['gameDetail', providerGameId] as const,
   /**
    * The public search. Deliberately NOT under the `'admin'` prefix: signing out
    * clears that prefix, and a viewer's search results are not the admin's.

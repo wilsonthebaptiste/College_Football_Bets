@@ -5,8 +5,9 @@ what it is, how it is put together, what was learned the hard way, what is
 deployed, and what is left.
 
 Written at the close of Phase 5, 2026-09-19, when the application went live.
-Updated 2026-09-24, when team search was deployed, and 2026-10-02, when
-projected points was built and deployed.
+Updated 2026-09-24, when team search was deployed, 2026-10-02, when
+projected points was built and deployed, and 2026-10-04, when the matchup board
+was deployed.
 
 > **Projected points is live** (since 2026-10-02) — the first *computed* sports
 > number in the application, and the first feature that reads a publisher other
@@ -30,10 +31,10 @@ projected points was built and deployed.
   That file holds the measured source data, the rubric, and the plan; **§12 of
   this file holds what building it actually taught us.**
 - [plan-matchup-board.md](plan-matchup-board.md) — the matchup board: every
-  game in a week between two boards. **Phase 1 (the API) is committed
-  (`1380a99`); Phase 2 (the two screens) is built and verified, not committed;
-  nothing is deployed.** Phase 3 (the live game page, docs, deploy) is next.
-  §13 below is the short version.
+  game in a week between two boards, and a page per game that is live inside
+  the game. **All three phases built, committed, and deployed 2026-10-04.**
+  What is left is a real Saturday on the deployed site (2026-10-10) and the KV
+  counter the day after. §13 below is the record.
 - Operations — deploying, configuration, limits, troubleshooting — is
   [../docs/ops.md](../docs/ops.md).
 - ESPN's undocumented API, as observed: [../docs/espn-notes.md](../docs/espn-notes.md).
@@ -58,7 +59,7 @@ team and open them; only the administrator can change the boards.
 | Database | Supabase Postgres: 9 people, 54 selections, 65 team rows (11 no longer on any board) |
 | Cost | Nothing. Every service is on a free tier, with no card on file |
 | Source | Branch `main`, on <https://github.com/wilsonthebaptiste/College_Football_Bets> (remote created 2026-09-20; search pushed 2026-09-25, projected points 2026-10-02) |
-| Tests | 1073, in 45 files. `npm run verify` runs typecheck, lint, tests, and the season check |
+| Tests | 1313, in 53 files. `npm run verify` runs typecheck, lint, tests, and the season check |
 | Publishers | ESPN (everything, including FPI) and playoffstatus.com (four conference pages, for projected points only) |
 
 Built in five phases: foundation and contracts, the sports data layer, the
@@ -82,14 +83,18 @@ Supabase Postgres ── people, teams, selections, admins. Nothing from ESPN (�
 
 The public surface, for reference. Pages: `/` (every board), `/u/:userId` (one
 board), `/teams/:teamId` (a team, by our uuid **or** the provider's team id),
-`/search?q=` (any team the provider lists), plus `/login` and `/admin/*` for
-the administrator. API: `/api/health`, `/api/meta/season`, `/api/users`,
+`/search?q=` (any team the provider lists), `/matchups?week=` (every game
+between two boards) and `/matchups/:gameId` (one game, live inside it), plus
+`/login` and `/admin/*` for the administrator. API: `/api/health`, `/api/meta/season`, `/api/users`,
 `/api/users/:id`, `/api/users/:id/board`, `/api/teams/:teamId`,
 `/api/teams/:teamId/schedule`, `/api/games/:id`, `/api/games/:id/prediction`,
 `/api/search/teams?q=`, `/api/selections` (every board's picks, inverted to
 provider team id → who has that team), `/api/projections` (every board's
 projected total), `/api/users/:id/projection` (one board, per-team
-breakdown) and `/api/teams/:teamId/projection` (one team, by either address) —
+breakdown), `/api/teams/:teamId/projection` (one team, by either address),
+`/api/matchups?week=` and `/api/matchups/:gameId` (the matchup board and one
+game's header) and `/api/games/:id/detail` (inside a game: line score, stats,
+leaders, plays, drive, ESPN's live win probability) —
 all public, no token — and `/api/admin/*`, which is the only branch
 that verifies a JWT.
 
@@ -223,6 +228,9 @@ source of truth for every category:
 | Projection inputs (FPI) | 6 h | Stale 1 day. Warmed by cron (§12) |
 | Conference odds (scraped) | 6 h | Stale 7 days — it is a scraped page. Warmed by cron |
 | Projection composite | 2 min | L1 only, never KV. The assembled answer, not a document (§12) |
+| Week games (`week_games`) | 15 min; a day once every game is over | Stale 6 h. KV at most hourly. Cron warms the current week (§13) |
+| Matchup composite | 60 s, or 15 s while live or degraded | L1 only, never KV (§13) |
+| Game detail (`game_detail`) | live 25 s; upcoming 10 min; final 7 days | Live (and from 15 min before kickoff) is L1 only, never KV (§13) |
 
 Protections that exist because of real limits:
 
@@ -319,7 +327,7 @@ to fail, so failure states can be exercised on purpose.
 
 ## 6. How correctness was checked
 
-The suite is 1073 tests in 45 files. What carried the most weight:
+The suite is 1313 tests in 53 files. What carried the most weight:
 
 - **The authorization matrix** (90 tests). Every `/api/admin/*` route against
   every way of not being an administrator: no token, a non-Bearer header, an
@@ -577,12 +585,18 @@ network. The test that now covers it reproduces the race directly.
    records what it looked like on the day.
 7. ~~Flip `CONFERENCE_ODDS_PROVIDER` to `playoffstatus`.~~ Done in the
    2026-10-02 deploy; the deployed Worker has read the four pages since.
+8. **The matchup board, on a real Saturday.** Week 6 (2026-10-10) has twelve
+   matchups. Open a live one on the deployed site, on a phone, and leave it a
+   few minutes: score, down and distance, and win probability should move with
+   no reload. Then read the KV counter the day after: `week_games` a few dozen,
+   `game_detail` small, nothing for `matchup_composite` or a live detail
+   ([ops.md, "The matchup board release"](../docs/ops.md#the-matchup-board-release-2026-10-04)).
 
 ## 11. Commands worth remembering
 
 | Command | What it does |
 | --- | --- |
-| `npm run verify` | Typecheck, lint, 1073 tests, season check. The one to run |
+| `npm run verify` | Typecheck, lint, 1313 tests, season check. The one to run |
 | `npm run format:check` | Prettier. **Not** part of `verify`, but CI runs it |
 | `npm run dev` / `npm run dev:web` | The API on 8787 (mock data) and the site on 5173 |
 | `npm run verify:rls` | Attacks the live database directly, as `anon` and as a non-admin |
@@ -989,15 +1003,77 @@ reproducing the stated source and recording the doubt — was the right one.
   `routes/admin.ts`). Any future derivation of the selections needs its own line
   there, or the administrator will see one view update and another not.
 
-## 13. The matchup board (in progress)
+## 13. The matchup board
 
-Plan: [plan-matchup-board.md](plan-matchup-board.md). **Phase 1 is committed
-(`1380a99`); Phase 2 is built and verified (2026-10-03), not committed; neither
-is deployed.** Each phase's completion notes are the full record —
-[Phase 1](plan-matchup-board.md#phase-1--completion-notes) (the API, thirteen
-decisions) and [Phase 2](plan-matchup-board.md#phase-2--completion-notes) (the
-screens, sixteen decisions). What belongs here is what a later feature will
-trip over.
+Plan: [plan-matchup-board.md](plan-matchup-board.md). **Built in three phases,
+2026-10-02 to 10-04; Phase 1 committed as `1380a99`, Phase 2 as `fb4e168`,
+Phase 3 with the deploy of 2026-10-04.** Each phase's completion notes are the
+full record — [Phase 1](plan-matchup-board.md#phase-1--completion-notes) (the
+API), [Phase 2](plan-matchup-board.md#phase-2--completion-notes) (the screens),
+and [Phase 3](plan-matchup-board.md#phase-3--completion-notes) (inside the
+game, the drills, the deploy). The release record is in
+[ops.md](../docs/ops.md#the-matchup-board-release-2026-10-04). What belongs
+here is what a later feature will trip over.
+
+**What it is.** A Matchups page lists every game in a week where a team on one
+board plays a team on another (11 in week 5, 12 in week 6), says whose each
+side is, and opens into `/matchups/:gameId`: before kickoff, ESPN's pregame
+predictor and each team's season averages; during the game, the score by
+quarter, down and distance, ESPN's live win probability, team stats, leaders,
+the drive, and the scoring plays, polled every 15 s; once final, stats and
+plays, and no polling at all. Nothing is stored: a matchup is derived on every
+read from the week's games and the picks.
+
+**From Phase 3 (inside the game — 1313 tests, up 83):**
+
+- **A third read off ESPN's summary.** `getGame` (the header), `getPrediction`,
+  and now `getGameDetail` all fetch `summary?event=`, each under its own cache
+  key, because each has its own lifetime. While someone watches a live game
+  that is two summary reads per 25 s per isolate. Fine for nine people; if
+  Akamai starts answering 403 on Saturdays, merge the header onto the detail's
+  entry rather than slowing the poll (plan 3.2).
+- **Down and distance come from the slate, never the summary**, and only from
+  a slate actually laid over the row: `ProviderGame.situation` is optional and
+  present only on scoreboard reads, `overlay()` copies it, and `rowOf` uses it
+  only when the row came off the slate. A row the slate could not check shows
+  no situation rather than the week document's old one.
+- **Season averages sit in the same place as game stats.** Before kickoff ESPN's
+  `boxscore.teams[].statistics` holds per-game season averages under other
+  names, and its leaders are season leaders. Two name lists, a `statsKind`, and
+  a title ("Season averages", "Season leaders") keep them apart. The §12 lesson
+  again: two numbers that look alike can measure different things.
+- **ESPN's `homeWinPercentage` is 0–1 despite its name**, and a final game
+  still carries the whole series (177 points). The normalizer divides by 100
+  only if a series is on a 0–100 scale, and returns no probability at all for a
+  final game. The screen also refuses to show a live probability beside a
+  "Final" header when the detail lags a poll behind it.
+- **A detail's cache follows its game, with a lead.** `game_detail` uses the
+  game categories' rules — live 25 s L1 only, upcoming 10 min, final 7 days —
+  and treats a scheduled game as live from **15 minutes before kickoff**, so a
+  pregame copy is never kept 10 minutes into the game.
+- **The real-payload test crosses the workspace boundary through a file.**
+  `apps/api/test/detail.test.ts` drives the captured live game through the
+  three routes and writes their answers to `apps/web/src/test/real-saturday.json`
+  as a file snapshot; `GameDetail.test.tsx` renders that file and asserts the
+  three labels where they are seen. Change the API and the snapshot test fails
+  until it is regenerated (`-u`), so the web test cannot drift. The file is in
+  `.prettierignore`. **It found a wording fact at once:** ESPN's predictor label
+  is "ESPN Matchup Predictor", capitalised; the mock fixtures had always said
+  "ESPN matchup predictor".
+- **Two polite live regions on a live game page now**: the score and the
+  situation line. Nothing in the detail panels is live; a stats table that
+  re-announced itself every 15 s would drown the score.
+- **`detail` is a new fault token**; the six drills on the real runtime each
+  led to their log line. A Sunday has no live game, so the `slate` drill on
+  real ESPN showed nothing new; it is covered by tests and the mock drill.
+- **ESPN's rankings feed lists no AP poll on a Sunday morning** (Coaches Poll
+  only, until the new AP poll is published that afternoon), so every rank in
+  the app reads `—` for those hours. The existing rule, honestly applied, but
+  worth knowing before calling it a bug.
+- **Flex and grid gaps are still not spaces.** The game header read "4th
+  QuarterUNLV ball" and "week 3Score updated" until real `{' '}` went between
+  the pieces. A whitespace-only text node in a flex or grid container is not
+  rendered, so it is safe to add.
 
 **From Phase 2 (the screens, `apps/web` only — 1230 tests, up 113):**
 

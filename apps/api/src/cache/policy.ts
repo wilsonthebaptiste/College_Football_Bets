@@ -21,7 +21,8 @@ export type CacheCategory =
   | 'conference_odds'
   | 'projection_board'
   | 'week_games'
-  | 'matchup_composite';
+  | 'matchup_composite'
+  | 'game_detail';
 
 export type CacheTier = 'l1' | 'l2' | 'l3';
 
@@ -170,6 +171,16 @@ const TABLE: Readonly<Record<CacheCategory, PolicyRow>> = {
     tiers: EPHEMERAL,
     kvWriteIntervalSeconds: 0,
   },
+  // Inside one game (Phase 3): the box score, leaders, plays, and in-game win
+  // probability. Its own category so the KV ledger counts it apart, with the
+  // game categories' own rules by state (`detailState`): this row is the
+  // upcoming one, 10 min and KV at most hourly.
+  game_detail: {
+    ttlSeconds: 10 * MINUTE,
+    staleSeconds: 2 * HOUR,
+    tiers: DURABLE,
+    kvWriteIntervalSeconds: HOUR,
+  },
 };
 
 /**
@@ -196,6 +207,11 @@ export interface PolicyContext {
   degraded?: boolean;
   /** Week games only: every game in the week is final or canceled. */
   weekComplete?: boolean;
+  /**
+   * Game detail only. `live` is a game in progress or about to be (25 s, L1
+   * only, never KV); `final` is settled (a week); anything else is upcoming.
+   */
+  detailState?: 'live' | 'final' | 'upcoming';
 }
 
 export function policyFor(category: CacheCategory, context: PolicyContext = {}): CachePolicy {
@@ -213,6 +229,12 @@ export function policyFor(category: CacheCategory, context: PolicyContext = {}):
     (context.anyLive === true || context.degraded === true)
   ) {
     ttlSeconds = BOARD_SHORT_TTL;
+  }
+  if (category === 'game_detail' && context.detailState === 'live') {
+    return { ...TABLE.live_game, category };
+  }
+  if (category === 'game_detail' && context.detailState === 'final') {
+    return { ...TABLE.completed_game, category };
   }
   if (category === 'week_games' && context.weekComplete === true) {
     return { ...row, category, ttlSeconds: WEEK_COMPLETE_TTL, staleSeconds: WEEK_COMPLETE_STALE };
@@ -244,7 +266,8 @@ export type CacheResource =
   | 'conference_odds'
   | 'projection_board'
   | 'week'
-  | 'matchups';
+  | 'matchups'
+  | 'game_detail';
 
 /** Bump when a cached value's shape changes, so KV never serves an old shape. */
 const KEY_VERSION = 'v2';

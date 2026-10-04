@@ -1,5 +1,6 @@
 import type {
   Freshness,
+  GameDetail,
   Prediction,
   RankingsSnapshot,
   Season,
@@ -103,6 +104,9 @@ class FakeProvider implements SportsDataProvider {
   }
   async getPrediction(): Promise<Prediction | null> {
     return null;
+  }
+  async getGameDetail(): Promise<GameDetail> {
+    throw new ProviderError('not_found', 'none');
   }
   async getTeamProjections(): Promise<TeamProjectionsDocument> {
     return {

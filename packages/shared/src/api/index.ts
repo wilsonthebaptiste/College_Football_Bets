@@ -4,6 +4,7 @@ export type {
   BoardProjectionSummary,
   BoardResponse,
   BoardTeam,
+  GameDetailResponse,
   GameResponse,
   HealthResponse,
   KvWriteReport,

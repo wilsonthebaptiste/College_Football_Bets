@@ -3,12 +3,18 @@ import type {
   RawCalendarPhase,
   RawCalendarWeek,
   RawCalendarWeeks,
+  RawBoxscoreTeam,
   RawCompetitor,
+  RawDrive,
   RawEvent,
   RawFpiPage,
   RawFpiTeam,
+  RawGameDetail,
   RawGroup,
   RawInlinePredictor,
+  RawLeader,
+  RawLeaderCategory,
+  RawLinescores,
   RawLogo,
   RawPoll,
   RawRank,
@@ -18,10 +24,15 @@ import type {
   RawSchedule,
   RawScoreboard,
   RawScore,
+  RawScoringPlay,
+  RawSituation,
   RawStandalonePredictor,
+  RawStat,
   RawStatus,
   RawSummary,
   RawTeam,
+  RawTeamLeaders,
+  RawWinProbabilityPoint,
 } from './raw';
 
 /**
@@ -294,7 +305,21 @@ function readEvent(parts: EventParts): RawEvent | null {
     status: readStatus(field(parts.competition, 'status')),
     home,
     away,
+    situation: readSituation(field(parts.competition, 'situation')),
   };
+}
+
+/** `competitions[0].situation`. Every part optional; an object with none of them is no situation. */
+function readSituation(value: unknown): RawSituation | null {
+  if (!isObject(value)) return null;
+  const situation: RawSituation = {
+    possession: identifier(value['possession']),
+    downDistanceText: text(value['downDistanceText']),
+    shortDownDistanceText: text(value['shortDownDistanceText']),
+    possessionText: text(value['possessionText']),
+    lastPlayText: text(path(value, ['lastPlay', 'text'])),
+  };
+  return Object.values(situation).some((part) => part !== null) ? situation : null;
 }
 
 /** `events[]` in a schedule or a scoreboard. */
@@ -418,6 +443,149 @@ export function readSummary(body: unknown): RawSummary | null {
   });
   if (event === null) return null;
   return { event, predictor: readInlinePredictor(field(body, 'predictor')) };
+}
+
+// ─── Inside the game (summary: box score, leaders, plays, drive, win probability) ─
+
+function readStat(value: unknown): RawStat | null {
+  const name = text(field(value, 'name'));
+  if (name === null) return null;
+  const display = field(value, 'displayValue');
+  return {
+    name,
+    label: text(field(value, 'label')),
+    // A display string is shown as sent, so a number is accepted and printed as one.
+    displayValue:
+      typeof display === 'number' && Number.isFinite(display) ? String(display) : text(display),
+    // `"-"` where a number was expected is ESPN's, not a parse failure: no number.
+    value: finite(field(value, 'value')),
+  };
+}
+
+function readBoxscoreTeam(value: unknown): RawBoxscoreTeam | null {
+  const teamId = identifier(path(value, ['team', 'id']));
+  if (teamId === null) return null;
+  const homeAway = field(value, 'homeAway');
+  return {
+    teamId,
+    homeAway: homeAway === 'home' || homeAway === 'away' ? homeAway : null,
+    stats: list(field(value, 'statistics')).flatMap((entry) => {
+      const stat = readStat(entry);
+      return stat === null ? [] : [stat];
+    }),
+  };
+}
+
+function readLeader(value: unknown): RawLeader | null {
+  if (!isObject(value)) return null;
+  const athlete =
+    text(path(value, ['athlete', 'displayName'])) ?? text(path(value, ['athlete', 'shortName']));
+  const displayValue = text(value['displayValue']);
+  if (athlete === null && displayValue === null) return null;
+  return { athlete, displayValue };
+}
+
+function readLeaderCategory(value: unknown): RawLeaderCategory | null {
+  const name = text(field(value, 'name'));
+  if (name === null) return null;
+  return {
+    name,
+    displayName: text(field(value, 'displayName')),
+    top: readLeader(list(field(value, 'leaders'))[0]),
+  };
+}
+
+function readTeamLeaders(value: unknown): RawTeamLeaders | null {
+  const teamId = identifier(path(value, ['team', 'id']));
+  if (teamId === null) return null;
+  return {
+    teamId,
+    categories: list(field(value, 'leaders')).flatMap((entry) => {
+      const category = readLeaderCategory(entry);
+      return category === null ? [] : [category];
+    }),
+  };
+}
+
+/** A score after a play: a number, or a digit string. */
+function points(value: unknown): number | null {
+  const parsed = numeric(value);
+  return parsed !== null && Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function readScoringPlay(value: unknown): RawScoringPlay | null {
+  const id = identifier(field(value, 'id'));
+  if (id === null) return null;
+  return {
+    id,
+    period: finite(path(value, ['period', 'number'])),
+    clock: text(path(value, ['clock', 'displayValue'])),
+    teamId: identifier(path(value, ['team', 'id'])),
+    abbreviation:
+      text(path(value, ['type', 'abbreviation'])) ??
+      text(path(value, ['scoringType', 'abbreviation'])),
+    text: text(field(value, 'text')),
+    homeScore: points(field(value, 'homeScore')),
+    awayScore: points(field(value, 'awayScore')),
+  };
+}
+
+function readDrive(value: unknown): RawDrive | null {
+  if (!isObject(value)) return null;
+  return {
+    teamId: identifier(path(value, ['team', 'id'])),
+    description: text(value['description']),
+  };
+}
+
+function readWinProbabilityPoint(value: unknown): RawWinProbabilityPoint | null {
+  const home = finite(field(value, 'homeWinPercentage'));
+  if (home === null) return null;
+  return { homeWinPercentage: home, tiePercentage: finite(field(value, 'tiePercentage')) };
+}
+
+/** `linescores[]`: `{ value: 7 }` or `{ displayValue: "7" }`. A period that does not read is `null`, kept in place. */
+function readLinescore(competitors: readonly unknown[], side: 'home' | 'away'): (number | null)[] {
+  const competitor = competitors.find((entry) => field(entry, 'homeAway') === side);
+  return list(field(competitor, 'linescores')).map(
+    (entry) => points(field(entry, 'value')) ?? points(field(entry, 'displayValue')),
+  );
+}
+
+function readAll<T>(value: unknown, read: (entry: unknown) => T | null): T[] {
+  return list(value).flatMap((entry) => {
+    const parsed = read(entry);
+    return parsed === null ? [] : [parsed];
+  });
+}
+
+/**
+ * `summary?event={id}`, read for the game's inside. The header must read (it
+ * is the game); every other part is optional and an unreadable entry is
+ * skipped, so a damaged box score degrades to fewer rows, never to a throw.
+ *
+ * `odds`, `pickcenter`, and `againstTheSpread` are siblings of `boxscore` in
+ * this payload. Nothing here reads them, and a test holds it to that.
+ */
+export function readGameDetail(body: unknown): RawGameDetail | null {
+  const summary = readSummary(body);
+  if (summary === null) return null;
+  const competitors = list(
+    field(list(field(field(body, 'header'), 'competitions'))[0], 'competitors'),
+  );
+  const linescores: RawLinescores = {
+    home: readLinescore(competitors, 'home'),
+    away: readLinescore(competitors, 'away'),
+  };
+  return {
+    event: summary.event,
+    linescores,
+    boxscore: readAll(path(body, ['boxscore', 'teams']), readBoxscoreTeam),
+    leaders: readAll(field(body, 'leaders'), readTeamLeaders),
+    scoringPlays: readAll(field(body, 'scoringPlays'), readScoringPlay),
+    currentDrive: readDrive(path(body, ['drives', 'current'])),
+    winProbability: readAll(field(body, 'winprobability'), readWinProbabilityPoint),
+  };
 }
 
 /** `statistics[name="gameProjection"].value`. Selected by name: order is not a contract. */

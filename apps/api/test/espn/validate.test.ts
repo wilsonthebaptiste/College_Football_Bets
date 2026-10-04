@@ -1,6 +1,7 @@
 import type { Season } from '@cfb/shared';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
+  toGameDetail,
   toPrediction,
   toProjectionInputs,
   toProviderGame,
@@ -15,6 +16,7 @@ import {
   readCalendarWeeks,
   readErrorBody,
   readFpiPage,
+  readGameDetail,
   readGroup,
   readRankings,
   readRefPage,
@@ -165,6 +167,11 @@ function pipeline(body: unknown): void {
     toPrediction(summary, standalone, '2026-09-18T00:00:00.000Z');
   }
 
+  // Inside the game (matchup board, Phase 3): box score, leaders, line score,
+  // scoring plays, drive, and the win-probability series.
+  const detail = readGameDetail(body);
+  if (detail !== null) toGameDetail(detail);
+
   const rankings = readRankings(body);
   if (rankings !== null) toRankings(rankings, SEASON);
 
@@ -221,6 +228,31 @@ describe('validate.ts is total over damaged ESPN payloads (§40)', () => {
           );
         }
         for (const entry of damages.reverse()) entry.undo();
+      }
+    });
+  }
+
+  // A random walk over a 500 KB summary mostly lands in `news` and `standings`.
+  // These rounds start the walk INSIDE each part the game detail reads, so the
+  // box score's mixed-type values, a leader with no athlete, and a probability
+  // that is a string all get damaged on purpose.
+  for (const name of ['game-live-matchup', 'game-live', 'game-final', 'game-upcoming-matchup']) {
+    it(`${name}: damage inside the parts the game detail reads never throws`, () => {
+      const body = fixture(name) as Record<string, unknown>;
+      const random = prng([...name].reduce((sum, char) => sum * 37 + char.charCodeAt(0), 11) >>> 0);
+      const parts = ['boxscore', 'leaders', 'scoringPlays', 'winprobability', 'drives', 'header'];
+      for (let round = 0; round < 300; round += 1) {
+        const part = parts[round % parts.length]!;
+        const root = body[part];
+        if (!isContainer(root)) continue;
+        const done = damage(root, random);
+        try {
+          pipeline(body);
+        } catch (error) {
+          throw new Error(`${name}, ${part}, round ${String(round)}: ${done?.description ?? ''}
+${String(error)}`);
+        }
+        done?.undo();
       }
     });
   }

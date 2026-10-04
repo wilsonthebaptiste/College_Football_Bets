@@ -26,5 +26,21 @@ export type {
   TeamProjection,
 } from './projection';
 export type { Matchup, MatchupOwner, MatchupSide, SeasonWeek } from './matchup';
+export type {
+  CurrentDrive,
+  GameDetail,
+  GameLeader,
+  GameSituation,
+  GameStatsKind,
+  LeaderCategory,
+  LeaderRow,
+  LinePeriod,
+  LineScore,
+  ScoringPlay,
+  StatValue,
+  TeamStatRow,
+  WinProbability,
+  WinProbabilitySource,
+} from './detail';
 export type { TeamSnapshot } from './snapshot';
 export type { AppUser, UserSummary, UserTeamSelection } from './user';

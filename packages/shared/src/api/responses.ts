@@ -2,6 +2,7 @@ import type { AppError, Envelope, Freshness, SportsProviderName } from '../envel
 import type { Season, SeasonSource } from '../season';
 import type {
   Game,
+  GameDetail,
   Matchup,
   OutcomeKind,
   PageTeam,
@@ -155,6 +156,18 @@ export interface GameResponse {
  */
 export interface PredictionResponse {
   prediction: Envelope<Prediction | null>;
+}
+
+// ─── GET /api/games/:gameId/detail ───────────────────────────────────────────
+
+/**
+ * Inside the game: line score, stats, leaders, scoring plays, drive, and the
+ * provider's in-game win probability (context/plan-matchup-board.md, Phase 3).
+ * Its own request, so a failing box score leaves the game's header and its
+ * prediction standing (§42).
+ */
+export interface GameDetailResponse {
+  detail: Envelope<GameDetail>;
 }
 
 // ─── GET /api/projections, GET /api/users/:userId/projection ─────────────────

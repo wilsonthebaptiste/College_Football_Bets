@@ -7,10 +7,13 @@ was learned, what is deployed, and what is left. The original specification and
 the phase-by-phase build plan are archived in
 [context/archive/](context/archive/).
 
-**Status: the five build phases are complete, and team search and projected
-points are deployed. The site is live at <https://cfb-board-pfc.pages.dev>, on
-real ESPN data; you can look up any team the provider lists, and every board
-now shows each person's projected points under the owner's scoring rules** (see
+**Status: the five build phases are complete, and team search, projected
+points, and the matchup board are deployed. The site is live at
+<https://cfb-board-pfc.pages.dev>, on real ESPN data; you can look up any team
+the provider lists, every board shows each person's projected points under the
+owner's scoring rules, and a Matchups page lists every game between two boards
+and opens into the game itself, live** (see
+[Testing the matchup board](#testing-the-matchup-board) and
 [Testing projected points](#testing-projected-points)). What is still
 outstanding is yours: 24 hours of usage numbers and a look on your phone (see
 [Testing projected points](#testing-projected-points), Level C, and
@@ -1294,6 +1297,111 @@ of the same checks again against the **deployed** site on real ESPN data, the
 43rd skipped because no game was in progress. Details are in the Phase 7
 completion notes in
 [context/archive/plan-search-engine.md](context/archive/plan-search-engine.md).
+
+---
+
+## Testing the matchup board
+
+The **Matchups** page (header link, beside Boards) lists every game in a week
+where a team on one board plays a team on another, says whose each side is, and
+opens into a page per game. Before kickoff that page shows ESPN's pregame
+prediction and each team's season averages; during the game it shows the score
+by quarter, the down and distance, **ESPN's live win probability**, the team
+stats, the leaders, the drive, and the scoring plays, updating every 15 seconds;
+once the game is final it shows the stats and the scoring plays and stops
+polling. The plan and each phase's completion notes are in
+[context/plan-matchup-board.md](context/plan-matchup-board.md).
+
+**Worth knowing before you test:**
+
+- **Two ESPN models, two labels.** "Source: ESPN win probability (live)" is
+  ESPN's in-game model and moves with each play. "Source: ESPN Matchup
+  Predictor" is the pregame one; during a game it says it was made before
+  kickoff and does not change. No betting line is ever shown.
+- **Before kickoff, the stats table is "Season averages"**, and says it is not
+  this game's numbers. It becomes "Team stats" within a minute of kickoff.
+- **Owner names appear on a third kind of page now** (boards, search, and the
+  matchup pages). No new exposure — every board is already public.
+- **The production boards share no teams**, so a side with two owners only
+  appears in mock data.
+- **In mock mode** every number inside a game is synthetic and labelled so
+  ("Mock win probability (synthetic data)", "Mock passer (ALA)"). The mock
+  always has a live game in the current week, so the live page can be seen on
+  a Tuesday.
+
+### Level A — Automated checks
+
+```powershell
+npm run verify
+npm run format:check
+npm run build:web; npm run check:bundle
+```
+
+Green means, among the rest: the real summary captured during a game on
+2026-10-03 (California at UNLV) normalized field by field, season averages kept
+out of the game table, the betting keys never read, a final game given no win
+probability although ESPN sends 177 points, down and distance read only from
+the slate, every fault failing alone, and the game page rendered from those
+real captures with the three labels asserted where they are seen
+(`apps/api/test/detail.test.ts`, `apps/web/src/features/matchups/GameDetail.test.tsx`).
+
+### Level B — The website (mock data)
+
+1. Start both servers (`npm run dev`, `npm run dev:web`) and open the site.
+2. Press **Matchups** in the header. You should see this week's games, live
+   ones first, each card naming both teams and whose they are.
+3. Press a **LIVE** card. Within a second: the score, "ALA ball, 2nd & 7 at …",
+   "Has the ball" beside one team, **Score by quarter**, **Win probability**
+   with "Source: Mock win probability (synthetic data) (live)", then **Who's
+   favored** with "Pregame prediction, made before kickoff", then **Team
+   stats**, **Leaders**, **Current drive**, and **Scoring plays** (newest
+   first). Leave it open a minute: the "Updated" times move by themselves.
+4. Go back and press a **Final** card: stats and scoring plays in game order,
+   no win probability of either kind. With the browser's network panel open,
+   nothing is requested after the first load.
+5. Use **Next week** and open any game: **Season averages** and **Season
+   leaders**, the pregame prediction, no line score.
+
+### Level B2 — Break things on purpose
+
+Restart the API with a fault, for example
+`npx wrangler dev --var SPORTS_PROVIDER_FAULT:detail` in `apps/api`:
+
+| Fault        | What the game page should say                                                                                |
+| ------------ | ------------------------------------------------------------------------------------------------------------ |
+| `detail`     | Header and prediction as usual; one panel, "Stats unavailable", a **Reference**, and **Try again**           |
+| `slate`      | A live game's header "May be out of date" with its original time, and **no** down-and-distance line          |
+| `prediction` | "Prediction unavailable" with a reference; everything else as usual                                          |
+| `rankings`   | Every rank `—`, nothing else lost                                                                            |
+| `week`       | The Matchups page says the week could not be loaded; a single game page still opens (it is a different read) |
+| `all`        | The Matchups page cannot load the week; a game page is "Unable to load this game" with **Try again**         |
+
+### Level C — The live site
+
+1. On a phone, open <https://cfb-board-pfc.pages.dev>, press **Matchups**, and
+   open a game. Nothing scrolls sideways; each section has its own "Updated"
+   time; the two ESPN labels are as above.
+2. **On a Saturday with a matchup on** (week 6 is 2026-10-10, twelve of them),
+   open a live game and leave it for a few minutes: the score, the down and
+   distance, and the win probability move without a reload, and nothing says
+   "Final" until the game is over.
+3. The day after, read the KV counter ([docs/ops.md](docs/ops.md#watching-usage)):
+   `week_games` a few dozen writes, `game_detail` only for upcoming and final
+   games, nothing for `matchup_composite`.
+
+### Matchup board exit criteria and how each is checked
+
+| Exit criterion (plan-matchup-board.md, Phase 3)                                     | Checked by         | Status                                               |
+| ----------------------------------------------------------------------------------- | ------------------ | ---------------------------------------------------- |
+| Live mock game: score, line score, stats, situation, win probability move; no Final | Level A, Level B   | ✅ automated (API and browser)                       |
+| Final game: stats and plays, no win probability, no polling                         | Level A, Level B 4 | ✅ automated (API, component, query client, browser) |
+| Before kickoff: "Season averages" labelled, never in a game column; pregame shown   | Level A, Level B 5 | ✅ automated, on mock and on real ESPN               |
+| Detail blocked or faulted: header and prediction stay, stats offer Try again        | Level A, Level B2  | ✅ automated · ✅ drilled on the real runtime        |
+| No `undefined`, `NaN`, `0–0`, or `0%` for a missing value, seen or spoken           | Level A            | ✅ every state                                       |
+| Real-payload test: the three labels where rendered                                  | Level A            | ✅ captured during the games of 2026-10-03           |
+| Axe, keyboard, 320 px, both themes, on the deployed site                            | Level C 1          | ✅ see [docs/ops.md](docs/ops.md)                    |
+| verify, format:check, check:bundle green; deployed; smoke extended to three routes  | Level A, docs/ops  | ✅                                                   |
+| A real Saturday on the deployed site, and the KV counter the day after              | Level C 2–3        | ⏳ 2026-10-10                                        |
 
 ---
 

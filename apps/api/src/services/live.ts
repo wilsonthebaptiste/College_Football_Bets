@@ -102,6 +102,8 @@ function overlay(base: ProviderGame, live: ProviderGame): ProviderGame {
       winner: live.away.winner,
       record: live.away.record ?? base.away.record,
     },
+    // Down and distance are as old as the score beside them: the slate's.
+    situation: live.situation ?? null,
   };
 }
 

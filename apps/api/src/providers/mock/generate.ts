@@ -24,7 +24,7 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const WEEK = 7 * DAY;
-const GAME_LENGTH = 3.5 * HOUR;
+export const GAME_LENGTH = 3.5 * HOUR;
 
 /** Noon, 3:30 PM, and 7:30 PM US Eastern (daylight time), as UTC offsets from Saturday 00:00Z. */
 const KICKOFF_SLOTS = [16 * HOUR, 19.5 * HOUR, 23.5 * HOUR];
@@ -261,7 +261,7 @@ function timingOf(slot: Slot, now: number): Timing {
   };
 }
 
-function finalScores(id: string): [number, number] {
+export function finalScores(id: string): [number, number] {
   const value = hash(`score:${id}`);
   const home = 10 + (value % 35);
   let away = 10 + ((value >>> 8) % 35);

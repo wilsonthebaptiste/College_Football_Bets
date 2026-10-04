@@ -1,11 +1,19 @@
-import type { MatchupBoardResponse } from '@cfb/shared';
+import type { GameDetailResponse, Matchup, MatchupBoardResponse } from '@cfb/shared';
 import { focusManager, QueryObserver, type QueryClient } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../../lib/api';
 import { POLL } from '../../lib/poll';
 import { createQueryClient } from '../../lib/queryClient';
-import { liveMatchup, makeMatchup, matchupBoardResponse } from '../../test/fixtures';
-import { matchupBoardQuery } from './useMatchups';
+import {
+  finalGameDetail,
+  finalMatchup,
+  gameDetailResponse,
+  liveGameDetail,
+  liveMatchup,
+  makeMatchup,
+  matchupBoardResponse,
+} from '../../test/fixtures';
+import { gameDetailQuery, matchupBoardQuery } from './useMatchups';
 
 /**
  * Phase 2's exit criterion, "the hidden-tab test drives the real QueryClient
@@ -104,5 +112,40 @@ describe('the matchup board’s polling, on the real query client (§24)', () =>
       await vi.advanceTimersByTimeAsync(500);
     }
     expect(calls).toBe(1);
+  });
+});
+
+describe('inside the game: the detail’s polling, on the real query client (Phase 3)', () => {
+  let detailCalls = 0;
+  let detailAnswer: GameDetailResponse;
+
+  function watchDetail(row: Matchup): void {
+    detailCalls = 0;
+    vi.spyOn(api, 'gameDetail').mockImplementation(() => {
+      detailCalls += 1;
+      return Promise.resolve(detailAnswer);
+    });
+    const observer = new QueryObserver(client, gameDetailQuery(row.providerGameId, row));
+    stop = observer.subscribe(() => undefined);
+  }
+
+  it('a final game is read once and then never again', async () => {
+    detailAnswer = gameDetailResponse(finalGameDetail());
+    watchDetail(finalMatchup());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(detailCalls).toBe(1);
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    expect(detailCalls).toBe(1); // half an hour: no request at all
+  });
+
+  it('a live game is reread every 15 s, and not while the tab is hidden', async () => {
+    detailAnswer = gameDetailResponse(liveGameDetail());
+    watchDetail(liveMatchup());
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(2 * POLL.liveMs);
+    expect(detailCalls).toBe(3);
+    focusManager.setFocused(false);
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(detailCalls).toBe(3);
   });
 });

@@ -276,6 +276,9 @@ function rowOf(game: ProviderGame, context: RowContext): Matchup {
     broadcast: game.broadcast,
     home,
     away,
+    // Only from a slate laid over this row. A row the slate could not check
+    // shows no situation rather than whatever the week document last had.
+    situation: slate === undefined ? null : (game.situation ?? null),
     sameOwner: away.owners.some((owner) => homeOwners.has(owner.userId)),
     scoreUpdatedAt:
       context.overlay.overlaidAt.get(game.providerGameId) ?? context.baseFreshness.fetchedAt,

@@ -1,0 +1,303 @@
+/* Inside the game (plan-matchup-board, Phase 3). Every table fits a 320 px
+   screen without sideways scroll: labels wrap, numbers do not. */
+
+.updated {
+  color: var(--color-ink-muted);
+  font-size: var(--text-xs);
+}
+
+.note {
+  color: var(--color-ink-secondary);
+  font-size: var(--text-sm);
+}
+
+.source {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+}
+
+.empty {
+  color: var(--color-ink-secondary);
+}
+
+.aside {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+}
+
+.loading {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* ── Tables ─────────────────────────────────────────────────────────────── */
+
+.lineScore,
+.stats {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.lineScore th,
+.lineScore td,
+.stats th,
+.stats td {
+  padding: var(--space-2) var(--space-1);
+  border-bottom: 1px solid var(--color-rule);
+  text-align: right;
+}
+
+.lineScore thead th,
+.stats thead th {
+  color: var(--color-ink-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.lineScore tbody th,
+.stats tbody th {
+  text-align: left;
+  font-weight: 600;
+}
+
+.lineScore tbody tr:last-child > *,
+.stats tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.lineScore th:first-child {
+  width: 100%;
+}
+
+.lineScore td {
+  min-width: 1.75rem;
+}
+
+.total {
+  font-weight: 700;
+}
+
+.stats tbody th {
+  color: var(--color-ink-secondary);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.stats td {
+  width: 22%;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+/* ── Win probability ────────────────────────────────────────────────────── */
+
+.probability {
+  gap: var(--space-3);
+}
+
+.split {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.splitSides {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.splitSide {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.splitSide:last-child {
+  text-align: right;
+}
+
+.splitName {
+  color: var(--color-ink-secondary);
+  font-weight: 600;
+}
+
+.splitPct {
+  font-family: var(--font-display);
+  font-size: var(--numeral-md);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums lining-nums;
+  white-space: nowrap;
+}
+
+.bar {
+  display: flex;
+  gap: 2px;
+  height: 0.75rem;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--color-sunken);
+}
+
+.segment:first-child {
+  flex: 0 0 var(--first, 50%);
+}
+
+.segment:last-child {
+  flex: 1 1 auto;
+}
+
+.awayFill {
+  background: var(--color-ink-muted);
+}
+
+.homeFill {
+  background: var(--color-rule-strong);
+}
+
+.trend {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.trendLine {
+  display: block;
+  width: 100%;
+  height: 3rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-sunken);
+}
+
+.trendMid {
+  stroke: var(--color-rule);
+  stroke-width: 0.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.trendPath {
+  fill: none;
+  stroke: var(--color-ink-secondary);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.trendText {
+  color: var(--color-ink-secondary);
+  font-size: var(--text-sm);
+}
+
+/* ── Leaders ────────────────────────────────────────────────────────────── */
+
+.leaders {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.leaderGroup {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.leaderTitle {
+  color: var(--color-ink-muted);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.leaderList {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.leader {
+  overflow-wrap: anywhere;
+}
+
+.leaderTeam {
+  display: inline-block;
+  min-width: 3.5rem;
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.leaderName {
+  font-weight: 600;
+}
+
+.leaderLine {
+  color: var(--color-ink-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderNone {
+  color: var(--color-ink-muted);
+}
+
+/* ── Drive and plays ────────────────────────────────────────────────────── */
+
+.drive {
+  font-weight: 600;
+}
+
+.driveTeam {
+  color: var(--color-ink-secondary);
+}
+
+.plays {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.play {
+  display: grid;
+  gap: var(--space-1);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.play:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.playHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+.playWhen {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.playTeam {
+  font-weight: 700;
+}
+
+.playScore {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.playText {
+  color: var(--color-ink-secondary);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}

@@ -1,7 +1,13 @@
-import type { MatchupBoardResponse, MatchupResponse } from '@cfb/shared';
+import type { Matchup, MatchupBoardResponse, MatchupResponse } from '@cfb/shared';
 import { queryOptions, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { api, queryKeys } from '../../lib/api';
-import { matchupBoardPollInterval, matchupPollInterval, POLL } from '../../lib/poll';
+import {
+  gameDetailPollInterval,
+  isSettled,
+  matchupBoardPollInterval,
+  matchupPollInterval,
+  POLL,
+} from '../../lib/poll';
 
 /**
  * The matchup board's one request (plan-matchup-board, Phase 2), refreshed on
@@ -49,7 +55,11 @@ function fromLoadedBoards(
   return undefined;
 }
 
-/** One game's page, polled as the team page polls its snapshot (15 s while live). */
+/**
+ * One game's page, polled as the team page polls its snapshot (15 s while
+ * live). A final or canceled game does not poll at all (Phase 3): nothing on
+ * its page will change again.
+ */
 export function useMatchup(providerGameId: string) {
   const queryClient = useQueryClient();
   return useQuery<MatchupResponse>({
@@ -58,9 +68,29 @@ export function useMatchup(providerGameId: string) {
     placeholderData: () => fromLoadedBoards(queryClient, providerGameId),
     refetchInterval: (query) => {
       const response = query.state.data;
-      return response === undefined
-        ? POLL.activeMs
-        : matchupPollInterval(response.matchup, Date.now());
+      if (response === undefined) return POLL.activeMs;
+      if (isSettled(response.matchup)) return false;
+      return matchupPollInterval(response.matchup, Date.now());
     },
   });
+}
+
+/**
+ * Inside the game (Phase 3): its own request, paced by the header's row
+ * (`gameDetailPollInterval`), which is the freshest word on whether the game
+ * is on. Exported as options so the polling test drives exactly this.
+ */
+export function gameDetailQuery(providerGameId: string, row: Matchup | null) {
+  return queryOptions({
+    queryKey: queryKeys.gameDetail(providerGameId),
+    queryFn: ({ signal }) => api.gameDetail(providerGameId, signal),
+    refetchInterval: (query) =>
+      row === null
+        ? POLL.activeMs
+        : gameDetailPollInterval(row, query.state.data?.detail, Date.now()),
+  });
+}
+
+export function useGameDetail(providerGameId: string, row: Matchup | null) {
+  return useQuery(gameDetailQuery(providerGameId, row));
 }

@@ -2,6 +2,7 @@ import type {
   BoardResponse,
   Envelope,
   Game,
+  GameDetail,
   Matchup,
   MatchupBoardResponse,
   ScheduleResult,
@@ -159,4 +160,34 @@ export function matchupPollInterval(matchup: Matchup, now: number): number {
   if (isInProgress(matchup)) return POLL.liveMs;
   if (isDegraded(matchup) || nearKickoff(matchup, now)) return POLL.activeMs;
   return POLL.idleMs;
+}
+
+/** Over and settled: nothing about it will change, so nothing on its page polls. */
+export function isSettled(row: Pick<Matchup, 'status'>): boolean {
+  return row.status === 'final' || row.status === 'canceled';
+}
+
+/**
+ * Inside one game (plan-matchup-board, Phase 3). The header's row is the
+ * freshest word on whether the game is on, so it decides the pace:
+ *
+ * - A final or canceled game → `false`: it does not poll at all. Its detail
+ *   is cached for a week, and nothing in it will move.
+ * - In progress → `liveMs`.
+ * - Around kickoff, or a detail that failed or went stale → `activeMs`, so it
+ *   recovers by itself and turns from season averages to the game's own
+ *   numbers within a minute of kickoff.
+ * - Otherwise → `idleMs`.
+ */
+export function gameDetailPollInterval(
+  matchup: Matchup,
+  detail: Envelope<GameDetail> | undefined,
+  now: number,
+): number | false {
+  if (isSettled(matchup)) return false;
+  if (isInProgress(matchup)) return POLL.liveMs;
+  if (detail === undefined || detail.data === null || detail.freshness.state === 'stale') {
+    return POLL.activeMs;
+  }
+  return nearKickoff(matchup, now) ? POLL.activeMs : POLL.idleMs;
 }

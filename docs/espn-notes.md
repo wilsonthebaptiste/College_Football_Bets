@@ -658,8 +658,8 @@ GET site.api.espn.com/…/college-football/scoreboard?week=6&seasontype=2&groups
 - **TBD kickoffs** are `timeValid: false` with a `04:00Z` (midnight Eastern)
   placeholder, as everywhere else. Four in week 6.
 - **A live row carries `competitions[0].situation`** — `downDistanceText`,
-  `possession`, `possessionText`, `lastPlay`, `isRedZone`, timeouts. Nothing reads
-  it yet; Phase 3 of the matchup board will.
+  `possession`, `possessionText`, `lastPlay`, `isRedZone`, timeouts. Read since
+  Phase 3 of the matchup board: see §14.
 
 ### The calendar's weeks
 
@@ -679,3 +679,54 @@ byes, and every one of the 90 games was in the week document** (weeks 5 and 6).
 The one owned team with an FCS opponent that week (LSU–McNeese, week 5) was
 included. Re-run it at the start of each season: a team moving to or from FBS
 is the case that could change the answer.
+
+## 14. Inside a game: the summary's box score, and the slate's situation
+
+Observed 2026-10-03 for the matchup board's game page
+(context/plan-matchup-board.md, Phase 3). Fixtures, captured **during** the
+games of that Saturday at 23:07Z: `game-live-matchup.json` (California at UNLV,
+4th quarter), `game-upcoming-matchup.json` (Miami at Clemson, before kickoff),
+`scoreboard-week-5-live.json` (the week document with 12 games in progress),
+and `scoreboard-20261003-live.json` (the day's slate, seconds later). The older
+`game-live.json`, `game-final.json`, and `game-postponed.json` agree with
+everything below.
+
+```
+GET site.api.espn.com/…/college-football/summary?event={id}
+```
+
+The same request `getGame` and `getPrediction` make; `getGameDetail` reads
+different keys of it, through `readGameDetail` / `toGameDetail`, and caches it
+under its own key (`game_detail`), because its lifetime follows the box score.
+
+| What                        | Where                                                                                                                     | Notes                                                                                                                                                                                                                                                                                                                                                |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Points per quarter          | `header.competitions[0].competitors[].linescores[].displayValue` (`"7"`)                                                  | By `homeAway`, never by order. Absent before kickoff. Overtime periods are simply more entries; the app labels 5 as "OT", 6 as "2OT"                                                                                                                                                                                                                 |
+| Team stats                  | `boxscore.teams[].statistics[]`: `{ name, label, displayValue, value }`                                                   | **Read by `name`.** `value` is a number, the string `"-"`, or missing (`totalYards` is `"-"` in every capture; `fourthDownEff` `"-"` when 0-0), so the app carries `displayValue` and a number only when `value` is one. `possessionTime` is padded (`" 2:27"`). The team is `team.id`, matched to the header's home and away                        |
+| **Season averages**         | The **same** `boxscore.teams[].statistics[]`, before kickoff                                                              | Different names: `totalPointsPerGame`, `yardsPerGame`, `passingYardsPerGame`, `rushingYardsPerGame` and the four `…Allowed`. No `value` at all, only `displayValue`. A different measurement in the same place — the app reads a separate name list and labels the table "Season averages" (`statsKind: 'season_average'`)                           |
+| Leaders                     | `leaders[]` per team → `leaders[]` per category (`name`) → `leaders[0]`                                                   | Categories `passingYards`, `rushingYards`, `receivingYards` (also `sacks`, `totalTackles`, not shown). The line is `displayValue` ("11/22, 177 YDS, 3 TD"); the name `athlete.displayName`. **Before kickoff these are season leaders** ("94/106, 1,211 YDS, 14 TD"). A category with no one in it has no `leaders` array                            |
+| Scoring plays               | `scoringPlays[]`: `period.number`, `clock.displayValue`, `team.id`, `type.abbreviation`, `text`, `homeScore`, `awayScore` | In game order. `homeScore`/`awayScore` are the score after the play. Absent before kickoff                                                                                                                                                                                                                                                           |
+| Current drive               | `drives.current.description` ("4 plays, 5 yards, 1:41"), `drives.current.team.id`                                         | Live only; a final has `drives.previous` alone                                                                                                                                                                                                                                                                                                       |
+| **In-game win probability** | `winprobability[]`: `{ homeWinPercentage, tiePercentage, playId }`                                                        | **0–1 despite the name** (0.9229, not 92.29). One entry per play: 167 in the live capture, 177 in the final one. **A final game still carries the whole series**; the app returns none for a final. Empty before kickoff and for a postponement. A different model from the pregame predictor (§6), labelled "ESPN win probability (live)" on screen |
+| Betting                     | `odds`, `pickcenter`, `againstTheSpread`                                                                                  | **Siblings of `boxscore`.** Never read; a test asserts no string found only under these keys reaches a normalized `GameDetail`                                                                                                                                                                                                                       |
+
+### Down, distance, and possession are not in the summary
+
+They are in the scoreboard: `events[].competitions[0].situation`, on the day
+slate (and the week document) while a game is in progress:
+
+```json
+{ "possession": "2439", "downDistanceText": "1st & 10 at UNLV 48",
+  "shortDownDistanceText": "1st & 10", "possessionText": "UNLV 48",
+  "lastPlay": { "text": "(07:40) Shotgun #11 J.Brousseau pass incomplete …",
+                "probability": { "homeWinPercentage": 0.9229, … } } }
+```
+
+- `possession` is **absent** around a score or a kickoff (4 of the 12 live
+  games in the capture had a last play and nothing else). The app then says no
+  more than it has.
+- "End of 3rd Quarter" carries the last situation of the quarter; the status
+  detail says what is happening.
+- The app reads it only from the 25-second live slate the overlay already
+  fetches, so it costs no request and is exactly as old as the score beside it.
+  A row whose slate could not be read shows no situation, never an old one.

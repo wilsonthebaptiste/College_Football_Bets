@@ -294,6 +294,63 @@ if (projected !== undefined) {
   }
 }
 
+// ── The matchup board and the game page (plan-matchup-board, Phases 1–3) ────
+const board = await get('/api/matchups');
+const rows = board.body?.matchups ?? [];
+check(
+  board.status === 200 && (board.body?.week !== null || board.body?.notice !== null),
+  'GET /api/matchups',
+  `${board.body?.weeks?.find((w) => w.week === board.body?.week)?.label ?? board.body?.notice ?? '?'}: ${rows.length} matchups, ${board.ms} ms`,
+);
+check(
+  rows.every((row) => row.home.owners.length > 0 && row.away.owners.length > 0),
+  '  every row has an owner on both sides',
+);
+check(
+  rows.every((row) => row.status === 'live' || row.situation === null),
+  '  only live rows carry a down-and-distance line',
+);
+const game =
+  rows.find((row) => row.status === 'live') ??
+  rows.find((row) => row.status === 'final') ??
+  rows[0];
+if (game !== undefined) {
+  const id = game.providerGameId;
+  const single = await get(`/api/matchups/${id}`);
+  check(
+    single.status === 200 && single.body?.matchup?.providerGameId === id,
+    `GET /api/matchups/${id}`,
+    `${single.body?.matchup?.away?.team?.name ?? '?'} at ${single.body?.matchup?.home?.team?.name ?? '?'}, ${single.body?.matchup?.status ?? '?'}, ${single.ms} ms`,
+  );
+  const detail = await get(`/api/games/${id}/detail`);
+  const inside = detail.body?.detail?.data;
+  check(
+    detail.status === 200 && inside !== undefined,
+    `GET /api/games/${id}/detail`,
+    inside === null
+      ? `unavailable (${detail.body?.detail?.error?.requestId ?? 'no reference'})`
+      : `${inside?.statsKind ?? '?'}, ${inside?.teamStats?.length ?? 0} stat rows, ${inside?.scoringPlays?.length ?? 0} scoring plays, ${detail.ms} ms`,
+  );
+  if (inside) {
+    check(
+      inside.status !== 'final' || inside.winProbability === null,
+      '  a final game carries no win probability',
+    );
+    check(
+      inside.statsKind === 'game' ||
+        inside.teamStats.every((row) => !['firstDowns', 'totalYards'].includes(row.key)),
+      '  season averages never in a game column',
+    );
+    const wp = inside.winProbability;
+    check(
+      wp === null ||
+        (wp.homeWinProbability >= 0 && wp.homeWinProbability <= 1 && wp.sourceLabel !== ''),
+      '  a win probability, when there is one, is 0–1 and labelled',
+      wp === null ? 'none' : `${wp.sourceLabel}: home ${wp.homeWinProbability}`,
+    );
+  }
+}
+
 const shortQuery = await get('/api/search/teams?q=a');
 check(
   shortQuery.status === 400,

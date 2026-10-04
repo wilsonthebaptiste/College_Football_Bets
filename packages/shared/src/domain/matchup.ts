@@ -1,5 +1,6 @@
 import type { Freshness } from '../envelope';
 import type { Season } from '../season';
+import type { GameSituation } from './detail';
 import type { GameStatus } from './game';
 import type { RankingState } from './ranking';
 import type { TeamRecord } from './record';
@@ -87,6 +88,13 @@ export interface Matchup {
   broadcast: string | null;
   home: MatchupSide;
   away: MatchupSide;
+  /**
+   * Down, distance, and possession, from the live slate (Phase 3). `null`
+   * unless this row's live data came off a slate that carried them: a row that
+   * could not be checked against the slate shows no situation rather than an
+   * old one.
+   */
+  situation: GameSituation | null;
   /** One person has both sides ("Wilson vs Wilson"). It happens most weeks. */
   sameOwner: boolean;
   /**

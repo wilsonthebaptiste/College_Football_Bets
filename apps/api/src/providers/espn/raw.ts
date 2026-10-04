@@ -100,6 +100,27 @@ export interface RawEvent {
   status: RawStatus | null;
   home: RawCompetitor;
   away: RawCompetitor;
+  /** `competitions[0].situation`: scoreboard only, and only while live. */
+  situation: RawSituation | null;
+}
+
+/**
+ * `competitions[0].situation` on a scoreboard event (espn-notes §14):
+ *
+ *   { possession: "2390", downDistanceText: "2nd & 10 at MIA 34",
+ *     shortDownDistanceText: "2nd & 10", possessionText: "MIA 34",
+ *     lastPlay: { text: "(12:53) Shotgun #10 D.Mensah pass…", probability: {…} } }
+ *
+ * The summary has none of it, which is why it is read from the slate.
+ */
+export interface RawSituation {
+  /** `possession`: a team id. */
+  possession: string | null;
+  downDistanceText: string | null;
+  shortDownDistanceText: string | null;
+  possessionText: string | null;
+  /** `lastPlay.text` */
+  lastPlayText: string | null;
 }
 
 /** `teams/{id}/schedule` */
@@ -160,6 +181,97 @@ export interface RawSummary {
   event: RawEvent;
   /** Top-level `predictor`, present for upcoming games (espn-notes §6A). */
   predictor: RawInlinePredictor | null;
+}
+
+/**
+ * `boxscore.teams[].statistics[]`: `{ name, label, displayValue, value }`.
+ * `value` is a number, a string (`"-"`), or absent; `displayValue` is the
+ * string to show (espn-notes §14).
+ */
+export interface RawStat {
+  name: string;
+  label: string | null;
+  displayValue: string | null;
+  value: number | null;
+}
+
+/** `boxscore.teams[]`: one side's stats. */
+export interface RawBoxscoreTeam {
+  teamId: string;
+  homeAway: 'home' | 'away' | null;
+  stats: RawStat[];
+}
+
+/** `leaders[].leaders[].leaders[0]`: the top athlete in one category. */
+export interface RawLeader {
+  /** `athlete.displayName`, else `athlete.shortName`. */
+  athlete: string | null;
+  /** `displayValue`: "10/23, 123 YDS, 1 INT". */
+  displayValue: string | null;
+}
+
+/** `leaders[].leaders[]`: a category for one team, by `name` (`passingYards`…). */
+export interface RawLeaderCategory {
+  name: string;
+  displayName: string | null;
+  /** The first leader, or `null` when the category lists none. */
+  top: RawLeader | null;
+}
+
+/** `leaders[]`: one team's categories. */
+export interface RawTeamLeaders {
+  teamId: string;
+  categories: RawLeaderCategory[];
+}
+
+/** `scoringPlays[]` */
+export interface RawScoringPlay {
+  id: string;
+  /** `period.number` */
+  period: number | null;
+  /** `clock.displayValue` */
+  clock: string | null;
+  /** `team.id` */
+  teamId: string | null;
+  /** `type.abbreviation`, else `scoringType.abbreviation`. */
+  abbreviation: string | null;
+  text: string | null;
+  homeScore: number | null;
+  awayScore: number | null;
+}
+
+/** `drives.current` */
+export interface RawDrive {
+  teamId: string | null;
+  description: string | null;
+}
+
+/** `winprobability[]`: `{ homeWinPercentage: 0.0777, tiePercentage: 0, playId }`. */
+export interface RawWinProbabilityPoint {
+  /** Despite its name, a 0–1 fraction in every payload seen so far. */
+  homeWinPercentage: number;
+  tiePercentage: number | null;
+}
+
+/** `header.competitions[0].competitors[].linescores[]`, per side. */
+export interface RawLinescores {
+  home: (number | null)[];
+  away: (number | null)[];
+}
+
+/**
+ * `summary?event={id}`, read for what is inside the game. The betting keys
+ * that sit beside `boxscore` (`odds`, `pickcenter`, `againstTheSpread`) are
+ * never read (§46, espn-notes §6).
+ */
+export interface RawGameDetail {
+  event: RawEvent;
+  linescores: RawLinescores;
+  boxscore: RawBoxscoreTeam[];
+  leaders: RawTeamLeaders[];
+  scoringPlays: RawScoringPlay[];
+  currentDrive: RawDrive | null;
+  winProbability: RawWinProbabilityPoint[];
 }
 
 /** `summary.predictor`: projections arrive as strings, e.g. `"91.7"`. */

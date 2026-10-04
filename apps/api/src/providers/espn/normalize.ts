@@ -1,15 +1,25 @@
 import type {
+  GameDetail,
+  GameLeader,
+  GameSituation,
   GameStatus,
+  LeaderCategory,
+  LeaderRow,
+  LineScore,
   Prediction,
   PredictionSide,
   RankedTeam,
   RankingsSnapshot,
+  ScoringPlay,
   Season,
   SeasonType,
   SeasonWeek,
+  StatValue,
   TeamIdentity,
   TeamRecord,
   TeamRef,
+  TeamStatRow,
+  WinProbability,
 } from '@cfb/shared';
 import { resolveSeasonFromDate } from '@cfb/shared';
 import type {
@@ -27,12 +37,15 @@ import type {
   RawEvent,
   RawFpiPage,
   RawFpiTeam,
+  RawGameDetail,
   RawPoll,
   RawRankings,
   RawRecordEntry,
   RawSchedule,
   RawScore,
+  RawSituation,
   RawStandalonePredictor,
+  RawStat,
   RawSummary,
   RawTeam,
 } from './raw';
@@ -320,6 +333,7 @@ export function toProviderGame(raw: RawEvent, fallbackSeason?: Season): Provider
   const verdict = verdictOf(mapped, raw.home, raw.away, homeScore, awayScore);
   const status = verdict.status;
   const keepScores = status === 'final' || live;
+  const situation = live ? toSituation(raw.situation) : null;
 
   return {
     providerGameId: raw.id,
@@ -348,6 +362,24 @@ export function toProviderGame(raw: RawEvent, fallbackSeason?: Season): Provider
     broadcast: raw.broadcast,
     home: toCompetitor(raw.home, keepScores ? homeScore : null, verdict.homeWinner),
     away: toCompetitor(raw.away, keepScores ? awayScore : null, verdict.awayWinner),
+    // Down and distance belong to a game in progress, and only a scoreboard
+    // carries them; every other read has none, and leaves the key out.
+    ...(situation === null ? {} : { situation }),
+  };
+}
+
+/**
+ * The slate's `situation` → the down-and-distance line. ESPN's long form
+ * ("2nd & 10 at MIA 34") when it sends one, else the short form.
+ */
+export function toSituation(raw: RawSituation | null): GameSituation | null {
+  if (raw === null) return null;
+  const downDistance = raw.downDistanceText ?? raw.shortDownDistanceText;
+  if (raw.possession === null && downDistance === null && raw.lastPlayText === null) return null;
+  return {
+    possessionTeamId: raw.possession,
+    downDistance,
+    lastPlay: raw.lastPlayText,
   };
 }
 
@@ -472,6 +504,209 @@ export function toPrediction(
 /** True when a summary already carries a usable inline predictor. */
 export function hasInlinePrediction(summary: RawSummary): boolean {
   return toPrediction(summary, null, new Date(0).toISOString()) !== null;
+}
+
+// ─── Inside the game (context/plan-matchup-board.md, Phase 3) ────────────────
+
+export const ESPN_WIN_PROBABILITY_LABEL = 'ESPN win probability';
+
+/**
+ * The stats this application shows, BY NAME, each with a label of our own for
+ * when ESPN sends none. Before kickoff the same `boxscore.teams[].statistics`
+ * holds season per-game averages under different names (espn-notes §14), so
+ * the two lists are separate, and reading each by name is what keeps an
+ * average out of a game column.
+ */
+const GAME_STATS: readonly (readonly [string, string])[] = [
+  ['firstDowns', '1st Downs'],
+  ['thirdDownEff', '3rd down efficiency'],
+  ['fourthDownEff', '4th down efficiency'],
+  ['totalYards', 'Total Yards'],
+  ['netPassingYards', 'Passing'],
+  ['completionAttempts', 'Comp/Att'],
+  ['yardsPerPass', 'Yards per pass'],
+  ['rushingYards', 'Rushing'],
+  ['rushingAttempts', 'Rushing Attempts'],
+  ['yardsPerRushAttempt', 'Yards per rush'],
+  ['totalPenaltiesYards', 'Penalties'],
+  ['turnovers', 'Turnovers'],
+  ['fumblesLost', 'Fumbles lost'],
+  ['interceptions', 'Interceptions thrown'],
+  ['possessionTime', 'Possession'],
+];
+
+const SEASON_AVERAGE_STATS: readonly (readonly [string, string])[] = [
+  ['totalPointsPerGame', 'Points Per Game'],
+  ['yardsPerGame', 'Total Yards'],
+  ['passingYardsPerGame', 'Yards Passing'],
+  ['rushingYardsPerGame', 'Yards Rushing'],
+  ['totalPointsPerGameAllowed', 'Points Allowed Per Game'],
+  ['yardsPerGameAllowed', 'Yards Allowed'],
+  ['passingYardsPerGameAllowed', 'Pass Yards Allowed'],
+  ['rushingYardsPerGameAllowed', 'Rush Yards Allowed'],
+];
+
+const LEADER_CATEGORIES: readonly (readonly [LeaderCategory, string, string])[] = [
+  ['passing', 'passingYards', 'Passing'],
+  ['rushing', 'rushingYards', 'Rushing'],
+  ['receiving', 'receivingYards', 'Receiving'],
+];
+
+const NO_STAT: StatValue = { display: null, value: null };
+
+function statValue(stat: RawStat | undefined): StatValue {
+  if (stat === undefined) return NO_STAT;
+  // ESPN pads a clock (" 2:27"); otherwise the string is verbatim.
+  const display = stat.displayValue?.trim() ?? '';
+  return { display: display === '' ? null : display, value: stat.value };
+}
+
+function periodLabel(number: number): string {
+  if (number <= 4) return String(number);
+  return number === 5 ? 'OT' : `${String(number - 4)}OT`;
+}
+
+function toLineScore(raw: RawGameDetail, game: ProviderGame, kickedOff: boolean): LineScore | null {
+  if (!kickedOff) return null;
+  const { home, away } = raw.linescores;
+  const count = Math.max(home.length, away.length);
+  if (count === 0) return null;
+  return {
+    periods: Array.from({ length: count }, (_, index) => ({
+      number: index + 1,
+      label: periodLabel(index + 1),
+      home: home[index] ?? null,
+      away: away[index] ?? null,
+    })),
+    homeTotal: game.home.score,
+    awayTotal: game.away.score,
+  };
+}
+
+function toTeamStats(
+  raw: RawGameDetail,
+  game: ProviderGame,
+  names: readonly (readonly [string, string])[],
+): TeamStatRow[] {
+  const statsOf = (teamId: string): Map<string, RawStat> =>
+    new Map(
+      (raw.boxscore.find((team) => team.teamId === teamId)?.stats ?? []).map((stat) => [
+        stat.name,
+        stat,
+      ]),
+    );
+  const home = statsOf(game.home.team.providerTeamId);
+  const away = statsOf(game.away.team.providerTeamId);
+  const rows = names.map(([key, fallback]) => ({
+    key,
+    label: home.get(key)?.label ?? away.get(key)?.label ?? fallback,
+    home: statValue(home.get(key)),
+    away: statValue(away.get(key)),
+  }));
+  // A table of dashes says nothing that "not published" does not say better.
+  return rows.some((row) => row.home.display !== null || row.away.display !== null) ? rows : [];
+}
+
+function toLeaders(raw: RawGameDetail, game: ProviderGame): LeaderRow[] {
+  const leaderOf = (teamId: string, name: string): GameLeader | null => {
+    const top = raw.leaders
+      .find((team) => team.teamId === teamId)
+      ?.categories.find((category) => category.name === name)?.top;
+    if (top === undefined || top === null || top.athlete === null || top.displayValue === null) {
+      return null;
+    }
+    return { name: top.athlete, line: top.displayValue };
+  };
+  const rows = LEADER_CATEGORIES.map(([category, name, label]) => ({
+    category,
+    label,
+    home: leaderOf(game.home.team.providerTeamId, name),
+    away: leaderOf(game.away.team.providerTeamId, name),
+  }));
+  return rows.some((row) => row.home !== null || row.away !== null) ? rows : [];
+}
+
+function toScoringPlays(raw: RawGameDetail): ScoringPlay[] {
+  return raw.scoringPlays.map((play) => ({
+    id: play.id,
+    period: validPeriod(play.period),
+    clock: play.clock,
+    teamId: play.teamId,
+    kind: play.abbreviation,
+    text: play.text,
+    homeScore: play.homeScore,
+    awayScore: play.awayScore,
+  }));
+}
+
+function validPeriod(period: number | null): number | null {
+  return period !== null && Number.isInteger(period) && period >= 1 ? period : null;
+}
+
+/** Four decimal places: ESPN's own precision, without float noise. */
+function fourDecimals(value: number): number {
+  return Math.round(value * 10_000) / 10_000;
+}
+
+function clampProbability(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+/**
+ * ESPN's in-game series → the latest value and the trend. `homeWinPercentage`
+ * is a 0–1 fraction in every payload seen, despite its name; a series on a
+ * 0–100 scale is divided HERE, once, so nothing downstream has to know.
+ */
+function toWinProbability(raw: RawGameDetail): WinProbability | null {
+  const points = raw.winProbability;
+  const last = points.at(-1);
+  if (last === undefined) return null;
+  const scale = points.some((point) => point.homeWinPercentage > 1) ? 100 : 1;
+  const series = points.map((point) =>
+    fourDecimals(clampProbability(point.homeWinPercentage / scale)),
+  );
+  const home = series.at(-1) ?? 0;
+  const tie =
+    last.tiePercentage === null ? null : fourDecimals(clampProbability(last.tiePercentage / scale));
+  return {
+    source: 'espn_win_probability',
+    sourceLabel: ESPN_WIN_PROBABILITY_LABEL,
+    homeWinProbability: home,
+    // The series publishes home and tie; away is what remains of that same
+    // published figure, not a second estimate.
+    awayWinProbability: fourDecimals(clampProbability(1 - home - (tie ?? 0))),
+    tieProbability: tie,
+    homeSeries: series,
+  };
+}
+
+/**
+ * A summary → what is inside the game. Before kickoff the box score is season
+ * averages and the leaders are season leaders (`statsKind`); there is no line
+ * score, no scoring play, no drive, and no in-game probability. A final game
+ * carries no win probability at all: it is decided.
+ */
+export function toGameDetail(raw: RawGameDetail): GameDetail {
+  const game = toProviderGame(raw.event);
+  const live = inProgress(game.status, game.period);
+  const kickedOff = live || game.status === 'final';
+  const drive = raw.currentDrive;
+  return {
+    providerGameId: game.providerGameId,
+    status: game.status,
+    kickoffUtc: game.kickoffUtc,
+    kickoffTbd: game.kickoffTbd,
+    lineScore: toLineScore(raw, game, kickedOff),
+    statsKind: kickedOff ? 'game' : 'season_average',
+    teamStats: toTeamStats(raw, game, kickedOff ? GAME_STATS : SEASON_AVERAGE_STATS),
+    leaders: toLeaders(raw, game),
+    scoringPlays: kickedOff ? toScoringPlays(raw) : [],
+    currentDrive:
+      live && drive !== null && drive.description !== null
+        ? { teamId: drive.teamId, description: drive.description }
+        : null,
+    winProbability: live ? toWinProbability(raw) : null,
+  };
 }
 
 // ─── Slates ──────────────────────────────────────────────────────────────────

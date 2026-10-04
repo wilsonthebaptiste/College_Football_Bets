@@ -1,4 +1,11 @@
-import type { Prediction, RankingsSnapshot, Season, SeasonWeek, TeamIdentity } from '@cfb/shared';
+import type {
+  GameDetail,
+  Prediction,
+  RankingsSnapshot,
+  Season,
+  SeasonWeek,
+  TeamIdentity,
+} from '@cfb/shared';
 import type {
   ConferenceMap,
   ConferenceOddsDocument,
@@ -23,6 +30,9 @@ import { ProviderError } from './types';
  *   rankings | slate | game | prediction | calendar | teams | conferences
  *   week         a whole week's games fail: the matchup board's one read
  *                (`calendar` covers the week list, which is the calendar)
+ *   detail       inside one game: the box score, leaders, plays, and in-game
+ *                win probability, and nothing else (the game page's header and
+ *                prediction are separate reads, `game` and `prediction`)
  *   projections  ESPN's FPI table fails: the national half of a projection
  *   odds         the conference odds publisher fails: the conference half
  *
@@ -46,6 +56,7 @@ type Operation =
   | 'teams'
   | 'conferences'
   | 'week'
+  | 'detail'
   | 'projections'
   | 'odds';
 
@@ -59,6 +70,7 @@ const OPERATIONS: readonly Operation[] = [
   'teams',
   'conferences',
   'week',
+  'detail',
   'projections',
   'odds',
 ];
@@ -163,6 +175,11 @@ export class FaultyProvider implements SportsDataProvider {
   async getPrediction(providerGameId: string): Promise<Prediction | null> {
     this.check('prediction');
     return this.inner.getPrediction(providerGameId);
+  }
+
+  async getGameDetail(providerGameId: string): Promise<GameDetail> {
+    this.check('detail');
+    return this.inner.getGameDetail(providerGameId);
   }
 
   async getTeamProjections(): Promise<TeamProjectionsDocument> {

@@ -1,4 +1,4 @@
-import type { Envelope, Game, Prediction } from '@cfb/shared';
+import type { Envelope, Game, GameDetail, Prediction } from '@cfb/shared';
 import type { CachePolicy } from '../cache/policy';
 import { cacheKey, policyFor } from '../cache/policy';
 import type { CacheRead, CacheStatus } from '../cache/swr';
@@ -94,6 +94,50 @@ export async function getPrediction(
     key: cacheKey('prediction', provider.name, providerGameId),
     policyFor: () => policyFor('prediction'),
     load: () => provider.getPrediction(providerGameId),
+    isFatal: isNotFound,
+  });
+  return { envelope: read.envelope, cacheStatus: read.status };
+}
+
+// ─── GET /api/games/:gameId/detail ───────────────────────────────────────────
+
+/** How long before kickoff a detail is treated as live: no 10-minute pregame copy into the game. */
+const DETAIL_LIVE_LEAD_MS = 15 * 60 * 1000;
+
+/**
+ * A detail's lifetime follows the game it describes (plan Phase 3.2): live
+ * 25 s, L1 only, never KV; final a week; anything else 10 minutes with KV at
+ * most hourly. From fifteen minutes before kickoff a scheduled game is cached
+ * as live, so the box score turns from season averages to the game's own
+ * within a poll of kickoff, and a pregame copy is never kept into the game.
+ */
+export function detailState(detail: GameDetail, now: number): 'live' | 'final' | 'upcoming' {
+  const { status } = detail;
+  if (status === 'final') return 'final';
+  if (status === 'live' || status === 'delayed' || status === 'suspended') return 'live';
+  if (status === 'scheduled' || status === 'unknown') {
+    const kickoff = Date.parse(detail.kickoffUtc);
+    if (!detail.kickoffTbd && Number.isFinite(kickoff) && now >= kickoff - DETAIL_LIVE_LEAD_MS) {
+      return 'live';
+    }
+  }
+  return 'upcoming';
+}
+
+/**
+ * Inside one game. Its own request and its own cache entry, so a failing box
+ * score leaves the header and the prediction standing (§42).
+ */
+export async function getGameDetail(
+  services: Services,
+  providerGameId: string,
+): Promise<GameResult<GameDetail>> {
+  const { cache, provider } = services;
+  const read = await cache.read<GameDetail>({
+    key: cacheKey('game_detail', provider.name, providerGameId),
+    policyFor: (detail) =>
+      policyFor('game_detail', { detailState: detailState(detail, services.now()) }),
+    load: () => provider.getGameDetail(providerGameId),
     isFatal: isNotFound,
   });
   return { envelope: read.envelope, cacheStatus: read.status };
