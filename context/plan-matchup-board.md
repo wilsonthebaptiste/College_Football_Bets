@@ -968,7 +968,7 @@ is green — **1313 tests in 53 files, up 83 from 1230** — and `format:check`,
 | Detail blocked or faulted: header and prediction render, stats offer Try again | Met: request aborted in the browser, `detail` faulted on the real runtime, and an `unavailable` envelope in component tests, each with its reference | all three |
 | No `undefined`, `NaN`, `0–0`, `0%` for a missing value, seen or spoken, in every state | Met; `expectClean` in every component state, including a live game with no score | `GameDetail.test.tsx` |
 | Real-payload test through both routes, the three labels where rendered | Met: the captured live game through `/api/matchups/:id`, `/detail`, and `/prediction`, rendered by the web test from the generated file | `detail.test.ts` → `real-saturday.json` → `GameDetail.test.tsx` |
-| Axe, keyboard, 320 px with every section open, both themes, on the deployed site | Met locally on mock, on real ESPN, and on the captured live game; on the deployed site see the release record | browser runs |
+| Axe, keyboard, 320 px with every section open, both themes, on the deployed site | Met: on the deployed site, 38 checks on Sunday's real games and 15 on the captured live game served to the production bundle; locally on mock and real ESPN as well. Worker CPU under `wrangler tail`: cold week 12–21 ms, cold detail 6–9 ms, all `ok` | release record |
 | verify, format:check, check:bundle green; deployed; smoke extended to the three routes | Met | release record |
 
 The browser scripts are in this session's scratchpad (`game-browser.mjs`,
@@ -1016,7 +1016,8 @@ beside them), outside the repo as before because CI has no browser.
   what the page looked like and what the KV ledger said at the end of the day.
 - **The KV counter the day after the deploy** (`week_games` a few dozen,
   `game_detail` small, nothing for `matchup_composite` or a live detail).
-- **Worker CPU for a cold week read under `wrangler tail`** on a Saturday.
+- **Worker CPU on a Saturday** under `wrangler tail` (measured on a Sunday:
+  cold week 12–21 ms, all `ok`).
 - A real screen-reader pass (never done in this project).
 
 ---

@@ -517,7 +517,25 @@ poll for the new week, so `toRankings` (CFP, else AP) found none and every rank
 read `—` everywhere in the app, boards included. It is the existing rule,
 honestly applied; it clears when the AP poll is published.
 
-And afterwards, on the live Worker: see the rows filled in below.
+Deployed from commit `cc76d2a` (pushed first; `1380a99` and `fb4e168` went to
+the remote with it): Worker version `a2e7bdbf-5470-40ee-94c5-8fa709000b63`,
+Pages deployment `6bf2baa3`. Wrangler's binding table was unchanged.
+
+And afterwards, on the live Worker (Sunday 2026-10-04, ~17:45Z, no game live):
+
+| Question                                       | Answer                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run smoke` against the API and the site   | **43 passed, 0 failed**, the new lines included: week 5 with 11 matchups, Pitt at Virginia Tech's header, and its detail (15 stat rows, 11 scoring plays, no win probability: final), both CORS checks                                                                                                                                    |
+| The browser, against the **deployed** site     | **38 of 38** in headless Edge: the journey with no Supabase request and no console error; a final game making no request in 25 s; season averages for week 6; no sideways scroll at 320/768/1440 in both themes; axe clean at 320 and 1280 in both themes; the keyboard walk (back link, both teams, both boards, each with a focus ring) |
+| The captured live game on the deployed site    | **15 of 15**: the real California at UNLV answers served to the production bundle by route interception — the three labels seen, the situation line, axe clean and no sideways scroll at 320/768/1280 in both themes                                                                                                                      |
+| Worker CPU for the new reads (`wrangler tail`) | A week document read cold into a fresh key: **12–21 ms** (weeks 1, 2, 7). A game's detail, cold: **6–9 ms**. One game's header: 8 ms. The warm board: 2 ms. The cron run: 15 ms. Every outcome `ok`, none `exceededCpu`                                                                                                                   |
+| KV ledger on one isolate, after all of that    | `week_games 2`, `game_detail 2` (an upcoming and a final), nothing for `matchup_composite`                                                                                                                                                                                                                                                |
+| A real Saturday, and 24 hours of KV writes     | _Owner, or the next session: week 6, 2026-10-10. Expect `week_games` at a few dozen writes a day, `game_detail` small, and nothing for `matchup_composite` or a live detail_                                                                                                                                                              |
+
+**The CPU number to watch** is the week document: a cold read is 12–21 ms
+against the documented 10 ms, the same order as a cold board, and Cloudflare
+let every one through. If `exceededCpu` ever appears on `/api/matchups`, the
+remedy in the plan's risk register is to build the week from the day slates.
 
 ---
 
